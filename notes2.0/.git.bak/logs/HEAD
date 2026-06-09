@@ -1,0 +1,4 @@
+0000000000000000000000000000000000000000 1ca346ddce1a9610e95457d0017f2a17c26a7891 Shin <shintm22@gcc.edu> 1778957384 -0400	commit (initial): Initial commit from create-react-router
+1ca346ddce1a9610e95457d0017f2a17c26a7891 2851f66c4f0bcd0fa0dd5892efa85cb3a8c3f229 Shin <shintm22@gcc.edu> 1778958396 -0400	commit: initial commit
+2851f66c4f0bcd0fa0dd5892efa85cb3a8c3f229 2851f66c4f0bcd0fa0dd5892efa85cb3a8c3f229 Shin <shintm22@gcc.edu> 1778960384 -0400	checkout: moving from master to page/notes
+2851f66c4f0bcd0fa0dd5892efa85cb3a8c3f229 9022580e5a37d5dd6f1c390c3ec60540c87f41db Shin <shintm22@gcc.edu> 1780284663 -0400	commit: feat: implement interactive notegrid with masonic, note creation, slate styling theme, and active sidebar routing
