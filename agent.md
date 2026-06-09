@@ -60,6 +60,7 @@ When completing tasks:
 1. **Directory Awareness:** Ensure all commands are proposed with the correct `Cwd` parameter matching the sub-project you are working in.
 2. **Investigation first:** Check existing code structure and imports before introducing new dependencies or creating duplicate helper functions.
 3. **Responsive feedback:** Provide brief, structured summaries after completing tasks.
+4. **Branching:** Whenever creating a new feature, automatically create a new git branch before writing code.
 
 ---
 

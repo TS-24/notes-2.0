@@ -35,6 +35,11 @@ class AnalysisMetrics(BaseModel):
     charCount: int
     # Further metrics (nltk/textstat) will be implemented here later
 
+class AggregateMetrics(BaseModel):
+    totalNotes: int
+    totalWords: int
+    totalChars: int
+
 # Router
 router = APIRouter(prefix="/api", tags=["notes"])
 
@@ -49,6 +54,21 @@ async def analyze_single_note(note: Note):
     return AnalysisMetrics(
         wordCount=word_count,
         charCount=char_count
+    )
+
+@router.post("/analyze/aggregate", response_model=AggregateMetrics)
+async def analyze_aggregate(notes: List[Note]):
+    """
+    Receives an array of Note objects and returns aggregated metrics.
+    """
+    total_notes = len(notes)
+    total_words = sum(len(note.content.split()) for note in notes)
+    total_chars = sum(len(note.content) for note in notes)
+    
+    return AggregateMetrics(
+        totalNotes=total_notes,
+        totalWords=total_words,
+        totalChars=total_chars
     )
 
 @router.get("/health")
