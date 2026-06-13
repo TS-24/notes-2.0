@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import pytest
+from textstat.backend import utils
+
+
+@pytest.mark.parametrize(
+    "lang, key, value",
+    [
+        (lang, key, utils.constants.LANG_CONFIGS[lang][key])
+        for lang in utils.constants.LANG_CONFIGS
+        for key in utils.constants.LANG_CONFIGS[lang]
+    ]
+    + [
+        ("ua_UA", "fre_base", utils.constants.LANG_CONFIGS["en"]["fre_base"]),
+    ],
+)
+def test_get_lang_cfg(lang: str, key: str, value: float) -> None:
+    assert utils.get_lang_cfg(lang, key) == value
+
+
+@pytest.mark.parametrize(
+    "lang, key, error",
+    [
+        ("en_US", "fre_base", False),
+        ("en_US", "a;lskdj", True),
+        ("sladfjk", "fre_base", False),
+        ("sladfjk", "fjksd", True),
+    ],
+)
+def test_get_lang_cfg_error(lang: str, key: str, error: bool) -> None:
+    if error:
+        with pytest.raises(ValueError):
+            utils.get_lang_cfg(lang, key)
+    else:
+        utils.get_lang_cfg(lang, key)
+
+
+def test_get_lang_cfg_default_fallback_bug():
+    # 1. If there's a config value of that key, return that
+    assert (
+        utils.get_lang_cfg("en", "syllable_threshold")
+        == utils.constants.LANG_CONFIGS["en"]["syllable_threshold"]
+    )
+
+    # 2. If there's no config value for Spanish but a default value for that
+    # key, return the default (Assume 'syllable_threshold' does not exist in
+    # Spanish config)
+    assert (
+        utils.get_lang_cfg("es", "syllable_threshold")
+        == utils.constants.LANG_CONFIGS["en"]["syllable_threshold"]
+    )
+
+    # 3. If there's neither value, throw!
+    with pytest.raises(ValueError):
+        utils.get_lang_cfg("es", "not_a_real_key")
