@@ -22,7 +22,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    notes: Mapped[List["Note"]] = relationship(back_populates="author")
+    notes: Mapped[List["Note"]] = relationship(
+        back_populates="author", cascade="all, delete-orphan"
+    )
 
 
 class Note(Base):
