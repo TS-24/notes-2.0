@@ -22,11 +22,12 @@ def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteRead:
 @router.get("", response_model=list[NoteRead])
 def list_notes(
     user_id: int | None = None,
+    search: str | None = Query(None, description="Case-insensitive match on note title"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[NoteRead]:
-    return crud_note.list_notes(db, user_id=user_id, skip=skip, limit=limit)
+    return crud_note.list_notes(db, user_id=user_id, search=search, skip=skip, limit=limit)
 
 
 @router.get("/{note_id}", response_model=NoteRead)
