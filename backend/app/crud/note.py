@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..db.models import Note, WordDefinition
 
-UPDATABLE_FIELDS = {"title", "content", "user_id"}
+# A note's owner is fixed at creation time, so user_id is intentionally not updatable.
+UPDATABLE_FIELDS = {"title", "content"}
 
 
 def create_note(db: Session, user_id: int, title: str, content: str | None = None) -> Note:
@@ -21,11 +22,19 @@ def get_note(db: Session, note_id: int) -> Note | None:
     return db.scalars(stmt).first()
 
 
-def list_notes(db: Session, user_id: int | None = None, skip: int = 0, limit: int = 100) -> list[Note]:
-    """Return a page of notes, optionally filtered to one user."""
+def list_notes(
+    db: Session,
+    user_id: int | None = None,
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> list[Note]:
+    """Return a page of notes, optionally filtered to one user and/or a title search."""
     stmt = select(Note).options(selectinload(Note.words))
     if user_id is not None:
         stmt = stmt.where(Note.user_id == user_id)
+    if search:
+        stmt = stmt.where(Note.title.ilike(f"%{search}%"))
     stmt = stmt.order_by(Note.id).offset(skip).limit(limit)
     return list(db.scalars(stmt))
 
