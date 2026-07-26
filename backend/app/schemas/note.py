@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,6 +22,7 @@ class NoteCreate(NoteBase):
 class NoteUpdate(BaseModel):
     title: Title | None = None
     content: str | None = None
+    is_pinned: bool | None = None
 
 
 class NoteRead(NoteBase):
@@ -28,4 +30,6 @@ class NoteRead(NoteBase):
 
     id: int
     user_id: int
+    is_pinned: bool
+    created_at: datetime
     words: list[WordDefinitionRead] = []
