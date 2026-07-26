@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetDescription, 
-  SheetTrigger 
+import type { Route } from "./+types/analytics";
+import { api } from "~/lib/api.server";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetTrigger
 } from "~/components/ui/sheet";
 
 interface VocabularyAnalysis {
@@ -13,35 +15,34 @@ interface VocabularyAnalysis {
   definitions: Record<string, string>;
 }
 
-export default function Analytics() {
+export async function loader() {
+  return { notes: await api.listNotes() };
+}
+
+export default function Analytics({ loaderData }: Route.ComponentProps) {
+  const { notes } = loaderData;
   const [vocabData, setVocabData] = useState<VocabularyAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // TODO(step 6): /api/analyze/vocabulary does not exist yet. The notes now
+  // come from the database via the loader above, but the analysis call still
+  // reaches the backend directly from the browser and will 404 until the
+  // vocabulary service is built.
   useEffect(() => {
     async function fetchVocabulary() {
       try {
-        const storedNotes = localStorage.getItem("notes");
-        const notes = storedNotes ? JSON.parse(storedNotes) : [];
-        
         if (notes.length === 0) {
           setLoading(false);
           return;
         }
 
-        const combinedText = notes.map((n: any) => n.content).join("\n\n");
-        const dummyNote = {
-          id: "combined",
-          title: "All Notes",
-          content: combinedText,
-          colorId: "default",
-          isPinned: false
-        };
+        const combinedText = notes.map((n) => n.content ?? "").join("\n\n");
 
         const response = await fetch("http://127.0.0.1:8000/api/analyze/vocabulary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(dummyNote),
+          body: JSON.stringify({ title: "All Notes", content: combinedText }),
         });
 
         if (!response.ok) {
@@ -58,7 +59,7 @@ export default function Analytics() {
     }
 
     fetchVocabulary();
-  }, []);
+  }, [notes]);
 
   // Generate randomized scattered pattern for each word
   const wordsWithStyles = useMemo(() => {
@@ -118,10 +119,9 @@ export default function Analytics() {
         <div className="flex flex-wrap items-center justify-center w-full max-w-5xl">
           {wordsWithStyles.map(({ word, definition, style, className }) => (
             <Sheet key={word}>
-              <SheetTrigger asChild>
-                <span className={className} style={style}>
-                  {word}
-                </span>
+              {/* Base UI merges props onto `render`; it has no asChild prop. */}
+              <SheetTrigger render={<span className={className} style={style} />}>
+                {word}
               </SheetTrigger>
               <SheetContent side="right">
                 <SheetHeader>

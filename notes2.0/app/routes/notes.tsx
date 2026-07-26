@@ -1,7 +1,57 @@
+import type { Route } from "./+types/notes";
 import Notegrid from "~/notes/notegrid";
+import { api, ApiError } from "~/lib/api.server";
 
-export default function Notes() {
-  return  <>
-  <Notegrid/>
-  </>;
+export function meta() {
+  return [{ title: "Notes" }, { name: "description", content: "Your notes" }];
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const search = new URL(request.url).searchParams.get("search") ?? undefined;
+  return { notes: await api.listNotes({ search }) };
+}
+
+/**
+ * Every note mutation goes through here. The browser submits a form, React
+ * Router runs this on the server, and the loader above re-runs automatically —
+ * so the UI reflects the database without any manual refetching.
+ */
+export async function action({ request }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  try {
+    switch (intent) {
+      case "create": {
+        const title = String(formData.get("title") ?? "").trim();
+        const content = String(formData.get("content") ?? "").trim();
+        // The API requires a non-empty title, but the composer allows
+        // body-only notes, so fall back to a placeholder.
+        await api.createNote({ title: title || "Untitled", content });
+        return { ok: true };
+      }
+      case "togglePin": {
+        const id = Number(formData.get("id"));
+        const isPinned = formData.get("isPinned") === "true";
+        await api.updateNote(id, { is_pinned: !isPinned });
+        return { ok: true };
+      }
+      case "delete": {
+        await api.deleteNote(Number(formData.get("id")));
+        return { ok: true };
+      }
+      default:
+        return { ok: false, error: `Unknown intent: ${String(intent)}` };
+    }
+  } catch (error) {
+    // Surface API failures to the UI instead of crashing the whole route.
+    if (error instanceof ApiError) {
+      return { ok: false, error: error.detail };
+    }
+    throw error;
+  }
+}
+
+export default function Notes({ loaderData }: Route.ComponentProps) {
+  return <Notegrid notes={loaderData.notes} />;
 }

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..db.models import Note, WordDefinition
 
 # A note's owner is fixed at creation time, so user_id is intentionally not updatable.
-UPDATABLE_FIELDS = {"title", "content"}
+UPDATABLE_FIELDS = {"title", "content", "is_pinned"}
 
 
 def create_note(db: Session, user_id: int, title: str, content: str | None = None) -> Note:
@@ -35,7 +35,9 @@ def list_notes(
         stmt = stmt.where(Note.user_id == user_id)
     if search:
         stmt = stmt.where(Note.title.ilike(f"%{search}%"))
-    stmt = stmt.order_by(Note.id).offset(skip).limit(limit)
+    # Newest first, matching how the UI stacks notes. id breaks ties because
+    # notes created in the same transaction share a created_at.
+    stmt = stmt.order_by(Note.created_at.desc(), Note.id.desc()).offset(skip).limit(limit)
     return list(db.scalars(stmt))
 
 

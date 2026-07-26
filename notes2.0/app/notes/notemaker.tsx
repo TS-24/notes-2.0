@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect } from "react";
+import { useFetcher } from "react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { Pin, Palette, Check, Plus } from "lucide-react";
-import { COLORS } from "~/lib/colors";
+import { Plus } from "lucide-react";
 
-interface NoteMakerProps {
-  onAddNote: (note: { title: string; content: string; colorId: string; isPinned: boolean; createdAt: string }) => void;
-}
-
-export default function NoteMaker({ onAddNote }: NoteMakerProps) {
+export default function NoteMaker() {
+  const fetcher = useFetcher();
   const [isExpanded, setIsExpanded] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -40,14 +37,12 @@ export default function NoteMaker({ onAddNote }: NoteMakerProps) {
 
   const handleClose = () => {
     if (title.trim() || content.trim()) {
-      const randomColor = COLORS[Math.floor(Math.random() * COLORS.length)].id;
-      onAddNote({
-        title: title.trim(),
-        content: content.trim(),
-        colorId: randomColor,
-        isPinned: false,
-        createdAt: new Date().toISOString(),
-      });
+      // Posts to the notes route action, which creates the note and triggers
+      // the loader to re-run with the fresh list.
+      fetcher.submit(
+        { intent: "create", title: title.trim(), content: content.trim() },
+        { method: "post" },
+      );
     }
     // Reset state
     setTitle("");

@@ -1,8 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useFetcher } from "react-router";
 import { motion } from "framer-motion";
 import { Masonry } from "masonic";
 import { Pin, Trash2, Archive } from "lucide-react";
 import NoteMaker from "~/notes/notemaker";
+import { ClientOnly } from "~/components/client-only";
+import type { Note } from "~/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -11,23 +14,11 @@ import {
   DialogDescription,
 } from "~/components/ui/dialog";
 
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  colorId: string; // References COLORS key
-  isPinned: boolean;
-  createdAt?: string;
-}
-
 // 1. Separate Child Component declared OUTSIDE to fix unmounting & state-loss bug
-interface NoteCardProps {
-  data: Note;
-  onTogglePin: (id: string) => void;
-  onDelete: (id: string) => void;
-}
-
-function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
+function NoteCard({ data }: { data: Note }) {
+  // Each card owns its fetcher so simultaneous pins/deletes don't clobber
+  // each other's pending state.
+  const fetcher = useFetcher();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [vocabData, setVocabData] = useState<{ total_difficult_words: number, definitions: Record<string, string> } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,6 +26,13 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
   // Flashcard State
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
+
+  // Optimistic UI: while a mutation is in flight, render what the user asked
+  // for rather than the stale server value.
+  const isPinned = fetcher.formData
+    ? fetcher.formData.get("isPinned") === "false"
+    : data.is_pinned;
+  const isDeleting = fetcher.formData?.get("intent") === "delete";
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Only open dialog if we aren't clicking an action button
@@ -56,6 +54,9 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
     }
   };
 
+  // TODO(step 6): /api/analyze/vocabulary does not exist yet, and this is the
+  // last place the browser still calls the backend directly. Both are fixed
+  // when the vocabulary service is built.
   const fetchVocabulary = async () => {
     setLoading(true);
     try {
@@ -110,6 +111,9 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
     }
   };
 
+  // Remove the card immediately on delete instead of waiting for the round trip.
+  if (isDeleting) return null;
+
   return (
     <>
       <motion.div
@@ -126,22 +130,28 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
                 {data.title}
               </h3>
             )}
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={(e) => { e.stopPropagation(); onTogglePin(data.id); }}
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-zinc-950/5 dark:hover:bg-white/5 transition-all cursor-pointer ${data.isPinned ? "opacity-100 text-zinc-900 dark:text-zinc-50" : "text-zinc-400"
-                }`}
-            >
-              <Pin className="size-3.5 fill-current" />
-            </motion.button>
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="togglePin" />
+              <input type="hidden" name="id" value={data.id} />
+              <input type="hidden" name="isPinned" value={String(data.is_pinned)} />
+              <motion.button
+                type="submit"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={(e) => e.stopPropagation()}
+                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-zinc-950/5 dark:hover:bg-white/5 transition-all cursor-pointer ${isPinned ? "opacity-100 text-zinc-900 dark:text-zinc-50" : "text-zinc-400"
+                  }`}
+              >
+                <Pin className="size-3.5 fill-current" />
+              </motion.button>
+            </fetcher.Form>
           </div>
           <p className="text-xs leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-line">
             {data.content}
           </p>
-          {data.createdAt && (
+          {data.created_at && (
             <div className="mt-4 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
-              {new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.createdAt))}
+              {new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.created_at))}
             </div>
           )}
         </div>
@@ -150,15 +160,20 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
           {/* Action Toolbar */}
           <div className="flex items-center justify-between opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <div className="flex items-center gap-2">
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={(e) => { e.stopPropagation(); onDelete(data.id); }}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-                title="Delete note"
-              >
-                <Trash2 className="size-3.5" />
-              </motion.button>
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="delete" />
+                <input type="hidden" name="id" value={data.id} />
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  title="Delete note"
+                >
+                  <Trash2 className="size-3.5" />
+                </motion.button>
+              </fetcher.Form>
 
               <motion.button
                 whileHover={{ scale: 1.1 }}
@@ -270,75 +285,31 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
 }
 
 // 2. Parent Container Component
-export default function Notegrid() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("notes");
-    if (saved) {
-      try {
-        setNotes(JSON.parse(saved));
-      } catch (e) {}
-    }
-    setIsLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("notes", JSON.stringify(notes));
-    }
-  }, [notes, isLoaded]);
-
-  const togglePin = (id: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === id ? { ...note, isPinned: !note.isPinned } : note
-      )
-    );
-  };
-
-  const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(note => note.id !== id));
-  };
-
-  const addNote = (newNote: { title: string; content: string; colorId: string; isPinned: boolean; createdAt?: string }) => {
-    setNotes(prev => [
-      {
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString(),
-        ...newNote,
-      },
-      ...prev,
-    ]);
-  };
-
-  const pinnedNotes = notes.filter(n => n.isPinned);
-  const otherNotes = notes.filter(n => !n.isPinned);
+// Notes now arrive from the route loader, so this component holds no data state
+// of its own — the database is the single source of truth.
+export default function Notegrid({ notes }: { notes: Note[] }) {
+  const pinnedNotes = notes.filter(n => n.is_pinned);
+  const otherNotes = notes.filter(n => !n.is_pinned);
 
   return (
     <main className="flex-1 p-8 space-y-10 bg-zinc-50 dark:bg-zinc-950 min-h-screen font-sans">
 
-      <NoteMaker onAddNote={addNote} />
+      <NoteMaker />
 
       {pinnedNotes.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1">
             Pinned
           </h2>
-          <Masonry
-            key={`pinned-${pinnedNotes.map(n => n.id).join("-")}`}
-            items={pinnedNotes}
-            columnWidth={240}
-            columnGutter={16}
-            render={({ data }) => (
-              <NoteCard
-                data={data}
-                onTogglePin={togglePin}
-                onDelete={deleteNote}
-              />
-            )}
-          />
+          <ClientOnly>
+            <Masonry
+              key={`pinned-${pinnedNotes.map(n => n.id).join("-")}`}
+              items={pinnedNotes}
+              columnWidth={240}
+              columnGutter={16}
+              render={({ data }) => <NoteCard data={data} />}
+            />
+          </ClientOnly>
         </div>
       )}
 
@@ -349,19 +320,15 @@ export default function Notegrid() {
               Others
             </h2>
           )}
-          <Masonry
-            key={`others-${otherNotes.map(n => n.id).join("-")}`}
-            items={otherNotes}
-            columnWidth={240}
-            columnGutter={16}
-            render={({ data }) => (
-              <NoteCard
-                data={data}
-                onTogglePin={togglePin}
-                onDelete={deleteNote}
-              />
-            )}
-          />
+          <ClientOnly>
+            <Masonry
+              key={`others-${otherNotes.map(n => n.id).join("-")}`}
+              items={otherNotes}
+              columnWidth={240}
+              columnGutter={16}
+              render={({ data }) => <NoteCard data={data} />}
+            />
+          </ClientOnly>
         </div>
       )}
 
