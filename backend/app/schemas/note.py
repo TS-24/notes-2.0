@@ -13,7 +13,9 @@ class NoteBase(BaseModel):
 
 
 class NoteCreate(NoteBase):
-    user_id: int
+    # Optional: defaults to the requesting user, so clients without a user
+    # concept can post just a title and content.
+    user_id: int | None = None
 
 
 class NoteUpdate(BaseModel):

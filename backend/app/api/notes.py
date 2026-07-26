@@ -5,17 +5,24 @@ from ..crud import note as crud_note
 from ..crud import user as crud_user
 from ..crud import word_definition as crud_word
 from ..db.database import get_db
+from ..db.models import User
 from ..schemas.note import NoteCreate, NoteRead, NoteUpdate
+from .deps import get_current_user
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
 
 @router.post("", response_model=NoteRead, status_code=status.HTTP_201_CREATED)
-def create_note(payload: NoteCreate, db: Session = Depends(get_db)) -> NoteRead:
-    if crud_user.get_user(db, payload.user_id) is None:
+def create_note(
+    payload: NoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NoteRead:
+    user_id = payload.user_id if payload.user_id is not None else current_user.id
+    if crud_user.get_user(db, user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return crud_note.create_note(
-        db, user_id=payload.user_id, title=payload.title, content=payload.content
+        db, user_id=user_id, title=payload.title, content=payload.content
     )
 
 

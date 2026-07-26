@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from ..crud import user as crud_user
 from ..db.database import get_db
+from ..db.models import User
 from ..schemas.user import UserCreate, UserRead, UserUpdate
+from .deps import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -31,6 +33,13 @@ def list_users(
     db: Session = Depends(get_db),
 ) -> list[UserRead]:
     return crud_user.list_users(db, skip=skip, limit=limit)
+
+
+# Declared before /{user_id} so "me" is not parsed as a user id.
+@router.get("/me", response_model=UserRead)
+def get_current_user_route(current_user: User = Depends(get_current_user)) -> UserRead:
+    """The signed-in user. Currently always the seeded development user."""
+    return current_user
 
 
 @router.get("/{user_id}", response_model=UserRead)
