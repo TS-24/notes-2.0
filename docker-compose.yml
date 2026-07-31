@@ -6,19 +6,30 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      NODE_ENV: production
+      # Loaders and actions run inside this container and reach the backend by
+      # its compose service name. The browser never calls the backend directly,
+      # so no public API URL is needed (and there is no CORS to configure).
+      API_URL: http://backend:8000
+    depends_on:
+      - backend
     restart: unless-stopped
 
-  # Uncomment and configure the backend service once it has a Dockerfile
-  # backend:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
-  #     - ENVIRONMENT=development
-  #   restart: unless-stopped
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # "db" is the compose DNS name for the Postgres service below. Using
+      # localhost here would resolve to the backend container itself.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notes_db}
+      ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
   db:
     image: postgres:15-alpine
@@ -30,6 +41,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-notes_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # The backend runs migrations on startup, so it must not start until
+    # Postgres is actually accepting connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-notes_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
 volumes:

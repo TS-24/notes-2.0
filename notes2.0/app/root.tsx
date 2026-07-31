@@ -9,21 +9,10 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
-import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
 import { TooltipProvider } from "./components/ui/tooltip";
-import AppSidebar from "~/components/app-sidebar"
-export const links: Route.LinksFunction = () => [
-  { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  {
-    rel: "preconnect",
-    href: "https://fonts.gstatic.com",
-    crossOrigin: "anonymous",
-  },
-  {
-    rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
-  },
-];
+
+// Fonts are bundled from @fontsource-variable, so there is nothing to preconnect to.
+export const links: Route.LinksFunction = () => [];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -36,20 +25,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
 
 
-      <body className="min-h-screen bg-background text-foreground">
-        <TooltipProvider>
-          <SidebarProvider>
-              <AppSidebar />
-              <div className="min-h-screen w-full">
-                <SidebarInset className="min-h-screen">
-                  {children}
-                </SidebarInset>
-              </div>
-          </SidebarProvider>
-        </TooltipProvider>
-    
-          <ScrollRestoration />
-          <Scripts />
+      {/* No sidebar, no nav bar — DESIGN.md §9. The route owns the whole page. */}
+      <body className="min-h-screen bg-paper text-ink antialiased">
+        <TooltipProvider>{children}</TooltipProvider>
+
+        <ScrollRestoration />
+        <Scripts />
       </body>
     </html>
   );

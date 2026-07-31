@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFetcher, useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import { Masonry } from "masonic";
-import { Pin, Trash2, Archive } from "lucide-react";
-import NoteMaker from "~/notes/notemaker";
+import { Pin, Trash2, Archive, Plus } from "lucide-react";
+import {
+  noteLayoutId,
+  NOTE_LAYOUT_TRANSITION,
+} from "~/workspace/note-surface";
+import type { Note } from "~/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -11,23 +15,43 @@ import {
   DialogDescription,
 } from "~/components/ui/dialog";
 
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  colorId: string; // References COLORS key
-  isPinned: boolean;
-  createdAt?: string;
+/**
+ * The empty card that starts a new note. It sits in the grid rather than above
+ * it. No real note has id 0.
+ */
+const GHOST_ID = 0;
+type GhostItem = { id: typeof GHOST_ID; ghost: true };
+type GridItem = Note | GhostItem;
+const GHOST: GhostItem = { id: GHOST_ID, ghost: true };
+
+function GhostNote({ onClick }: { onClick: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      layoutId={noteLayoutId(GHOST_ID)}
+      onClick={onClick}
+      title="New note"
+      aria-label="New note"
+      style={{ borderRadius: 16 }}
+      transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+      className="flex min-h-[200px] w-full items-center justify-center border-2 border-dashed border-hairline text-rose-ink cursor-pointer transition-colors hover:border-rose-ink/60 hover:bg-paper-raised/60"
+    >
+      <Plus className="size-7" strokeWidth={1.5} />
+    </motion.button>
+  );
 }
 
 // 1. Separate Child Component declared OUTSIDE to fix unmounting & state-loss bug
-interface NoteCardProps {
+function NoteCard({
+  data,
+  onExpand,
+}: {
   data: Note;
-  onTogglePin: (id: string) => void;
-  onDelete: (id: string) => void;
-}
-
-function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
+  onExpand: (note: Note) => void;
+}) {
+  // Each card owns its fetcher so simultaneous pins/deletes don't clobber
+  // each other's pending state.
+  const fetcher = useFetcher();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [vocabData, setVocabData] = useState<{ total_difficult_words: number, definitions: Record<string, string> } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,14 +60,18 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    // Only open dialog if we aren't clicking an action button
+  // Optimistic UI: while a mutation is in flight, render what the user asked
+  // for rather than the stale server value.
+  const isPinned = fetcher.formData
+    ? fetcher.formData.get("isPinned") === "false"
+    : data.is_pinned;
+  const isDeleting = fetcher.formData?.get("intent") === "delete";
+  const title = data.title;
+  const content = data.content;
+
+  const handleCardDoubleClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
-    setIsQuizMode(false);
-    setIsDialogOpen(true);
-    if (!vocabData) {
-      fetchVocabulary();
-    }
+    onExpand(data);
   };
 
   const handleQuizClick = (e: React.MouseEvent) => {
@@ -56,6 +84,9 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
     }
   };
 
+  // TODO(step 6): /api/analyze/vocabulary does not exist yet, and this is the
+  // last place the browser still calls the backend directly. Both are fixed
+  // when the vocabulary service is built.
   const fetchVocabulary = async () => {
     setLoading(true);
     try {
@@ -110,61 +141,92 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
     }
   };
 
+  // Remove the card immediately on delete instead of waiting for the round trip.
+  if (isDeleting) return null;
+
   return (
     <>
       <motion.div
-        layout
-        onClick={handleCardClick}
+        // Shared with the expanded editor, so the card morphs into it — and so
+        // the other cards glide to their new spots when the grid reflows.
+        layoutId={noteLayoutId(data.id)}
+        data-note-card
+        onDoubleClick={handleCardDoubleClick}
         whileHover={{ y: -4, boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)" }}
-        transition={{ duration: 0.2 }}
-        className="group relative flex flex-col justify-between p-5 rounded-2xl border bg-slate-50 border-slate-200 hover:bg-slate-100 dark:bg-slate-900/60 dark:border-slate-800/50 dark:hover:bg-slate-800/80 shadow-xs backdrop-blur-xs cursor-pointer"
+        transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.2 }}
+        style={{ borderRadius: 16 }}
+        title="Double click to open"
+        // No border, no shadow, no blur — one step of paper tone (DESIGN.md §5).
+        className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
       >
-        <div>
+        {/*
+          layout="position" counter-scales the card's contents, so collapsing
+          back out of the editor resizes the box without warping the text.
+        */}
+        <motion.div
+          layout="position"
+          transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+        >
           <div className="flex items-start justify-between gap-3 mb-2">
-            {data.title && (
-              <h3 className="font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-50">
-                {data.title}
+            {title && (
+              <h3 className="font-display text-lg font-medium leading-snug tracking-tight text-ink">
+                {title}
               </h3>
             )}
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={(e) => { e.stopPropagation(); onTogglePin(data.id); }}
-              className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-zinc-950/5 dark:hover:bg-white/5 transition-all cursor-pointer ${data.isPinned ? "opacity-100 text-zinc-900 dark:text-zinc-50" : "text-zinc-400"
-                }`}
-            >
-              <Pin className="size-3.5 fill-current" />
-            </motion.button>
-          </div>
-          <p className="text-xs leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-line">
-            {data.content}
-          </p>
-          {data.createdAt && (
-            <div className="mt-4 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
-              {new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.createdAt))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2 mt-4 pt-2 border-t border-zinc-950/5 dark:border-white/5">
-          {/* Action Toolbar */}
-          <div className="flex items-center justify-between opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            <div className="flex items-center gap-2">
+            <fetcher.Form method="post">
+              <input type="hidden" name="intent" value="togglePin" />
+              <input type="hidden" name="id" value={data.id} />
+              <input type="hidden" name="isPinned" value={String(data.is_pinned)} />
               <motion.button
+                type="submit"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={(e) => { e.stopPropagation(); onDelete(data.id); }}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-                title="Delete note"
+                onClick={(e) => e.stopPropagation()}
+                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer ${isPinned ? "opacity-100 text-rose-ink" : "text-ink/35 hover:text-ink"
+                  }`}
               >
-                <Trash2 className="size-3.5" />
+                <Pin className="size-3.5 fill-current" />
               </motion.button>
+            </fetcher.Form>
+          </div>
+          <p className="mt-2 text-base leading-relaxed text-ink/85 whitespace-pre-line">
+            {content}
+          </p>
+          {data.created_at && (
+            <div className="mt-6 text-sm italic text-ink/45">
+              {new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.created_at))}
+            </div>
+          )}
+        </motion.div>
+
+        <motion.div
+          layout="position"
+          transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+          className="flex flex-col gap-2 mt-8"
+        >
+          {/* Action Toolbar — separated by space, not a rule. */}
+          <div className="flex items-center justify-between opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <div className="flex items-center gap-2">
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="delete" />
+                <input type="hidden" name="id" value={data.id} />
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-lg text-ink/35 hover:text-red-600 transition-colors cursor-pointer"
+                  title="Delete note"
+                >
+                  <Trash2 className="size-3.5" />
+                </motion.button>
+              </fetcher.Form>
 
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-100 hover:bg-zinc-950/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-ink/35 hover:text-ink transition-colors cursor-pointer"
                 title="Archive"
               >
                 <Archive className="size-3.5" />
@@ -173,12 +235,12 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
             
             <button
               onClick={handleQuizClick}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-900 text-zinc-50 hover:bg-zinc-900/90 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90 shadow-sm transition-colors cursor-pointer"
+              className="px-4 py-1.5 text-sm rounded-lg bg-accent-rose text-on-rose hover:opacity-90 transition-opacity cursor-pointer"
             >
               Review Words
             </button>
           </div>
-        </div>
+        </motion.div>
       </motion.div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -187,7 +249,7 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
             <div>
               <DialogTitle>Vocabulary Analysis</DialogTitle>
               <DialogDescription>
-                Difficult words found in "{data.title || 'this note'}".
+                Difficult words found in "{title || 'this note'}".
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -270,112 +332,94 @@ function NoteCard({ data, onTogglePin, onDelete }: NoteCardProps) {
 }
 
 // 2. Parent Container Component
-export default function Notegrid() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+// Notes now arrive from the route loader, so this component holds no data state
+// of its own — the database is the single source of truth.
+export default function Notegrid({
+  notes,
+  openNoteId = null,
+}: {
+  notes: Note[];
+  /** Set when the landing hero handed a note over to be opened on arrival. */
+  openNoteId?: number | null;
+}) {
+  // The open note is the workspace layout's, not the grid's — the grid only
+  // has to leave a gap where it went. `?open=` is the single source of truth,
+  // so opening is a URL change rather than local state.
+  const navigate = useNavigate();
+  const createFetcher = useFetcher<{ ok: boolean; id?: number }>();
 
-  useEffect(() => {
-    const saved = localStorage.getItem("notes");
-    if (saved) {
-      try {
-        setNotes(JSON.parse(saved));
-      } catch (e) {}
-    }
-    setIsLoaded(true);
-  }, []);
+  const gridNotes = notes.filter(n => n.id !== openNoteId);
+  const pinnedNotes = gridNotes.filter(n => n.is_pinned);
+  const otherNotes: GridItem[] = [
+    GHOST,
+    ...gridNotes.filter(n => !n.is_pinned),
+  ];
 
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("notes", JSON.stringify(notes));
-    }
-  }, [notes, isLoaded]);
+  const handleExpand = useCallback(
+    (note: Note) => navigate(`/notes?open=${note.id}`, { preventScrollReset: true }),
+    [navigate],
+  );
 
-  const togglePin = (id: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === id ? { ...note, isPinned: !note.isPinned } : note
-      )
+  // A new note has to exist before it can be the focused note, so the ghost
+  // creates it and then opens it by id.
+  const handleCompose = useCallback(() => {
+    createFetcher.submit(
+      { intent: "create", title: "Untitled", content: "" },
+      { method: "post", action: "/notes" },
     );
-  };
+  }, [createFetcher]);
 
-  const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(note => note.id !== id));
-  };
+  const openedNew = useRef(false);
+  useEffect(() => {
+    const id = createFetcher.data?.id;
+    if (createFetcher.state !== "idle" || !id || openedNew.current) return;
+    openedNew.current = true;
+    navigate(`/notes?open=${id}`, { preventScrollReset: true });
+  }, [createFetcher.state, createFetcher.data, navigate]);
 
-  const addNote = (newNote: { title: string; content: string; colorId: string; isPinned: boolean; createdAt?: string }) => {
-    setNotes(prev => [
-      {
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString(),
-        ...newNote,
-      },
-      ...prev,
-    ]);
-  };
-
-  const pinnedNotes = notes.filter(n => n.isPinned);
-  const otherNotes = notes.filter(n => !n.isPinned);
+  /**
+   * CSS columns rather than a masonry library. The browser balances the
+   * columns, every card is a keyed child that updates instead of remounting,
+   * and it server-renders — so opening a note animates the rest of the grid
+   * into its new shape rather than tearing the grid down and rebuilding it.
+   */
+  const columns = (items: GridItem[]) => (
+    <div className="columns-[280px] gap-6">
+      {items.map(item => (
+        <div key={item.id} className="mb-6 break-inside-avoid">
+          {"ghost" in item ? (
+            <GhostNote onClick={handleCompose} />
+          ) : (
+            <NoteCard data={item} onExpand={handleExpand} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
-    <main className="flex-1 p-8 space-y-10 bg-zinc-50 dark:bg-zinc-950 min-h-screen font-sans">
-
-      <NoteMaker onAddNote={addNote} />
-
+    // The surrounding page and the open note belong to the workspace layout;
+    // this is only the grid that arrives beneath them.
+    <div className="space-y-16">
       {pinnedNotes.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1">
+          <h2 className="font-display text-2xl font-medium tracking-tight text-ink">
             Pinned
           </h2>
-          <Masonry
-            key={`pinned-${pinnedNotes.map(n => n.id).join("-")}`}
-            items={pinnedNotes}
-            columnWidth={240}
-            columnGutter={16}
-            render={({ data }) => (
-              <NoteCard
-                data={data}
-                onTogglePin={togglePin}
-                onDelete={deleteNote}
-              />
-            )}
-          />
+          {columns(pinnedNotes)}
         </div>
       )}
 
       {otherNotes.length > 0 && (
         <div className="space-y-4">
           {pinnedNotes.length > 0 && (
-            <h2 className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pt-4">
+            <h2 className="font-display text-2xl font-medium tracking-tight text-ink pt-4">
               Others
             </h2>
           )}
-          <Masonry
-            key={`others-${otherNotes.map(n => n.id).join("-")}`}
-            items={otherNotes}
-            columnWidth={240}
-            columnGutter={16}
-            render={({ data }) => (
-              <NoteCard
-                data={data}
-                onTogglePin={togglePin}
-                onDelete={deleteNote}
-              />
-            )}
-          />
+          {columns(otherNotes)}
         </div>
       )}
-
-      {notes.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 text-center space-y-3">
-          <div className="p-4 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-400">
-            <Archive className="size-8" />
-          </div>
-          <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">No notes yet</h3>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs">
-            Create your first note to start organizing your schedule!
-          </p>
-        </div>
-      )}
-    </main>
+    </div>
   );
 }
