@@ -16,6 +16,14 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 /** Letters, digits, and the punctuation that lives inside a word. */
 const WORD_CHAR = /[\p{L}\p{N}'’-]/u;
 
+/**
+ * The chevron buttons' hit area, and how far it clears the word. Sized so the
+ * 16px chevron keeps the centre it has always had: half of `height` plus `GAP`
+ * is the 11px the mark sits from the edge of the word.
+ */
+const HIT = { width: 40, height: 20 };
+const GAP = 1;
+
 /** Styles the mirror must copy for its line breaks to match the field's. */
 const MIRRORED_STYLES = [
   "boxSizing",
@@ -271,14 +279,20 @@ export default function WordRoller({
           onMouseDown={event => event.preventDefault()}
           onClick={() => startRoll(which === "up" ? -1 : 1)}
           className="absolute flex items-center justify-center text-ink/35 transition-colors hover:text-rose-ink"
+          // The box is a hit target, not the mark — it is much larger than the
+          // chevron drawn in it, centred on where that chevron already sat, so
+          // growing it moves nothing on screen. It stops 1px clear of the word
+          // on purpose: these sit directly against running text, and a target
+          // that overlapped the line would swallow clicks meant to put the
+          // caret in it.
           style={{
-            left: centre - 10,
+            left: centre - HIT.width / 2,
             top:
               which === "up"
-                ? active.top - 18
-                : active.top + active.height + 4,
-            width: 20,
-            height: 14,
+                ? active.top - GAP - HIT.height
+                : active.top + active.height + GAP,
+            width: HIT.width,
+            height: HIT.height,
           }}
         >
           {which === "up" ? (
