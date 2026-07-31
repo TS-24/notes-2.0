@@ -9,7 +9,7 @@ definitions, and turns them into flashcard-style quizzes you can mark as "known"
 **Working today**
 
 - **Masonry note grid** — a Pinterest-style layout (`masonic`) with pinned notes in their own
-  section, backed by browser `localStorage`.
+  section, backed by the `/api/notes` persistence layer.
 - **Vocabulary extraction & quiz mode** — click a note to see the difficult words it contains
   with definitions, or open quiz mode to step through them one at a time and dismiss the ones
   you already know.
@@ -17,9 +17,7 @@ definitions, and turns them into flashcard-style quizzes you can mark as "known"
   expansion, and card hovers.
 - **Smart note creation** — a minimal expanding text-bar inspired by modern search interfaces.
 
-**Built but not yet connected** — the persistence layer described under
-[Backend](#backend-backend) below. Notes still live in `localStorage`; see
-[Project status](#-project-status) for what remains.
+See [Project status](#-project-status) for what remains.
 
 ## 🏗️ Architecture (Monorepo)
 
@@ -35,8 +33,7 @@ notes-2.0/
 │   │   ├── schemas/     # Pydantic request/response models
 │   │   └── services/    # NLP / vocabulary analysis
 │   └── alembic/         # Database migrations
-├── docker-compose.yml   # Frontend + PostgreSQL
-├── agent.md             # Agent guidelines and architectural notes
+├── docker-compose.yml   # Frontend + backend + PostgreSQL
 └── README.md            # This file
 ```
 
@@ -125,32 +122,29 @@ npm install
 npm run dev
 ```
 
-Available at `http://localhost:5173`. The frontend calls the backend at
-`http://127.0.0.1:8000`, so start the API first if you want vocabulary features to work.
+Available at `http://localhost:5173`. Loaders and actions call the backend server-side through
+`app/lib/api.server.ts`, which reads `API_URL` and falls back to `http://localhost:8000` — so
+start the API first. Because the browser never calls the backend directly, there is no CORS to
+configure for this path.
 
 ### Running with Docker
 
-`docker compose up` builds the frontend (served on port 3000) alongside PostgreSQL. The
-`backend` service is still commented out in `docker-compose.yml`; enabling it also means
-pointing `DATABASE_URL` at host `db` rather than `localhost`, since containers don't share the
-host's loopback.
+`docker compose up` runs all three services: the frontend on `http://localhost:3000`, the
+backend on `http://localhost:8000`, and PostgreSQL. Inside the compose network the frontend
+reaches the API at `http://backend:8000` and the backend reaches the database at host `db`,
+since containers don't share the host's loopback.
 
 ## 📌 Project status
 
-The frontend and the backend are each working, but they are not yet talking to each other. Be
-aware of the following before picking up work:
+Notes persistence is wired end to end. Be aware of the following before picking up work:
 
-- **Notes are still `localStorage`-only.** The persistence API above exists and is tested, but
-  nothing in the frontend calls it yet. Wiring the note grid to `/api/notes` is the main
-  remaining task.
 - **The frontend calls two endpoints that no longer exist.** `notegrid.tsx` and
   `analytics.tsx` post to `/api/analyze/vocabulary` and `/api/words/known`, which were dropped
   when the backend was restructured. Vocabulary and quiz features will fail against the current
-  API until these are reimplemented in `app/services/vocab.py` and exposed as routes.
-- **The Alembic migrations are stale.** They still describe an older one-to-many schema — they
-  give `word_definitions` a `user_id` and `note_id`, and never create the `note_word` table that
-  `app/db/models.py` now relies on. `alembic upgrade head` therefore produces a schema the ORM
-  cannot use; the migrations need regenerating against the current models.
-- **`backend/venv/` is committed to the repo** and its interpreter is not portable across
-  machines. Create your own virtualenv as shown above rather than using it. Relatedly, there is
-  no `__pycache__` entry in `.gitignore`, so compiled files are tracked.
+  API until these are reimplemented in `app/services/vocab.py` and exposed as routes. Both call
+  sites also hardcode `http://127.0.0.1:8000` from the browser instead of going through
+  `api.server.ts`, so they will not work under Docker and would need CORS.
+- **`backend/venv/` is committed to the repo** (~5,800 files) and its interpreter is not
+  portable across machines. Create your own virtualenv as shown above rather than using it.
+  Relatedly, there is no `__pycache__` entry in `.gitignore`, so ~2,500 compiled files are
+  tracked. `notes2.0/.git.bak/` is a committed copy of an old nested git directory.
