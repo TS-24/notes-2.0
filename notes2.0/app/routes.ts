@@ -13,5 +13,9 @@ export default [
         route("notes", "routes/notes.tsx"),
     ]),
     route("analytics", "routes/analytics.tsx"),
-    route("settings", "routes/menu.tsx")
+    route("settings", "routes/menu.tsx"),
+    // Resource route (loader only, no component). Deliberately outside the
+    // layout: the word roller reads from it constantly, and a lookup inside the
+    // workspace would drag the note list's revalidation along with it.
+    route("api/word-ladder", "routes/api.word-ladder.tsx"),
 ] satisfies RouteConfig;

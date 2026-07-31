@@ -1,7 +1,18 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -67,4 +78,32 @@ class WordDefinition(Base):
 
     notes: Mapped[List["Note"]] = relationship(
         secondary=note_word_association, back_populates="words"
+    )
+
+
+class WordLadder(Base):
+    """
+    A cached word ladder — see app/services/vocab.py.
+
+    Building one means walking WordNet and scoring every candidate, which is
+    the same answer every time for the same word, so it is worth computing once
+    for everybody rather than once per keystroke.
+
+    Keyed on the *surface* form, not the lemma: the rungs are inflected to match
+    what was asked about, so "run" and "running" are legitimately separate rows.
+    """
+
+    # `pos` is the part of speech the ladder was *resolved* to, not a lookup
+    # key — the caller does not say which one they meant, so the service picks.
+
+    __tablename__ = "word_ladders"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    pos: Mapped[str] = mapped_column(String(2), nullable=False, server_default="")
+    # The rungs in order, plainest first.
+    rungs: Mapped[list] = mapped_column(JSON, nullable=False)
+    origin_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

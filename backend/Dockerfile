@@ -3,6 +3,13 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# WordNet is not bundled with the nltk package, and the word ladder is useless
+# without it. Fetch it at build time: downloading on first use would make the
+# first roll take seconds and would need network from a running container.
+ENV NLTK_DATA=/usr/share/nltk_data
+RUN python -m nltk.downloader -d $NLTK_DATA wordnet omw-1.4
+
 COPY . .
 RUN chmod +x ./entrypoint.sh
 

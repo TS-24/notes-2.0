@@ -10,7 +10,7 @@ Companion documents:
   over `agent.md` §3, which still describes the old look.
 - [README.md](README.md) — setup.
 
-Last updated: 2026-07-31 · branch `feature/api-endpoints-review`
+Last updated: 2026-07-31 · branch `feature/word-ladder`
 
 ---
 
@@ -96,6 +96,8 @@ values. That approach was built, tried, and deleted — see
 | `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
 | `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
+| `app/routes/api.word-ladder.tsx` | Loader-only resource route feeding the roller. Outside the layout on purpose — a lookup inside it would revalidate the note list on every chevron click |
+| `backend/app/services/vocab.py` | The ladder: WordNet synonyms ordered by word frequency. Pure, and the only backend logic with tests |
 
 ### Data flow
 
@@ -209,8 +211,18 @@ every transition was two elements imitating each other. Rebuilt around the
 layout route above. Added `updated_at` + `touch` so the landing note follows
 what you actually opened.
 
+**The word ladder.** The vocabulary the roller was waiting for. WordNet supplies
+synonyms but has no notion of formality, so frequency provides the missing axis:
+rare words read as formal and difficult, common ones as plain. A word's ladder
+is its synonyms ordered by how common they are, with the word itself on its own
+rung — up is rarer, down is plainer, and the climb is anchored to the word you
+started from so pressing down walks back exactly the way you came. Built in
+`app/services/vocab.py`, cached in `word_ladders`, served from
+`GET /api/vocab/ladder`, and read by the roller through a loader-only resource
+route. See [§7](#7-open-items) for where the quality actually stands.
+
 **Word roller.** Chevrons above and below the caret's word; clicking rolls the
-word like a slot reel. Replacement word is currently the same word. It runs on
+word like a slot reel. It runs on
 **both** fields — title and body — from the same component; the title just
 needed the same tightly fitting relative wrapper the body already had.
 
@@ -226,6 +238,21 @@ inherited the wrapper's type and rendered the display-face title at body size.
 ## 7. Open items
 
 Ordered by how likely they are to bite.
+
+0. **The ladder's word quality is the weak link, and it is WordNet's fault.**
+   The mechanism works; the vocabulary is uneven. Drawing from more than the two
+   most-used senses of a word pulls in wrong-sense synonyms ("big" starts
+   offering "bad"), and drawing from fewer leaves nothing to climb — `SENSES` in
+   `app/services/vocab.py` is that dial. Even at two, a polysemous word can land
+   badly: `running` offers *escaping, bunking, lamming*, because WordNet's second
+   sense of "run" is fleeing. Nothing about frequency can fix this, and a
+   frequency floor makes it worse rather than better — "shew" (2.46) outranks
+   both "obfuscate" (2.28) and "felicitous" (1.86), so any floor cuts good rungs
+   and keeps junk. The real fix is sense disambiguation from the surrounding
+   sentence, which is what an LLM would be for; the service boundary is
+   `word_ladder()` precisely so that swap stays cheap. Second, smaller wart:
+   replacement is word-level, so "an example" → "an model" — article agreement
+   needs the neighbouring token.
 
 1. **The ghost `+` writes an empty `Untitled` note on click**, before anything
    is typed. Abandon it and it lingers — and because it is then the
