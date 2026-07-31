@@ -41,6 +41,15 @@ class Note(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Drives "where you left off": the newest-touched note is the one the
+    # landing page opens on. Opening a note counts as a touch, so this moves
+    # for reads as well as edits.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     author: Mapped["User"] = relationship(back_populates="notes")
 

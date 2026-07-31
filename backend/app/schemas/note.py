@@ -32,4 +32,5 @@ class NoteRead(NoteBase):
     user_id: int
     is_pinned: bool
     created_at: datetime
+    updated_at: datetime
     words: list[WordDefinitionRead] = []

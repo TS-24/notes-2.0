@@ -1,13 +1,17 @@
 import type { Route } from "./+types/home";
-import Welcome from "../welcome/welcome";
 
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "Notes 2.0" },
-    { name: "description", content: "Welcome to Notes!" },
+    { name: "description", content: "Where you left off" },
   ];
 }
 
+/**
+ * The landing page renders nothing of its own: the note is the workspace
+ * layout's, so that it survives the trip to the grid. Being the index route is
+ * what puts the surface in its full-page mode.
+ */
 export default function Home() {
-  return <Welcome />;
+  return null;
 }

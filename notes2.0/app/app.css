@@ -1,27 +1,43 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
+/* DESIGN.md §3 — serif everywhere. Playfair sets headers, Garamond sets text. */
+@import "@fontsource-variable/playfair-display";
+@import "@fontsource-variable/eb-garamond";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: "EB Garamond Variable", ui-serif, Georgia, serif;
+  --font-display: "Playfair Display Variable", ui-serif, Georgia, serif;
+
+  /* DESIGN.md §4 — warm paper, indigo ink, one rose accent. */
+  --color-paper: #fdf7f1;
+  --color-paper-raised: #f3eae5;
+  --color-ink: #38385a;
+  --color-hairline: #e3c9c4;
+  --color-accent-rose: #ce8380;
+  --color-rose-ink: #b26a76;
+  --color-on-rose: #fff9f5;
+}
+
+html {
+  /* Reserve the scrollbar track always. Without it, leaving the library drops
+     the page height, the scrollbar disappears, and every centred thing shifts
+     sideways — which reads as a jump in the middle of the transition. */
+  scrollbar-gutter: stable;
 }
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  @apply bg-paper text-ink;
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+  /* The paper ramp has no dark variant yet — see DESIGN.md §4. */
+  color-scheme: light;
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: 'Inter Variable', sans-serif;
+  --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -63,8 +79,8 @@ body {
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);

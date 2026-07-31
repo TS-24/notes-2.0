@@ -21,6 +21,8 @@ export interface Note {
   user_id: number;
   is_pinned: boolean;
   created_at: string;
+  /** Bumped by edits and by opening the note — drives "where you left off". */
+  updated_at: string;
   words: WordDefinition[];
 }
 

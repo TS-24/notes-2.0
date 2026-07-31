@@ -53,6 +53,15 @@ def update_note(note_id: int, payload: NoteUpdate, db: Session = Depends(get_db)
     return note
 
 
+@router.post("/{note_id}/touch", response_model=NoteRead)
+def touch_note(note_id: int, db: Session = Depends(get_db)) -> NoteRead:
+    """Record that a note was opened, so it becomes 'where you left off'."""
+    note = crud_note.touch_note(db, note_id)
+    if note is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+    return note
+
+
 @router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note(note_id: int, db: Session = Depends(get_db)) -> None:
     if not crud_note.delete_note(db, note_id):

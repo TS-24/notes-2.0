@@ -73,6 +73,10 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  /** Records that a note was opened, moving it to the head of the list. */
+  touchNote: (id: number) =>
+    request<Note>(`/api/notes/${id}/touch`, { method: "POST" }),
+
   deleteNote: (id: number) =>
     request<void>(`/api/notes/${id}`, { method: "DELETE" }),
 

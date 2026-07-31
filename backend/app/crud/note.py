@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,9 +37,9 @@ def list_notes(
         stmt = stmt.where(Note.user_id == user_id)
     if search:
         stmt = stmt.where(Note.title.ilike(f"%{search}%"))
-    # Newest first, matching how the UI stacks notes. id breaks ties because
-    # notes created in the same transaction share a created_at.
-    stmt = stmt.order_by(Note.created_at.desc(), Note.id.desc()).offset(skip).limit(limit)
+    # Most recently touched first, so the head of the list is the note the user
+    # was last in. id breaks ties between rows written in the same transaction.
+    stmt = stmt.order_by(Note.updated_at.desc(), Note.id.desc()).offset(skip).limit(limit)
     return list(db.scalars(stmt))
 
 
@@ -51,6 +53,23 @@ def update_note(db: Session, note_id: int, **fields) -> Note | None:
         if key in UPDATABLE_FIELDS and value is not None:
             setattr(note, key, value)
 
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+def touch_note(db: Session, note_id: int) -> Note | None:
+    """Mark a note as just-used without changing its content.
+
+    Opening a note counts as an update for "where you left off", but an empty
+    PATCH changes no attributes, so SQLAlchemy would not issue an UPDATE and
+    `onupdate` would never fire. Setting the column explicitly forces it.
+    """
+    note = get_note(db, note_id)
+    if note is None:
+        return None
+
+    note.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(note)
     return note
