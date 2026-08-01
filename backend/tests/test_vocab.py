@@ -152,17 +152,21 @@ class TestUnits:
         assert unit.lookup == "give_up"
 
     def test_a_phrase_ladder_keeps_the_tense(self):
-        from lemminflect import getLemma
+        from lemminflect import getAllInflections, getLemma
 
         _, ladder = unit_ladder("They gave up quickly.", 6)
         assert ladder.rungs[ladder.origin_index] == "gave up"
-        # Every head is an inflected form rather than its dictionary form —
-        # asserted this way because the irregulars ("threw overboard") do not
-        # end in "-ed" and a suffix check would call them a failure.
+        # Every head is a past-tense form of its own lemma. Asserted against the
+        # inflection table rather than by suffix or by "differs from the lemma",
+        # because English breaks both shortcuts: "threw" takes no "-ed", and
+        # "quit" is its own past tense.
         for rung in ladder.rungs:
-            head = rung.split()[0]
+            head = rung.split()[0].lower()
             lemma = getLemma(head, upos="VERB")
-            assert lemma and head.lower() != lemma[0].lower(), rung
+            assert lemma, rung
+            table = getAllInflections(lemma[0], upos="VERB")
+            past = {form.lower() for tag in ("VBD", "VBN") for form in table.get(tag, ())}
+            assert head in past, f"{rung} (head {head!r} is not a past form)"
 
     def test_a_plain_word_is_still_a_unit(self):
         unit = unit_at("This is a big problem.", 11)
