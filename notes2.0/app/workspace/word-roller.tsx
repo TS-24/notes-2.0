@@ -151,6 +151,34 @@ function isWorthLookingUp(word: string) {
   return word.length <= 64 && /\p{L}/u.test(word);
 }
 
+/** How far either side of the caret to look for a sentence boundary. */
+const CONTEXT_LIMIT = 400;
+
+/**
+ * The sentence around an offset, and where that sentence starts in the field.
+ *
+ * The backend resolves the caret to a *unit* — which may be a phrase, or a word
+ * with its article — and answers in sentence coordinates, so the offset of the
+ * sentence is needed to map the answer back onto the field.
+ */
+function sentenceAround(value: string, at: number) {
+  const BOUNDARY = ".!?\n";
+  const before = value.slice(Math.max(0, at - CONTEXT_LIMIT), at);
+  const after = value.slice(at, at + CONTEXT_LIMIT);
+
+  // -1 when the window holds no boundary at all, which lands `from` at the
+  // start of the window — the behaviour we want.
+  const opensAt = Math.max(...[...BOUNDARY].map(mark => before.lastIndexOf(mark)));
+  const closesAt = [...after].findIndex(character => BOUNDARY.includes(character));
+  const rawFrom = at - (before.length - opensAt - 1);
+  const to = at + (closesAt === -1 ? after.length : closesAt + 1);
+
+  const slice = value.slice(rawFrom, to);
+  // Trimming shifts the sentence right, so the field offset moves with it.
+  const from = rawFrom + (slice.length - slice.trimStart().length);
+  return { sentence: slice.trim(), from };
+}
+
 export default function WordRoller({
   fieldRef,
   value,
@@ -177,6 +205,16 @@ export default function WordRoller({
   const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [climb, setClimb] = useState<Climb | null>(null);
+  /*
+    The unit currently being climbed, held across re-locates.
+
+    `wordAtCaret` only ever finds a single word, so once the span has been
+    widened to a unit — "a model", "gave up" — every caret move would shrink it
+    straight back and the climb would lose its anchor, leaving "down" dead after
+    the first press. This remembers the wider span so `locate` can keep it for
+    as long as the text still says what we put there.
+  */
+  const unit = useRef<{ start: number; end: number; word: string } | null>(null);
 
   const locate = useCallback(() => {
     const field = fieldRef.current;
@@ -195,6 +233,21 @@ export default function WordRoller({
       setSpan(null);
       return;
     }
+    // Keep the wider unit span while the caret is still inside it and the text
+    // still reads as we left it.
+    const held = unit.current;
+    const caret = field.selectionStart;
+    if (
+      held &&
+      caret >= held.start &&
+      caret <= held.end &&
+      field.value.slice(held.start, held.end) === held.word
+    ) {
+      setSpan({ ...held, ...measure(field, field.value, held.start, held.end) });
+      return;
+    }
+    unit.current = null;
+
     const found = wordAtCaret(field.value, field.selectionStart);
     if (!found) {
       setSpan(null);
@@ -235,19 +288,22 @@ export default function WordRoller({
 
   const word = span?.word;
   const lookup = word && isWorthLookingUp(word) ? word : null;
+  // The sentence the caret sits in, and where that sentence starts in the
+  // field — the backend answers in sentence coordinates.
+  const context = span ? sentenceAround(value, span.start) : null;
+  const caretInSentence = context && span ? span.start - context.from : null;
 
   /*
-    One fetcher per word, keyed by the word itself.
+    One fetcher per unit, keyed by the sentence and the caret in it.
 
     The caret can cross several words faster than the network answers for any of
     them, and a single shared fetcher keeps only the most recent response — so a
     slow reply for a word the caret has already left can land on top of the word
-    it is on now. Keying by word makes that impossible rather than merely
-    unlikely, and it doubles as a cache: coming back to a word the caret has
-    already visited needs no request at all.
+    it is on now. Keying makes that impossible rather than merely unlikely, and
+    it doubles as a cache: returning to a word already visited needs no request.
   */
   const ladder = useFetcher<{ ladder: WordLadder | null }>({
-    key: `word-ladder:${lookup ?? ""}`,
+    key: `word-ladder:${context?.sentence ?? ""}:${caretInSentence ?? ""}`,
   });
 
   /*
@@ -263,18 +319,48 @@ export default function WordRoller({
   const current = climb && climb.rungs[climb.at] === word ? climb : null;
 
   useEffect(() => {
-    if (!lookup || current) return;
-    // Nothing in flight and nothing already fetched for this word.
+    if (!lookup || !context || caretInSentence === null || current) return;
+    // Nothing in flight and nothing already fetched for this unit.
     if (ladder.state !== "idle" || ladder.data) return;
-    ladder.load(`/api/word-ladder?word=${encodeURIComponent(lookup)}`);
-  }, [lookup, current, ladder]);
+    const query = new URLSearchParams({
+      sentence: context.sentence,
+      caret: String(caretInSentence),
+    });
+    ladder.load(`/api/word-ladder?${query}`);
+  }, [lookup, context?.sentence, caretInSentence, current, ladder]);
 
+  /*
+    Adopt the unit the backend resolved to.
+
+    It is often wider than the word under the caret — "give up" rather than
+    "up", "an example" rather than "example" — and everything downstream keys off
+    `span`: where the chevrons sit, what the reel masks, what gets replaced. So
+    widen the span to the unit and carry its text as the word, which also keeps
+    the climb anchor working, since the rungs are unit text too.
+  */
   useEffect(() => {
     if (current) return;
     const fetched = ladder.data?.ladder;
-    if (!fetched || fetched.word !== word) return;
+    if (!fetched || !fetched.rungs.length || !context) return;
+
+    const field = fieldRef.current;
+    const start = context.from + fetched.start;
+    const end = context.from + fetched.end;
+    if (!field || field.value.slice(start, end) !== fetched.word) return;
+
     setClimb({ rungs: fetched.rungs, at: fetched.origin_index });
-  }, [ladder.data, word, current]);
+    unit.current = { start, end, word: fetched.word };
+    setSpan(previous =>
+      previous && previous.start === start && previous.end === end
+        ? previous
+        : {
+            start,
+            end,
+            word: fetched.word,
+            ...measure(field, field.value, start, end),
+          },
+    );
+  }, [ladder.data, context?.from, current, fieldRef]);
 
   /** Where a press would land, or null when that end of the ladder is reached. */
   const rungAfter = (step: 1 | -1) => {
@@ -294,6 +380,9 @@ export default function WordRoller({
     setRoll({ span, to, direction: step === 1 ? -1 : 1 });
     rollTimer.current = setTimeout(() => {
       setClimb({ ...current, at: next });
+      // The unit is now the replacement, and it has to be held under that name
+      // or the next re-locate shrinks it back to a single word.
+      unit.current = { start: span.start, end: span.start + to.length, word: to };
       // Move the span onto the new word in the same batch as the climb.
       // Without this the two disagree for a render — the climb has advanced to
       // "model" while the span still says "example" — and in that window the
@@ -319,6 +408,28 @@ export default function WordRoller({
 
   return (
     <>
+      {/*
+        Underline what a press would replace.
+
+        With phrases in play the unit is no longer obviously the word under the
+        caret — "running through the park" resolves to the phrasal verb "running
+        through", which is a defensible reading of the words and the wrong
+        reading of the sentence. Nothing in the lexicon can tell those apart, so
+        the honest fix is to show the selection rather than to guess in silence.
+      */}
+      {!roll && current ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute bg-rose-ink/10"
+          style={{
+            left: active.left,
+            top: active.top + active.height - 2,
+            width: active.width,
+            height: 2,
+          }}
+        />
+      ) : null}
+
       {roll ? (
         <div
           aria-hidden

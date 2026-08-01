@@ -82,9 +82,18 @@ export const api = {
 
   listWords: () => request<WordDefinition[]>("/api/words"),
 
-  /** A word's synonyms ordered plainest to rarest — what the roller climbs. */
-  getWordLadder: (word: string) =>
-    request<WordLadder>(`/api/vocab/ladder?word=${encodeURIComponent(word)}`),
+  /**
+   * The ladder for whatever the caret is standing in, plainest to rarest.
+   *
+   * A caret rather than a word, because the unit is not always the word under
+   * it: "give up" has a ladder neither of its words can reach, and an article
+   * travels with the word it attaches to. The response says which span it
+   * resolved to.
+   */
+  getWordLadder: (sentence: string, caret: number) =>
+    request<WordLadder>(
+      `/api/vocab/ladder?${new URLSearchParams({ sentence, caret: String(caret) })}`,
+    ),
 
   attachWord: (noteId: number, wordId: number) =>
     request<Note>(`/api/notes/${noteId}/words/${wordId}`, { method: "POST" }),
