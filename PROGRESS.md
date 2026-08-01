@@ -10,7 +10,8 @@ Companion documents:
   over `agent.md` §3, which still describes the old look.
 - [README.md](README.md) — setup.
 
-Last updated: 2026-07-31 · branch `feature/word-ladder`
+Last updated: 2026-08-01 · branch `dev` (`prod` and `master` are still at
+`fce0475`, one session behind — nothing here has been promoted)
 
 ---
 
@@ -91,13 +92,15 @@ values. That approach was built, tried, and deleted — see
 | `app/routes.ts` | Route config; the layout wrapper lives here |
 | `app/routes/workspace.tsx` | Layout route. Loads the note list once, picks the focused note, touches it on open, renders the surface + `<Outlet/>` |
 | `app/workspace/note-surface.tsx` | **The** note. Modes `page` / `boxed`. Auto-height fields, save-on-blur, double-click toggle |
-| `app/workspace/word-roller.tsx` | Chevrons above/below the caret's word + slot-machine roll |
+| `app/workspace/word-roller.tsx` | Chevrons above/below the caret's **unit** + slot-machine roll. Holds the climb, and the widened unit span, across re-locates |
 | `app/notes/notegrid.tsx` | The library grid (CSS columns), note cards, ghost `+` card, vocabulary dialog |
 | `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
 | `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
 | `app/routes/api.word-ladder.tsx` | Loader-only resource route feeding the roller. Outside the layout on purpose — a lookup inside it would revalidate the note list on every chevron click |
-| `backend/app/services/vocab.py` | The ladder: WordNet synonyms ordered by word frequency. Pure, and the only backend logic with tests |
+| `backend/app/services/vocab.py` | The ladder: unit detection, WordNet candidates, frequency ordering. Pure apart from calling the ranker. The only backend logic with tests (36) |
+| `backend/app/services/ranker.py` | The judge: scores a candidate in its sentence with a masked LM. Loads torch lazily, and returns `None` rather than raising when the model is missing |
+| `backend/app/crud/word_ladder.py` | Cache. Resolves the unit **before** the key is computed — see the trap |
 
 ### Data flow
 
@@ -115,6 +118,30 @@ values. That approach was built, tried, and deleted — see
 - `POST /api/notes/{id}/touch` bumps it. **Needed** because an empty PATCH
   changes no attributes, so SQLAlchemy's `onupdate` never fires — opening a
   note has to touch it explicitly.
+
+### The word ladder
+
+`GET /api/vocab/ladder?sentence=…&caret=N` — a **caret**, not a word, because
+the thing to replace is not always the word under it. The response carries the
+`start`/`end` it resolved to, so the caller knows what to underline and swap.
+
+```
+caret ─▶ unit          longest known phrase, else the word, article folded in
+      ─▶ candidates    WordNet synonyms of the chosen senses
+      ─▶ ranker        which of them read correctly in this sentence
+      ─▶ rungs         survivors, ordered by word frequency
+```
+
+Two environment switches, both defaulting on/standard:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word, no torch loaded |
+| `MLM_MODEL` | `distilbert-base-uncased` | Baked into the image at build time |
+
+Cached in `word_ladders`, keyed `(word, context_hash)`. The hash is empty when
+ranking is off — a dictionary ladder depends on nothing but the word, so it
+should stay cached under it.
 
 ---
 
@@ -167,9 +194,92 @@ Each of these cost real time. They are all commented at the site too.
     span. Copy width, font, letter-spacing, line-height, `text-align`, padding
     and borders, or the mirror's line breaks will not match the field's.
 
-11. **The in-app browser's JS context sometimes reports `window.innerWidth: 0`**
-    while rendering the page correctly, which makes every measurement nonsense.
-    If numbers look absurd, open a fresh tab before believing them.
+11. **The in-app browser pauses between tool calls.** It sometimes reports
+    `window.innerWidth: 0` while rendering correctly, and — worse — it stops
+    advancing the clock: `requestAnimationFrame` never fires, `setInterval` gets
+    ~4 ticks in 2.4s, and a CSS transition sits frozen at its *start* value
+    (inline `font-size: 1.875rem`, computed still `52px`, indefinitely). A
+    screenshot forces a frame, which is why state sometimes only appears after
+    one. **You cannot measure animation smoothness or time anything in this
+    browser.** Assert on settled state; verify motion by reasoning about the
+    code, and say so rather than claiming it was observed.
+
+12. **A controlled `<textarea>` drops the caret to the end when its value
+    changes.** Restoring it in `requestAnimationFrame` runs *before* React
+    commits, so the restore is silently undone. The chevrons then vanish
+    mid-climb because the caret is no longer inside the word. Use a layout
+    effect (`pendingCaret` in `note-surface.tsx`) — after the DOM updates,
+    before paint. This was invisible while the roller rolled a word to itself.
+
+13. **`useFetcher()` keeps only the newest response.** The caret crosses words
+    faster than the network answers, so a slow reply for a word you have already
+    left lands on the word you are on now — and if a guard rejects it, the state
+    machine deadlocks and the chevrons never enable. Give each lookup its own
+    fetcher with `useFetcher({ key })`. It doubles as a cache: revisiting a unit
+    costs no request.
+
+14. **State that must agree has to change in the same batch.** Committing a roll
+    advanced the climb while the measured span still described the old word; for
+    one render the climb looked like it belonged elsewhere and was discarded, so
+    a climb could never pass its first rung. `setSpan` and `setClimb` now move
+    together.
+
+15. **`wordAtCaret` only ever finds one word, and will shrink a unit back.**
+    Once the span is widened to "a model" or "gave up", every caret move
+    recomputes it as "model"/"gave", the climb loses its anchor and **down** dies
+    after one press. `word-roller` holds the unit in a ref and keeps it while
+    the caret is inside it and the text still reads as it was left.
+
+16. **Word frequency cannot separate archaic from merely rare.** A frequency
+    *floor* looks like the obvious way to drop WordNet junk, and it is backwards:
+    "shew" scores 2.46, above both "obfuscate" (2.28) and "felicitous" (1.86).
+    Any floor cuts good rungs and keeps the junk. Only `zipf == 0` — no signal at
+    all — is safe to filter on.
+
+17. **Word frequency cannot separate an idiom from two adjacent words either.**
+    "run through" scores 5.34 against "give up" at 5.63, because `wordfreq`
+    estimates a phrase from its parts. So there is no frequency test for "is this
+    really a phrasal verb here". The ranker decides it instead, by scoring the
+    phrase's synonyms against the bare word's.
+
+18. **A masked LM can *score* words it cannot *say*.** One `[MASK]` emits one
+    token, and the ~30k WordPiece vocabulary has no single token for the rare
+    words this feature exists to offer — `felicitous` is `fe ##lic ##ito ##us`,
+    and 7 of 15 sampled hard words split while every plain word survived. So
+    generation is structurally biased against the rare end of the ladder.
+    Scoring a candidate you already hold has no such limit. **This asymmetry is
+    the whole reason the architecture is dictionary-proposes / model-ranks.**
+
+19. **Fluency is not synonymy, and per-word filtering cannot fix it.** "This is a
+    bad problem" reads perfectly, so scoring loose candidates by fit lets "bad"
+    through as a synonym for "big". Score *senses as groups*: a sense is a set of
+    words meaning the same thing, and the wrong set reads badly together even
+    when one member reads fine alone.
+
+20. **Do not normalise the ranker by word frequency.** Pointwise mutual
+    information is the textbook correction for "common words score well
+    everywhere" — and it made this worse, because it rewards rarity and the
+    ladder already climbs toward rarity. The two compound: "running through the
+    park" went straight back to offering "escaping". Raw fit is correct *because*
+    difficulty is applied separately, afterwards.
+
+21. **Resolve the unit before computing a cache key.** Which unit the caret is in
+    depends on the sentence — "running through" is the unit in "…through the
+    supplies" and not in "…through the park". Keying on the raw longest match
+    serves one sentence's answer to the other, and it looks like the ranker is
+    broken when it is not.
+
+22. **A shared Postgres volume remembers migrations from other branches.** Switch
+    to a branch that lacks a revision the DB is stamped with and the backend will
+    not start: `Can't locate revision identified by …`. Downgrade *before*
+    switching, or restore the file temporarily, mount the host tree into the
+    image (`COPY . .` means a `compose run` will not see your working copy), and
+    `alembic downgrade` with the real password from `.env`.
+
+23. **Docker Desktop on macOS has no GPU passthrough.** Anything model-shaped in
+    this container is CPU-only whatever you install, so pin the CPU torch wheel
+    (`--extra-index-url https://download.pytorch.org/whl/cpu`) or pip drags in
+    gigabytes of unusable CUDA.
 
 ---
 
@@ -233,55 +343,105 @@ on `/`. `note-surface` now passes the surface colour down. The reel also copies
 the field's own typography — sitting outside the textarea, it otherwise
 inherited the wrapper's type and rendered the display-face title at body size.
 
+**Units, not words.** Replacing the caret's word is the wrong unit surprisingly
+often. "give up" means something neither of its words does and has a ladder
+neither can reach; an article has to travel with the word it attaches to, or
+"an example" becomes "an model". Two findings drove this: **33% of WordNet's
+lemma names are multi-word** (68,082 of 206,978) and were all being discarded by
+a `"_"` filter, and `similar_tos()` — the adjective satellite clusters — was
+never followed, which had left "big" with two candidates where it has 88. The
+caret now resolves to a unit: longest known phrase else the word, lemmatised so
+"gave up" finds `give_up`, with the tense restored at the **head** for verb
+phrases and the **tail** for noun compounds. (Getting that backwards produced
+"businesses firm" for "business firms".)
+
+**The generative experiment — tried and abandoned.** Before the current design,
+the masked LM was used the obvious way round: blank the word out of its sentence
+and ask what fits. It genuinely solved disambiguation — "a ML model" drew
+*project, design, code* while "a model in Paris" drew *director, professional* —
+but it destroyed meaning, because fill-mask proposes what *fits the slot*, not
+what means the same: `big → small`, `use → know, take, love`, `good → public`.
+It also cut off the rare end of the ladder for the tokenizer reason in trap 18.
+Latency was never the problem (~40–70ms). The branch was closed as
+[#14](https://github.com/TS-24/notes-2.0/pull/14); its torch/transformers
+plumbing was kept. **Do not re-attempt generation** — the failure is structural,
+not a matter of prompting or thresholds.
+
+**The inversion.** The same model, used as a judge instead. WordNet proposes
+(no vocabulary ceiling — it is a dictionary) and the model ranks (no synonymy
+needed — it only compares). That is `ranker.py`. It fixed the wrong-sense
+problem the ladder shipped with, and the same instrument settles which *unit*
+the caret is in:
+
+```
+"She was running through the park."      → going, running, leading, passing
+"We were running through the supplies."  → using up, eating up, wiping out
+```
+
+Three approaches were tried and rejected on the way, all recorded as traps
+19–21: per-word fluency filtering, taking only the single winning sense, and PMI
+frequency normalisation.
+
 ---
 
 ## 7. Open items
 
 Ordered by how likely they are to bite.
 
-0. **The ladder's word quality is the weak link, and it is WordNet's fault.**
-   The mechanism works; the vocabulary is uneven. Drawing from more than the two
-   most-used senses of a word pulls in wrong-sense synonyms ("big" starts
-   offering "bad"), and drawing from fewer leaves nothing to climb — `SENSES` in
-   `app/services/vocab.py` is that dial. Even at two, a polysemous word can land
-   badly: `running` offers *escaping, bunking, lamming*, because WordNet's second
-   sense of "run" is fleeing. Nothing about frequency can fix this, and a
-   frequency floor makes it worse rather than better — "shew" (2.46) outranks
-   both "obfuscate" (2.28) and "felicitous" (1.86), so any floor cuts good rungs
-   and keeps junk. The real fix is sense disambiguation from the surrounding
-   sentence, which is what an LLM would be for; the service boundary is
-   `word_ladder()` precisely so that swap stays cheap. Second, smaller wart:
-   replacement is word-level, so "an example" → "an model" — article agreement
-   needs the neighbouring token.
+0. **Acronyms and jargon have no ladder at all, and ranking cannot give them
+   one.** `ML` resolves to *millilitre*; `API` and `GPU` have no WordNet entry
+   whatsoever. This is a *lexicon* problem, not a ranking problem — the
+   candidate isn't in the box, so nothing downstream can surface it. Two fixes,
+   in order of cost: (a) a guard that declines on tokens the frequency corpus
+   does not know, so the roller says nothing instead of offering `MILLILITRE` —
+   cheap, and worth doing regardless; (b) an open-vocabulary fallback (hosted
+   LLM, or PPDB for phrases) called *only* on lexicon misses and cached forever,
+   which converges to almost no calls because a person's jargon is small and
+   repetitive.
 
-1. **The ghost `+` writes an empty `Untitled` note on click**, before anything
+1. **Some noun senses still do not discriminate.** `model` returns the
+   *example/exemplar* reading in both "a ML model" and "a model in Paris", which
+   is worse than the plain dictionary's *framework* for the first. Verbs
+   discriminate well (`running` is correct in both park and supplies); nouns are
+   the weak spot. Suspect the sense-group mean in `ranker.rank_senses` favours
+   senses made of common words — but note that the obvious correction for that,
+   dividing out word frequency, was tried and made things worse (trap 20). Try
+   scoring senses by their gloss instead of by their members.
+
+2. **The ranker costs 400–800ms on a cache miss** and ~1GB of image for torch
+   and the weights. Both are per-deployment rather than per-keystroke — a unit
+   is cached after its first look — but the first press on a new sentence is
+   visibly slower than the 460ms roll. `LADDER_RANKING=off` reverts to
+   dictionary-only if that trade stops being worth it.
+
+3. **The ghost `+` writes an empty `Untitled` note on click**, before anything
    is typed. Abandon it and it lingers — and because it is then the
    most-recently-updated note, it *takes over the landing page*. Fix: delete the
    note on close when it is still empty.
 
-2. **Closing a note leaves a dead end.** Done / Escape / click-away drop you on
+4. **Closing a note leaves a dead end.** Done / Escape / click-away drop you on
    the bare library with no note to double-click and no exit link, so the only
    way back to `/` is the browser's back button. Decide between: make those
    actions also return to `/`, or give the bare library its own quiet exit.
 
-3. **Vocabulary analysis is not wired up.** `notegrid.tsx` still calls
+5. **Vocabulary analysis is not wired up.** `notegrid.tsx` still calls
    `http://127.0.0.1:8000/api/analyze/vocabulary` **directly from the browser** —
    the last place that bypasses the server-only API client — and the endpoint
    does not exist. See the `TODO(step 6)` in that file.
 
-4. **Dark mode does not exist.** The paper ramp is light-only and `app.css`
+6. **Dark mode does not exist.** The paper ramp is light-only and `app.css`
    pins `color-scheme: light`.
 
-5. **The ornament layer (DESIGN.md §6) is unbuilt.** Needs real SVG line art;
+7. **The ornament layer (DESIGN.md §6) is unbuilt.** Needs real SVG line art;
    it is specified but has no assets.
 
-6. **`components/ui/*` is unmigrated** — still shadcn defaults, off the design
+8. **`components/ui/*` is unmigrated** — still shadcn defaults, off the design
    tokens.
 
-7. **`/analytics` and `/settings` are outside the workspace layout** and
+9. **`/analytics` and `/settings` are outside the workspace layout** and
    un-migrated. `/settings` is a placeholder.
 
-8. **`agent.md` §3 contradicts DESIGN.md** (it asks for gradients). It should be
+10. **`agent.md` §3 contradicts DESIGN.md** (it asks for gradients). It should be
    replaced with a pointer to DESIGN.md.
 
 ---
@@ -293,5 +453,14 @@ Ordered by how likely they are to bite.
 - Check the database directly after any mutation:
   `curl -s localhost:8000/api/notes | python3 -m json.tool`.
 - Read the console after UI changes — two crashes were only visible there.
-- Restore test data afterwards. Notes created or edited while testing are the
-  user's real notes.
+- **Test against a scratch note, not the user's notes.** Create one via
+  `POST /api/notes`, drive it, `DELETE` it afterwards. Learned the hard way:
+  driving the roller on note 10 left three rolled words saved into it
+  (`Demo→Demonstration`, `model→framework`, `wanted→required`) and they were
+  only caught by inspecting the API at the end. Restoring meant reconstructing
+  the original text from an earlier transcript, which is luck, not process.
+- Check the database directly after any mutation, and again before you finish:
+  `curl -s localhost:8000/api/notes | python3 -m json.tool`.
+- The backend restarts when you `compose up --build frontend`, because frontend
+  depends on it. A page load during that window fails with `ECONNREFUSED` and
+  looks like a code bug. Check `compose ps` uptime before believing it.
