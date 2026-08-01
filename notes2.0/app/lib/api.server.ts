@@ -82,9 +82,24 @@ export const api = {
 
   listWords: () => request<WordDefinition[]>("/api/words"),
 
-  /** A word's synonyms ordered plainest to rarest — what the roller climbs. */
-  getWordLadder: (word: string) =>
-    request<WordLadder>(`/api/vocab/ladder?word=${encodeURIComponent(word)}`),
+  /**
+   * A word's replacements ordered plainest to rarest — what the roller climbs.
+   *
+   * `sentence` and the offsets within it are only read by the contextual
+   * engine; the WordNet one answers from the word alone and ignores them.
+   */
+  getWordLadder: (
+    word: string,
+    context?: { sentence: string; start: number; end: number },
+  ) => {
+    const params = new URLSearchParams({ word });
+    if (context) {
+      params.set("sentence", context.sentence);
+      params.set("start", String(context.start));
+      params.set("end", String(context.end));
+    }
+    return request<WordLadder>(`/api/vocab/ladder?${params}`);
+  },
 
   attachWord: (noteId: number, wordId: number) =>
     request<Note>(`/api/notes/${noteId}/words/${wordId}`, { method: "POST" }),

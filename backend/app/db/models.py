@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -97,9 +98,17 @@ class WordLadder(Base):
     # key — the caller does not say which one they meant, so the service picks.
 
     __tablename__ = "word_ladders"
+    __table_args__ = (
+        UniqueConstraint("word", "context_hash", name="uq_word_ladders_word_context"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    word: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # Which sentence the ladder was built for, hashed — empty for the WordNet
+    # engine, which never sees one. This is the cost of a contextual engine: the
+    # answer is no longer a property of the word, so the cache converges on the
+    # set of *sentences* a person writes rather than the set of words.
+    context_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
     pos: Mapped[str] = mapped_column(String(2), nullable=False, server_default="")
     # The rungs in order, plainest first.
     rungs: Mapped[list] = mapped_column(JSON, nullable=False)

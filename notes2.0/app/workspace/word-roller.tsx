@@ -151,6 +151,39 @@ function isWorthLookingUp(word: string) {
   return word.length <= 64 && /\p{L}/u.test(word);
 }
 
+/** How far either side of the word to look for a sentence boundary. */
+const CONTEXT_LIMIT = 400;
+
+/**
+ * The sentence the word sits in, and where the word sits inside it.
+ *
+ * Only the contextual engine reads this — the dictionary one answers from the
+ * word alone — but the roller cannot know which is running, so it always sends
+ * it. The whole field would be wrong to send: a note runs to paragraphs, and
+ * the model only needs the clause around the word to disambiguate it.
+ */
+function sentenceAround(value: string, start: number, end: number) {
+  const BOUNDARY = ".!?\n";
+  const before = value.slice(Math.max(0, start - CONTEXT_LIMIT), start);
+  const after = value.slice(end, end + CONTEXT_LIMIT);
+
+  // `lastIndexOf` gives -1 when the window holds no boundary at all, which
+  // lands `from` at the start of the window — the behaviour we want.
+  const opensAt = Math.max(...[...BOUNDARY].map(mark => before.lastIndexOf(mark)));
+  const closesAt = [...after].findIndex(character => BOUNDARY.includes(character));
+  const from = start - (before.length - opensAt - 1);
+  const to = end + (closesAt === -1 ? after.length : closesAt + 1);
+
+  const slice = value.slice(from, to);
+  // Trimming shifts everything left, so the word's offsets shift with it.
+  const trimmed = slice.length - slice.trimStart().length;
+  return {
+    sentence: slice.trim(),
+    start: start - from - trimmed,
+    end: end - from - trimmed,
+  };
+}
+
 export default function WordRoller({
   fieldRef,
   value,
@@ -235,19 +268,22 @@ export default function WordRoller({
 
   const word = span?.word;
   const lookup = word && isWorthLookingUp(word) ? word : null;
+  const context = lookup && span ? sentenceAround(value, span.start, span.end) : null;
 
   /*
-    One fetcher per word, keyed by the word itself.
+    One fetcher per word *in its sentence*.
 
     The caret can cross several words faster than the network answers for any of
     them, and a single shared fetcher keeps only the most recent response — so a
     slow reply for a word the caret has already left can land on top of the word
-    it is on now. Keying by word makes that impossible rather than merely
-    unlikely, and it doubles as a cache: coming back to a word the caret has
-    already visited needs no request at all.
+    it is on now. Keying makes that impossible rather than merely unlikely, and
+    it doubles as a cache: returning to a word already visited needs no request.
+
+    The sentence belongs in the key because the contextual engine's answer
+    depends on it — the same word in two sentences is two different ladders.
   */
   const ladder = useFetcher<{ ladder: WordLadder | null }>({
-    key: `word-ladder:${lookup ?? ""}`,
+    key: `word-ladder:${lookup ?? ""}:${context?.sentence ?? ""}`,
   });
 
   /*
@@ -263,11 +299,19 @@ export default function WordRoller({
   const current = climb && climb.rungs[climb.at] === word ? climb : null;
 
   useEffect(() => {
-    if (!lookup || current) return;
+    if (!lookup || !context || current) return;
     // Nothing in flight and nothing already fetched for this word.
     if (ladder.state !== "idle" || ladder.data) return;
-    ladder.load(`/api/word-ladder?word=${encodeURIComponent(lookup)}`);
-  }, [lookup, current, ladder]);
+    const query = new URLSearchParams({
+      word: lookup,
+      sentence: context.sentence,
+      start: String(context.start),
+      end: String(context.end),
+    });
+    ladder.load(`/api/word-ladder?${query}`);
+    // Primitives, not the object: `context` is rebuilt every render, so
+    // depending on it directly would re-run this on every keystroke.
+  }, [lookup, context?.sentence, context?.start, context?.end, current, ladder]);
 
   useEffect(() => {
     if (current) return;

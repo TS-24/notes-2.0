@@ -26,6 +26,11 @@ services:
       # localhost here would resolve to the backend container itself.
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notes_db}
       ENVIRONMENT: development
+      # Which engine builds a word ladder — see app/crud/word_ladder.py.
+      #   wordnet : dictionary synonyms, no context, cached per word
+      #   mlm     : a language model fills the word's slot in its own sentence
+      # Switch with `LADDER_ENGINE=mlm docker compose up -d backend`.
+      LADDER_ENGINE: ${LADDER_ENGINE:-wordnet}
     depends_on:
       db:
         condition: service_healthy

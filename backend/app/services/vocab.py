@@ -63,7 +63,7 @@ def _syllables(word: str) -> int:
     return len(_HYPHENATOR.positions(word)) + 1
 
 
-def _difficulty(word: str) -> tuple[float, int, int]:
+def difficulty(word: str) -> tuple[float, int, int]:
     """
     Sort key, ascending — plainest first.
 
@@ -168,7 +168,7 @@ def word_ladder(word: str, pos: str | None = None) -> Ladder:
                 continue
             candidates.add(name.lower())
 
-    ordered = sorted(candidates, key=_difficulty)
+    ordered = sorted(candidates, key=difficulty)
     origin = ordered.index(lemma)
     start = max(0, origin - RUNGS_EACH_WAY)
     ordered = ordered[start : origin + RUNGS_EACH_WAY + 1]
