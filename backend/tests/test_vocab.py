@@ -13,7 +13,7 @@ The rungs will move as the scoring is tuned; the invariants should not.
 import pytest
 
 from app.services import vocab
-from app.services.vocab import word_ladder
+from app.services.vocab import indefinite_article, unit_at, unit_ladder, word_ladder
 
 
 def zipf(word: str) -> float:
@@ -77,12 +77,16 @@ class TestWearsTheOriginalForm:
     """
 
     def test_present_participle_stays_a_present_participle(self):
+        # A verb phrase inflects at its head: "running away", never
+        # "running awaying".
         rungs = word_ladder("running").rungs
-        assert all(rung.endswith("ing") for rung in rungs), rungs
+        assert all(rung.split()[0].endswith("ing") for rung in rungs), rungs
 
     def test_plural_stays_plural(self):
+        # A noun compound inflects at its tail: "business firms", never
+        # "businesses firm".
         rungs = word_ladder("houses").rungs
-        assert all(rung.endswith("s") for rung in rungs), rungs
+        assert all(rung.split()[-1].endswith("s") for rung in rungs), rungs
 
     def test_past_tense_stays_past_tense(self):
         ladder = word_ladder("said")
@@ -107,15 +111,97 @@ class TestCapitalisation:
 
 
 class TestUnusableCandidates:
-    def test_multi_word_lemmas_are_dropped(self):
-        # WordNet joins these with an underscore; they cannot be swapped into
-        # the span of a single word.
+    def test_multi_word_lemmas_are_rendered_as_prose(self):
+        # WordNet joins them with an underscore. They are kept — they are a
+        # third of the lexicon — but "give_up" is not something to drop into a
+        # sentence.
         for word in ["give", "run", "put", "help", "show", "big"]:
             assert not any("_" in rung for rung in word_ladder(word).rungs)
+
+    def test_modifiers_stay_single_words(self):
+        # WordNet's adjective satellites include constructions like "too_large"
+        # that read as broken English in place.
+        for word in ["big", "fast", "clear", "hard"]:
+            assert all(" " not in rung for rung in word_ladder(word).rungs)
 
     def test_words_with_no_usage_signal_are_dropped(self):
         for word in ["big", "show", "happy"]:
             assert all(zipf(rung) > 0 for rung in word_ladder(word).rungs)
+
+
+class TestUnits:
+    """
+    What the caret is standing in is often not a bare word: "give up" means
+    something neither of its words does, and an article has to travel with the
+    word it attaches to.
+    """
+
+    def caret_in(self, sentence: str, word: str) -> int:
+        return sentence.index(word) + 1
+
+    def test_a_phrase_beats_the_word_inside_it(self):
+        sentence = "I decided to give up on it."
+        for word in ["give", "up"]:
+            unit = unit_at(sentence, self.caret_in(sentence, word))
+            assert unit.text == "give up"
+            assert unit.lookup == "give_up"
+
+    def test_an_inflected_phrase_still_finds_its_entry(self):
+        unit = unit_at("They gave up quickly.", 6)
+        assert unit.text == "gave up"
+        assert unit.lookup == "give_up"
+
+    def test_a_phrase_ladder_keeps_the_tense(self):
+        from lemminflect import getLemma
+
+        _, ladder = unit_ladder("They gave up quickly.", 6)
+        assert ladder.rungs[ladder.origin_index] == "gave up"
+        # Every head is an inflected form rather than its dictionary form —
+        # asserted this way because the irregulars ("threw overboard") do not
+        # end in "-ed" and a suffix check would call them a failure.
+        for rung in ladder.rungs:
+            head = rung.split()[0]
+            lemma = getLemma(head, upos="VERB")
+            assert lemma and head.lower() != lemma[0].lower(), rung
+
+    def test_a_plain_word_is_still_a_unit(self):
+        unit = unit_at("This is a big problem.", 11)
+        assert "big" in unit.text
+
+    def test_no_unit_outside_a_word(self):
+        assert unit_at("hello   world", 7) is None
+
+
+class TestArticles:
+    def test_the_article_joins_the_unit(self):
+        unit = unit_at("This is an example.", 12)
+        assert unit.text == "an example"
+        assert unit.lookup == "example"
+        assert unit.article == "an"
+
+    def test_the_article_agrees_with_whatever_replaces_the_word(self):
+        # The bug this exists for: replacing the word alone leaves "an model".
+        _, ladder = unit_ladder("This is an example.", 12)
+        for rung in ladder.rungs:
+            article, _, rest = rung.partition(" ")
+            assert article == indefinite_article(rest), rung
+
+    @pytest.mark.parametrize(
+        "word,expected",
+        [
+            ("example", "an"),
+            ("model", "a"),
+            ("instance", "an"),
+            # Sound, not spelling.
+            ("hour", "an"),
+            ("honest", "an"),
+            ("university", "a"),
+            ("European", "a"),
+            ("one", "a"),
+        ],
+    )
+    def test_a_or_an_follows_the_sound(self, word, expected):
+        assert indefinite_article(word) == expected
 
 
 class TestPartOfSpeech:

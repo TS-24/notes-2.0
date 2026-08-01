@@ -23,6 +23,13 @@ export interface WordLadder {
   rungs: string[];
   /** Where `word` itself sits in `rungs`. */
   origin_index: number;
+  /**
+   * The span the rungs replace, within the sentence that was sent. Wider than
+   * the word under the caret when the unit is a phrase ("give up") or carries
+   * an article ("an example").
+   */
+  start: number;
+  end: number;
 }
 
 /** Mirrors backend/app/schemas/note.py::NoteRead */

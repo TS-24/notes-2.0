@@ -13,13 +13,15 @@ import type { Route } from "./+types/api.word-ladder";
  * the two direct-from-browser calls that are already logged as a bug.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  const word = new URL(request.url).searchParams.get("word")?.trim();
-  if (!word) {
+  const params = new URL(request.url).searchParams;
+  const sentence = params.get("sentence") ?? "";
+  const caret = Number(params.get("caret") ?? -1);
+  if (!sentence || caret < 0) {
     return { ladder: null };
   }
 
   try {
-    return { ladder: await api.getWordLadder(word) };
+    return { ladder: await api.getWordLadder(sentence, caret) };
   } catch (error) {
     // A word with no ladder is an ordinary outcome, not a failure — the roller
     // just has nowhere to climb. Never break the editor over a synonym lookup.
