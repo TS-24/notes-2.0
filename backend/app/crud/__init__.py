@@ -1,3 +1,3 @@
-from . import note, user, word_definition
+from . import note, user, word_definition, word_ladder
 
-__all__ = ["note", "user", "word_definition"]
+__all__ = ["note", "user", "word_definition", "word_ladder"]

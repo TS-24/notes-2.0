@@ -142,6 +142,27 @@ export default function NoteSurface({
     ? "var(--color-paper-raised)"
     : "var(--color-paper)";
 
+  /*
+    Where to put the caret after the word roller swaps a word out.
+
+    It has to land just past the replacement, or the caret is no longer inside
+    the word and the chevrons vanish mid-climb. Restoring it has to wait for
+    React to commit the new text: a controlled textarea whose value changes puts
+    the caret at the very end, so anything set before the commit — in the
+    handler, or in a requestAnimationFrame, which is what this used to do — is
+    immediately undone. A layout effect runs after the DOM is updated and before
+    the browser paints, so the caret never visibly jumps.
+  */
+  const pendingCaret = useRef<{ field: HTMLTextAreaElement | null; at: number } | null>(
+    null,
+  );
+  useMeasureEffect(() => {
+    const pending = pendingCaret.current;
+    if (!pending?.field) return;
+    pendingCaret.current = null;
+    pending.field.setSelectionRange(pending.at, pending.at);
+  });
+
   // Re-measure when the mode flips: the type changes size, so the number of
   // lines can change even though the text did not.
   useMeasureEffect(() => {
@@ -334,11 +355,11 @@ export default function NoteSurface({
             value={title}
             background={surface}
             onReplace={(start, end, word) => {
-              const field = titleField.ref.current;
               setTitle(prev => prev.slice(0, start) + word + prev.slice(end));
-              requestAnimationFrame(() => {
-                field?.setSelectionRange(start + word.length, start + word.length);
-              });
+              pendingCaret.current = {
+                field: titleField.ref.current,
+                at: start + word.length,
+              };
             }}
           />
         </div>
@@ -363,12 +384,11 @@ export default function NoteSurface({
             value={content}
             background={surface}
             onReplace={(start, end, word) => {
-              const field = bodyField.ref.current;
               setContent(prev => prev.slice(0, start) + word + prev.slice(end));
-              // Put the caret back where the word was, so the chevrons stay.
-              requestAnimationFrame(() => {
-                field?.setSelectionRange(start + word.length, start + word.length);
-              });
+              pendingCaret.current = {
+                field: bodyField.ref.current,
+                at: start + word.length,
+              };
             }}
           />
         </div>

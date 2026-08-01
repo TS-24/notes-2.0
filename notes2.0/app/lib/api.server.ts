@@ -7,7 +7,7 @@
  * configure and the API host stays private to the compose network.
  */
 
-import type { Note, User, WordDefinition } from "./types";
+import type { Note, User, WordDefinition, WordLadder } from "./types";
 
 const API_URL = process.env.API_URL ?? "http://localhost:8000";
 
@@ -81,6 +81,10 @@ export const api = {
     request<void>(`/api/notes/${id}`, { method: "DELETE" }),
 
   listWords: () => request<WordDefinition[]>("/api/words"),
+
+  /** A word's synonyms ordered plainest to rarest — what the roller climbs. */
+  getWordLadder: (word: string) =>
+    request<WordLadder>(`/api/vocab/ladder?word=${encodeURIComponent(word)}`),
 
   attachWord: (noteId: number, wordId: number) =>
     request<Note>(`/api/notes/${noteId}/words/${wordId}`, { method: "POST" }),

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFetcher } from "react-router";
 import { motion } from "framer-motion";
 import { ChevronUp, ChevronDown } from "lucide-react";
+import type { WordLadder } from "~/lib/types";
 
 /**
  * The chevrons that appear above and below the word the caret is sitting in,
@@ -133,11 +135,20 @@ function measure(
 }
 
 /**
- * Where the replacement comes from. For now a word rolls to itself, so the
- * animation can be judged before the vocabulary behind it exists.
+ * Where the replacement comes from: a ladder of synonyms ordered plainest to
+ * rarest, fetched once per word from `/api/word-ladder`. Up climbs toward the
+ * rarer, more formal end; down walks back toward the plain one.
  */
-function nextWord(word: string) {
-  return word;
+type Climb = {
+  /** Plainest first — the ladder as the backend built it. */
+  rungs: string[];
+  /** Which rung the field is showing right now. */
+  at: number;
+};
+
+/** Worth asking the backend about? Numbers and stray punctuation are not. */
+function isWorthLookingUp(word: string) {
+  return word.length <= 64 && /\p{L}/u.test(word);
 }
 
 export default function WordRoller({
@@ -164,6 +175,8 @@ export default function WordRoller({
     direction: 1 | -1;
   } | null>(null);
   const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [climb, setClimb] = useState<Climb | null>(null);
 
   const locate = useCallback(() => {
     const field = fieldRef.current;
@@ -220,11 +233,78 @@ export default function WordRoller({
     [],
   );
 
-  const startRoll = (direction: 1 | -1) => {
-    if (!span || roll) return;
-    setRoll({ span, to: nextWord(span.word), direction });
+  const word = span?.word;
+  const lookup = word && isWorthLookingUp(word) ? word : null;
+
+  /*
+    One fetcher per word, keyed by the word itself.
+
+    The caret can cross several words faster than the network answers for any of
+    them, and a single shared fetcher keeps only the most recent response — so a
+    slow reply for a word the caret has already left can land on top of the word
+    it is on now. Keying by word makes that impossible rather than merely
+    unlikely, and it doubles as a cache: coming back to a word the caret has
+    already visited needs no request at all.
+  */
+  const ladder = useFetcher<{ ladder: WordLadder | null }>({
+    key: `word-ladder:${lookup ?? ""}`,
+  });
+
+  /*
+    The climb, but only while it still describes the word under the caret.
+
+    Replacing a word moves the caret into the *replacement*: roll "use" to
+    "utilise" and the caret now sits in "utilise". That has to keep climbing the
+    same ladder — otherwise pressing down would not walk back to "use" and a few
+    presses would wander off somewhere unrelated. Checking the rung against the
+    word does both jobs: it holds the climb across our own replacement, and it
+    drops it the moment the caret lands somewhere genuinely different.
+  */
+  const current = climb && climb.rungs[climb.at] === word ? climb : null;
+
+  useEffect(() => {
+    if (!lookup || current) return;
+    // Nothing in flight and nothing already fetched for this word.
+    if (ladder.state !== "idle" || ladder.data) return;
+    ladder.load(`/api/word-ladder?word=${encodeURIComponent(lookup)}`);
+  }, [lookup, current, ladder]);
+
+  useEffect(() => {
+    if (current) return;
+    const fetched = ladder.data?.ladder;
+    if (!fetched || fetched.word !== word) return;
+    setClimb({ rungs: fetched.rungs, at: fetched.origin_index });
+  }, [ladder.data, word, current]);
+
+  /** Where a press would land, or null when that end of the ladder is reached. */
+  const rungAfter = (step: 1 | -1) => {
+    if (!current) return null;
+    const next = current.at + step;
+    return next >= 0 && next < current.rungs.length ? next : null;
+  };
+
+  // `step` is movement along the ladder: +1 rarer, -1 plainer.
+  const startRoll = (step: 1 | -1) => {
+    if (!span || roll || !current) return;
+    const next = rungAfter(step);
+    if (next === null) return;
+    // Resolved once, here: the reel shows this word and the commit below writes
+    // the same one, so what lands is what was shown.
+    const to = current.rungs[next];
+    setRoll({ span, to, direction: step === 1 ? -1 : 1 });
     rollTimer.current = setTimeout(() => {
-      onReplace(span.start, span.end, nextWord(span.word));
+      setClimb({ ...current, at: next });
+      // Move the span onto the new word in the same batch as the climb.
+      // Without this the two disagree for a render — the climb has advanced to
+      // "model" while the span still says "example" — and in that window the
+      // climb reads as belonging to some other word, which is enough for the
+      // effects below to throw it away and start a fresh one. `locate` corrects
+      // the measurements a moment later; what matters here is that the word
+      // never lags behind the rung.
+      setSpan(prev =>
+        prev ? { ...prev, word: to, end: prev.start + to.length } : prev,
+      );
+      onReplace(span.start, span.end, to);
       setRoll(null);
     }, 460);
   };
@@ -262,23 +342,42 @@ export default function WordRoller({
                 key={i}
                 style={{ height: active.height, lineHeight: `${active.height}px` }}
               >
-                {i === REEL - 1 && roll.direction === 1 ? roll.to : active.word}
+                {/*
+                  The new word goes in whichever cell the reel comes to rest on:
+                  the last one when the strip travels up, the first when it
+                  travels down. Every other cell repeats the old word, which is
+                  what makes the spin read as a spin.
+                */}
+                {i === (roll.direction === 1 ? REEL - 1 : 0) ? roll.to : active.word}
               </div>
             ))}
           </motion.div>
         </div>
       ) : null}
 
-      {(["up", "down"] as const).map(which => (
+      {(["up", "down"] as const).map(which => {
+        // Up the ladder is toward the rarer, more formal word.
+        const step = which === "up" ? 1 : -1;
+        const exhausted = rungAfter(step) === null;
+        return (
         <button
           key={which}
           type="button"
-          aria-label={which === "up" ? "Previous word" : "Next word"}
+          aria-label={which === "up" ? "A more formal word" : "A simpler word"}
+          // Nothing left in that direction — this word is already the plainest
+          // or the rarest thing WordNet offers. Say so by going faint rather
+          // than by rolling the word to itself.
+          disabled={exhausted}
+          aria-disabled={exhausted}
           // Keep the caret where it is: losing focus would take the chevrons
           // away before the click landed.
           onMouseDown={event => event.preventDefault()}
-          onClick={() => startRoll(which === "up" ? -1 : 1)}
-          className="absolute flex items-center justify-center text-ink/35 transition-colors hover:text-rose-ink"
+          onClick={() => startRoll(step)}
+          className={`absolute flex items-center justify-center transition-colors ${
+            exhausted
+              ? "cursor-default text-ink/10"
+              : "text-ink/35 hover:text-rose-ink"
+          }`}
           // The box is a hit target, not the mark — it is much larger than the
           // chevron drawn in it, centred on where that chevron already sat, so
           // growing it moves nothing on screen. It stops 1px clear of the word
@@ -301,7 +400,8 @@ export default function WordRoller({
             <ChevronDown className="size-4" strokeWidth={2.25} />
           )}
         </button>
-      ))}
+        );
+      })}
     </>
   );
 }
