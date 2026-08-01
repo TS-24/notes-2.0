@@ -16,6 +16,7 @@ scoring testable, which matters because the scoring is the part that will need
 tuning against real prose.
 """
 
+import os
 from dataclasses import dataclass
 
 import pyphen
@@ -30,13 +31,34 @@ from wordfreq import zipf_frequency
 # than answering one step at a time.
 RUNGS_EACH_WAY = 3
 
-# How many WordNet senses to draw rungs from. WordNet orders a word's synsets
-# most-used first, and the tail is where the wrong-sense synonyms live: at three
-# senses "big" starts offering "bad", and the whole list gives "gravid" and
-# "cock-a-hoop". Two is the point where the rungs stay on-sense without the
-# ladder collapsing to nothing. A short ladder is a small disappointment; a
-# wrong-sense synonym is a visible bug, so err toward short.
+# How many WordNet senses to draw rungs from when nothing can tell them apart.
+#
+# WordNet orders a word's synsets most-used first, and the tail is where the
+# wrong-sense synonyms live: at three senses "big" starts offering "bad", and
+# the whole list gives "gravid" and "cock-a-hoop". Two is the point where the
+# rungs stay on-sense without the ladder collapsing to nothing — a short ladder
+# is a small disappointment, a wrong-sense synonym is a visible bug.
+#
+# It is a hedge against not knowing the sense, and it is only needed when the
+# ranker is unavailable. With a sentence to read, `SENSES_RANKED` senses are
+# gathered instead and the wrong ones are dropped on evidence rather than on the
+# assumption that rare senses are wrong.
 SENSES = 2
+SENSES_RANKED = 6
+
+# How many words of a sense to show the ranker. Enough to characterise it,
+# few enough that judging six senses stays inside a sensible latency budget —
+# every word costs a forward pass per token.
+MEMBERS_PER_SENSE = 4
+
+# When to stop borrowing from lower-ranked senses.
+#
+# Deliberately low. WordNet senses hold one to three words while the ladder can
+# reach seven, so filling it up means crossing into other readings of the word
+# and losing the discrimination the ranking just bought — at six, "model" comes
+# back identical in "a ML model" and "a model in Paris". A short ladder of the
+# right sense beats a long one of several.
+ENOUGH_RUNGS = 3
 
 # WordNet's part-of-speech codes, mapped to the universal tags lemminflect
 # wants. Adjective satellites ("s") inflect the same way as adjectives.
@@ -191,13 +213,50 @@ def _wear_the_original_form(
     return word
 
 
-def word_ladder(word: str, pos: str | None = None) -> Ladder:
+def _choose_sense(surface, lemma, wn_pos, synsets, context):
+    """
+    Narrow to the one sense the word is being used in, judged in its sentence.
+
+    Each sense is offered to the ranker as the group of words it actually
+    contains, rendered in the form they would appear in — "escaping", not
+    "escape" — because the model is judging a sentence, not a dictionary.
+    """
+    from . import ranker
+
+    sentence, at, to = context
+    tag = _inflection_of(surface, lemma, _POS_TO_UPOS[wn_pos])
+
+    groups: list[list[str]] = []
+    for synset in synsets:
+        words = [
+            _wear_the_original_form(name, tag, surface, wn_pos)
+            for name in synset.lemma_names()
+            if zipf_frequency(name.replace("_", " "), "en") > 0
+        ]
+        groups.append(words[:MEMBERS_PER_SENSE])
+
+    order = ranker.rank_senses(sentence, at, to, groups)
+    if order is None:
+        return synsets[:SENSES]
+    return [synsets[index] for index in order]
+
+
+def word_ladder(
+    word: str,
+    pos: str | None = None,
+    context: tuple[str, int, int] | None = None,
+) -> Ladder:
     """
     Build the ladder for `word`, plainest rung first.
 
     Falls back to a single rung — the word standing alone — whenever there is
     nothing to offer: an unknown word, a closed-class word like "the", or a word
     whose only synonyms are multi-word phrases.
+
+    Given `context` — the sentence and the span the word occupies in it — the
+    candidates are ranked by how they read there and the ones that do not fit
+    are dropped. That is what tells "running through the park" from "running
+    through the supplies", which no amount of dictionary lookup can.
     """
     surface = word.strip()
     if not surface:
@@ -210,8 +269,21 @@ def word_ladder(word: str, pos: str | None = None) -> Ladder:
         )
     lemma, wn_pos = resolved
 
+    # With a sentence to read, look at more senses and pick the one that belongs
+    # here; without one, stay narrow, because nothing downstream can tell a
+    # wrong sense from a merely rare word.
+    ranking = context and os.getenv("LADDER_RANKING", "on") != "off"
+    synsets = wordnet.synsets(lemma, pos=wn_pos)[: SENSES_RANKED if ranking else SENSES]
+    if ranking and len(synsets) > 1:
+        synsets = _choose_sense(surface, lemma, wn_pos, synsets, context)
+
     candidates = {lemma}
-    for synset in wordnet.synsets(lemma, pos=wn_pos)[:SENSES]:
+    for synset in synsets:
+        # Senses arrive best-fitting first when there is a sentence to judge
+        # them by, so stopping as soon as the ladder is long enough takes the
+        # right sense and only borrows from the next when it has to.
+        if ranking and len(candidates) > ENOUGH_RUNGS:
+            break
         related = [synset]
         # Adjectives are the thinnest part of WordNet's synonymy: "big" and
         # "large" are the whole of big's synset, and "fast" has no synonym at
@@ -383,6 +455,54 @@ def unit_at(sentence: str, caret: int) -> Unit | None:
     return Unit(start=start, end=end, text=text, lookup=lookup, article=article)
 
 
+def _settle_phrase_or_word(sentence: str, caret: int, unit: Unit) -> Unit:
+    """
+    When the caret sits in a phrase, decide whether it is really being used as
+    one.
+
+    Longest match alone over-reaches: "running through the park" contains the
+    phrasal verb "run through", so the phrase wins on length and the ladder
+    offers "eating up" — a fair reading of those two words and the wrong reading
+    of that sentence. Frequency cannot separate them ("run through" scores 5.34
+    against "give up" at 5.63, because a phrase's frequency is estimated from
+    its parts), so the only evidence left is how each reading behaves in place.
+
+    Which is what the ranker already measures. Offer it the phrase's synonyms
+    and the bare word's as two competing groups and take whichever reads better
+    here — the same instrument that picks a sense, picking a unit.
+    """
+    if " " not in unit.lookup.replace("_", " ") or unit.article:
+        return unit
+
+    tokens = [(m.start(), m.end(), m.group()) for m in _TOKEN.finditer(sentence)]
+    here = next((t for t in tokens if t[0] <= caret <= t[1]), None)
+    if here is None:
+        return unit
+
+    start, end, text = here
+    groups = []
+    for key in (unit.lookup, text.lower()):
+        resolved = _resolve(key.replace("_", " "), None)
+        if resolved is None:
+            return unit
+        lemma, wn_pos = resolved
+        names = [
+            name.replace("_", " ")
+            for synset in wordnet.synsets(lemma, pos=wn_pos)[:SENSES]
+            for name in synset.lemma_names()
+            if zipf_frequency(name.replace("_", " "), "en") > 0
+        ]
+        groups.append(names[:MEMBERS_PER_SENSE] or [key.replace("_", " ")])
+
+    from . import ranker
+
+    order = ranker.rank_senses(sentence, unit.start, unit.end, groups)
+    if order is None or order[0] == 0:
+        return unit
+    # The bare word read better: shrink the unit back to it.
+    return Unit(start=start, end=end, text=text, lookup=text.lower(), article="")
+
+
 def unit_ladder(sentence: str, caret: int) -> tuple[Unit, Ladder] | None:
     """
     The ladder for whatever the caret is standing in.
@@ -391,23 +511,41 @@ def unit_ladder(sentence: str, caret: int) -> tuple[Unit, Ladder] | None:
     straight into `Unit.start:end` — article included and agreeing, phrase
     inflected to match what was there.
     """
-    unit = unit_at(sentence, caret)
+    unit = resolve_unit(sentence, caret)
     if unit is None:
         return None
+    return unit, ladder_for_unit(sentence, unit)
 
+
+def resolve_unit(sentence: str, caret: int) -> Unit | None:
+    """
+    The unit at the caret, after deciding whether a phrase reading holds.
+
+    Split out from `unit_ladder` so a caller can learn *what* would be replaced
+    — a cache key, for instance — without paying to build the ladder for it.
+    """
+    unit = unit_at(sentence, caret)
+    return _settle_phrase_or_word(sentence, caret, unit) if unit else None
+
+
+def ladder_for_unit(sentence: str, unit: Unit) -> Ladder:
+    """The ladder for an already-resolved unit, article included."""
     # Built from what is actually written, not from the dictionary key: the key
     # is lemmatised, and handing that over would lose the tense — "gave up"
     # would come back with "give up" on its own rung and break the round trip.
     surface = unit.text[len(unit.article) :].strip()
-    ladder = word_ladder(surface)
+    # The span the surface occupies, article excluded — the ranker judges the
+    # word in place, so it has to be told exactly which characters it replaces.
+    at = unit.end - len(surface)
+    ladder = word_ladder(surface, context=(sentence, at, unit.end))
 
     if not unit.article:
         # The rungs still have to carry the original's exact surface form on its
         # own rung, which `word_ladder` guarantees.
-        return unit, ladder
+        return ladder
 
     rungs = [f"{_match_article_case(unit.article, indefinite_article(rung))} {rung}" for rung in ladder.rungs]
-    return unit, Ladder(
+    return Ladder(
         word=unit.text,
         lemma=ladder.lemma,
         pos=ladder.pos,
