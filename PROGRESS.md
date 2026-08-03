@@ -441,11 +441,19 @@ Ordered by how likely they are to bite.
 9. **`/analytics` and `/settings` are outside the workspace layout** and
    un-migrated. `/settings` is a placeholder.
 
-10. **The root `.gitignore` is UTF-16 encoded**, so git has never matched a single
-   entry in it. That is why `backend/venv/` (5,807 files, and the interpreter
-   does not work anyway), 2,558 `__pycache__` files, and `notes2.0/.git.bak/`
-   are all tracked. Rewrite it as UTF-8 and `git rm -r --cached` the three.
-   Cheap, and it makes every `git status` legible again.
+10. ~~**The root `.gitignore` is UTF-16 encoded.**~~ **Fixed.** Both ignore files
+   are UTF-8 now and 5,914 files were dropped from the index: `backend/venv/`
+   (5,807), `notes2.0/.git.bak/` (101), the 5 stray `__pycache__` files outside
+   the venv, and `.env`. All of them are still on disk; only the tracking is
+   gone. `.env.example` is the template now.
+
+   **Two things to know.** First, `.env` remains in git history and this repo is
+   public, so treat that Postgres password as burned — it is a throwaway pointing
+   at `localhost`, but do not reuse it. Removing it properly means a history
+   rewrite (`git filter-repo`), which was not done. Second, and this is the trap:
+   **an editor that saves as UTF-16 will silently do it again.** `file .gitignore`
+   must say ASCII or UTF-8. It is worth checking after any edit to that file,
+   because git gives you no error at all — the patterns simply stop matching.
 
 ---
 
