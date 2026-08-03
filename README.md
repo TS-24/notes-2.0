@@ -245,8 +245,9 @@ The ladder, the note surface, and persistence are wired end to end. What is not:
   visibly slower than the 460ms roll.
 - **Dark mode does not exist**, and the ornament layer in `DESIGN.md` §6 is specified but unbuilt.
 - **The old `.env` is still in git history.** The tracked copy is gone and `.env` is ignored now,
-  but this repo is public, so the Postgres password that was in it should be treated as burned. It
-  pointed at a throwaway localhost database and no history rewrite was done.
+  but this repo is public, so the Postgres password that was in it is permanently exposed. It has
+  been rotated, and `DATABASE_URL` no longer has a hardcoded fallback, so the leaked value is dead.
+  No history rewrite was done.
 
 `PROGRESS.md` carries the full open-items list and 23 documented traps that cost real time — read
 it before touching the UI.

@@ -25,8 +25,8 @@ if config.config_file_name is not None:
 from app.db.models import Base
 target_metadata = Base.metadata
 
-database_url = os.getenv("DATABASE_URL", "postgresql://postgres:mysecretpassword@localhost:5432/notes_db")
-config.set_main_option("sqlalchemy.url", database_url)
+# See app/db/database.py: no fallback, the old one embedded a real password.
+config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
