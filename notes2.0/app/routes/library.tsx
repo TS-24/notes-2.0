@@ -1,11 +1,11 @@
 import { useRouteLoaderData, useSearchParams } from "react-router";
-import type { Route } from "./+types/notes";
-import Notegrid from "~/notes/notegrid";
+import type { Route } from "./+types/library";
+import LibraryGrid from "~/library/grid";
 import { api, ApiError } from "~/lib/api.server";
 import type { Note } from "~/lib/types";
 
 export function meta() {
-  return [{ title: "Notes" }, { name: "description", content: "Your notes" }];
+  return [{ title: "Library · Restyle" }, { name: "description", content: "Everything you have written" }];
 }
 
 // No loader: the workspace layout above holds the note list, so there is one
@@ -75,7 +75,7 @@ export default function Notes() {
   const open = Number(searchParams.get("open"));
 
   return (
-    <Notegrid
+    <LibraryGrid
       notes={workspace.notes}
       openNoteId={Number.isFinite(open) && open > 0 ? open : null}
     />

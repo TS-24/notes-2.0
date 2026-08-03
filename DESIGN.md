@@ -1,4 +1,4 @@
-# Notes 2.0 — Design Direction
+# Restyle — Design Direction
 
 The visual brief for the app. Anything new in `notes2.0/app/` should be able to point at
 a rule in here.
@@ -138,7 +138,7 @@ a fill, or a colour is what tells you which item matters, it is doing type's job
 at the `hairline` token, inset from content, never a full-strength `border-*`.
 
 **Retired:** card borders (`border border-slate-200`), the toolbar rule (`border-t
-border-zinc-950/5`) in `notegrid.tsx`, and the header/footer rules on the expanded note. All
+border-zinc-950/5`) in `library/grid.tsx`, and the header/footer rules on the expanded note. All
 three became whitespace. Done.
 
 ---
@@ -217,8 +217,8 @@ ink weight. The one place a pill is correct.
 
 **Note actions** — icon-only, low-contrast, revealed by opacity, no rule above them.
 
-**The note surface** (`app/workspace/note-surface.tsx`) — one element in two modes. `page` is the
-bare hero on `/`; `boxed` takes the full column width on `/notes` and the other notes reflow
+**The note surface** (`app/workspace/editor.tsx`) — one element in two modes. `page` is the
+bare hero on `/`; `boxed` takes the full column width on `/library` and the other notes reflow
 around it. `boxed` is the one place a shadow is correct, because it genuinely is lifted. Header
 and footer separate from the body by space, not rules.
 
@@ -289,7 +289,7 @@ preview of the note, it **is** the note.
 That is the whole of "engrossing": there is one thing on the screen, it is theirs, and nothing
 around it announces that they are operating a website.
 
-**Double-clicking the hero text carries the user to `/notes` with that note already open** in the
+**Double-clicking the hero text carries the user to `/library` with that note already open** in the
 expanded state from §8 — the same gesture that expands a note in the grid, so the vocabulary is
 consistent across the app. Closing it there drops them into the rest of their notes, so the grid
 is *discovered* rather than presented. That is the whole spine of the app:
@@ -314,7 +314,7 @@ quiet way back out, and nothing more.
 ## 10. Motion
 
 Calm and quick. The layout transition is settled and should be reused rather than re-invented:
-`NOTE_LAYOUT_TRANSITION` in `notes2.0/app/workspace/note-surface.tsx` —
+`NOTE_LAYOUT_TRANSITION` in `notes2.0/app/workspace/editor.tsx` —
 `{ type: "tween", duration: 0.55, ease: [0.4, 0, 0.2, 1] }`.
 
 - Tweens, not springs. Springs wobble as they settle even at `bounce: 0`.
@@ -357,18 +357,18 @@ If a screen trips three or more, fix it.
 
 - **`app/app.css`** — serif imports and `--font-*` tokens in; the cool slate ramp replaced with
   the warm paper/ink/rose set from §4; radius raised.
-- **`app/notes/notegrid.tsx`** — uppercase micro-labels replaced with Playfair section headers;
+- **`app/library/grid.tsx`** — uppercase micro-labels replaced with Playfair section headers;
   `border`, `shadow-xs` and `backdrop-blur-xs` dropped from the cards; toolbar rule became
   whitespace; body type raised off `text-xs`.
 - **The expanded note** — rules became whitespace, type moved onto the serif scale, the lift
-  shadow and the layout transition kept. It is now a mode of `app/workspace/note-surface.tsx`
+  shadow and the layout transition kept. It is now a mode of `app/workspace/editor.tsx`
   rather than its own component.
 - **The composer** — de-pilled. `notemaker.tsx` is gone; creation is the ghost `+` card in the
   grid.
 - **The sidebar** — `app/components/app-sidebar.tsx` deleted outright, along with `welcome.tsx`
   and the `SidebarProvider` / `SidebarInset` wrapper in `app/root.tsx`.
 - **Route transitions** (§9 rules 1–3) — solved structurally rather than with a wrapper. `/` and
-  `/notes` are children of a layout route, so the note surface never unmounts and there is
+  `/library` are children of a layout route, so the note surface never unmounts and there is
   nothing to transition between. See `PROGRESS.md` §3.
 
 ### Remaining

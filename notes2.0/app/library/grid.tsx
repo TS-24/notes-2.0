@@ -5,7 +5,7 @@ import { Pin, Trash2, Archive, Plus } from "lucide-react";
 import {
   noteLayoutId,
   NOTE_LAYOUT_TRANSITION,
-} from "~/workspace/note-surface";
+} from "~/workspace/editor";
 import type { Note } from "~/lib/types";
 import {
   Dialog,
@@ -334,7 +334,7 @@ function NoteCard({
 // 2. Parent Container Component
 // Notes now arrive from the route loader, so this component holds no data state
 // of its own — the database is the single source of truth.
-export default function Notegrid({
+export default function LibraryGrid({
   notes,
   openNoteId = null,
 }: {
@@ -356,7 +356,7 @@ export default function Notegrid({
   ];
 
   const handleExpand = useCallback(
-    (note: Note) => navigate(`/notes?open=${note.id}`, { preventScrollReset: true }),
+    (note: Note) => navigate(`/library?open=${note.id}`, { preventScrollReset: true }),
     [navigate],
   );
 
@@ -365,7 +365,7 @@ export default function Notegrid({
   const handleCompose = useCallback(() => {
     createFetcher.submit(
       { intent: "create", title: "Untitled", content: "" },
-      { method: "post", action: "/notes" },
+      { method: "post", action: "/library" },
     );
   }, [createFetcher]);
 
@@ -374,7 +374,7 @@ export default function Notegrid({
     const id = createFetcher.data?.id;
     if (createFetcher.state !== "idle" || !id || openedNew.current) return;
     openedNew.current = true;
-    navigate(`/notes?open=${id}`, { preventScrollReset: true });
+    navigate(`/library?open=${id}`, { preventScrollReset: true });
   }, [createFetcher.state, createFetcher.data, navigate]);
 
   /**

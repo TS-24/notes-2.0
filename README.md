@@ -1,16 +1,32 @@
-# Notes 2.0 📝
+# Restyle ✍️
 
-A note-taking app built around one idea: **the words in your notes should be able to move.**
+Put your caret on a word. Press up.
 
-You write a note the way you would in any notes app. Then, standing on any word, you press a
-chevron and roll it up or down a *difficulty ladder* — `going` → `running` → `leading` →
-`passing` → `extending` — and the word is replaced in place. Up is rarer and more formal, down
-is plainer. It is vocabulary practice on your own writing rather than on someone else's flashcards.
+```
+She was running through the park.
+            ▲
+   going ── running ── leading ── passing ── extending
+  plainer                                      rarer
+```
 
-Making that work is most of what this repo is. A dictionary (WordNet) knows what a word's
-synonyms are but not which one belongs in the sentence in front of it. A language model knows
-the opposite. So neither one does the job alone: **the dictionary proposes and a masked language
-model ranks.**
+The word is replaced in place. Up is rarer and more formal, down is plainer, and the sentence
+stays a sentence. That is the whole app: **a tool for changing how your writing reads, one word
+at a time.**
+
+It stores what you write, so there is a note model and a library behind it, but the notes are the
+canvas rather than the point. Nothing here is trying to be a better place to keep a shopping list.
+
+### The hard part
+
+A dictionary knows what a word's synonyms are but not which one belongs in the sentence in front
+of it — which is why WordNet alone offers "escaping" for *running through the park*. A language
+model knows the opposite: it reads the sentence fine but has no concept of synonymy, which is why
+asking it directly returns "small" for *big*.
+
+So neither generates. **The dictionary proposes and a masked language model ranks.** Inverting it
+that way also lifts the vocabulary ceiling: a single `[MASK]` emits exactly one token, and a
+30k-piece vocabulary has no single token for "felicitous" (`fe ##lic ##ito ##us`), so no amount of
+prompting makes a generator say it. Scoring a word you already hold has no such limit.
 
 ## 🌟 Features
 
@@ -29,11 +45,11 @@ model ranks.**
   "We were running through the supplies."  → using up, eating up, wiping out
   ```
 
-- **One continuous note surface** — the landing page *is* your most recently touched note, live
-  and editable. Double-click it and a box animates in around text that never moves, revealing the
-  library of every other note beneath. Double-click again to go back. That gesture is the only
+- **One continuous editing surface** — the landing page *is* the last thing you were working on,
+  live and editable. Double-click it and a box animates in around text that never moves, revealing
+  the library of everything else beneath. Double-click again to go back. That gesture is the only
   navigation: there is no sidebar and no nav bar.
-- **Persistence** — notes, pinning, and word definitions are stored in PostgreSQL through a
+- **Persistence** — your writing, pinning, and word definitions are stored in PostgreSQL through a
   FastAPI backend, with the whole ladder computation cached so a repeat lookup costs no model time.
 
 See [Project status](#-project-status) for what does not work yet.
@@ -41,14 +57,14 @@ See [Project status](#-project-status) for what does not work yet.
 ## 🏗️ Architecture (Monorepo)
 
 ```
-notes-2.0/
+restyle/
 ├── notes2.0/                  # Frontend (React Router v7 + Vite, SSR)
 │   └── app/
 │       ├── routes.ts          # Route config; the layout wrapper lives here
-│       ├── routes/            # workspace (layout), home, notes, analytics, menu,
+│       ├── routes/            # workspace (layout), home, library, analytics, menu,
 │       │                      #   api.word-ladder (resource route)
-│       ├── workspace/         # note-surface.tsx, word-roller.tsx
-│       ├── notes/             # notegrid.tsx — the library grid
+│       ├── workspace/         # editor.tsx — the surface; word-roller.tsx — the chevrons
+│       ├── library/           # grid.tsx — everything you have written
 │       ├── lib/api.server.ts  # Server-only typed API client
 │       └── app.css            # Design tokens: paper/ink/rose, Playfair + EB Garamond
 ├── backend/                   # API + persistence (FastAPI + SQLAlchemy)
@@ -69,11 +85,11 @@ notes-2.0/
 
 ### The structural fact worth knowing
 
-`/` and `/notes` are **children of a layout route** (`app/routes/workspace.tsx`). React Router
-keeps a parent mounted while its children change, so the note surface survives navigation between
-the two pages. The title and body are literally the same DOM nodes in both modes, which is why
-opening a note is not a page swap. Every difference between the two (padding, background, shadow,
-type size) is a value on that one element.
+`/` and `/library` are **children of a layout route** (`app/routes/workspace.tsx`). React Router
+keeps a parent mounted while its children change, so the editing surface survives navigation
+between the two pages. The title and body are literally the same DOM nodes in both modes, which is
+why opening something is not a page swap. Every difference between the two (padding, background,
+shadow, type size) is a value on that one element.
 
 This is load-bearing. `PROGRESS.md` records why the alternative was built, tried, and deleted.
 
@@ -222,7 +238,7 @@ never calls the backend directly, there is no CORS to configure for this path.
 
 The ladder, the note surface, and persistence are wired end to end. What is not:
 
-- **Vocabulary extraction and quiz mode are not connected.** `notegrid.tsx` and `analytics.tsx`
+- **Vocabulary extraction and quiz mode are not connected.** `library/grid.tsx` and `analytics.tsx`
   still call `/api/analyze/vocabulary` and `/api/words/known`, which do not exist — they were
   dropped when the backend was restructured. Both call sites also hardcode
   `http://127.0.0.1:8000` from the browser instead of going through `api.server.ts`, so they are

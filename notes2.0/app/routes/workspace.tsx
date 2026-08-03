@@ -7,7 +7,7 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/workspace";
-import NoteSurface from "~/workspace/note-surface";
+import Editor from "~/workspace/editor";
 import { api } from "~/lib/api.server";
 
 /**
@@ -48,7 +48,7 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
     touched.current = focused.id;
     touchFetcher.submit(
       { intent: "touch", id: String(focused.id) },
-      { method: "post", action: "/notes" },
+      { method: "post", action: "/library" },
     );
   }, [onLanding, focused, touchFetcher]);
 
@@ -69,11 +69,11 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
         the library, in both directions, so the gesture is the navigation.
       */}
       {focused && (
-        <NoteSurface
+        <Editor
           note={focused}
           mode={onLanding ? "page" : "boxed"}
-          onOpen={() => navigate(`/notes?open=${focused.id}`)}
-          onClose={() => navigate("/notes", { replace: true })}
+          onOpen={() => navigate(`/library?open=${focused.id}`)}
+          onClose={() => navigate("/library", { replace: true })}
           onReturn={() => navigate("/")}
         />
       )}

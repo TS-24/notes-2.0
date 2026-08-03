@@ -1,4 +1,4 @@
-# Notes 2.0 — Progress Log
+# Restyle — Progress Log
 
 Working context for whoever picks this up next. Read this before touching the
 UI; a lot of what looks like odd code here is load-bearing, and the reasons are
@@ -17,15 +17,33 @@ Last updated: 2026-08-03 · branch `dev` (`prod` and `master` are still at
 
 ## 1. What this app is
 
-A notes app with a vocabulary-study angle. Two surfaces, one object:
+**A tool for restyling sentences.** You put the caret on a word, press a chevron,
+and the word is replaced in place by a rarer or plainer one that still fits the
+sentence. Everything else in the repo exists to give that gesture somewhere to
+happen.
 
-- **`/` — the note.** The most recently touched note, set as a full-page hero.
+That framing is load-bearing, because it decides what belongs here. Storage,
+the grid, and pinning are the canvas. The ladder is the product. When the two
+compete — and they have, over revalidation and over where the vocabulary panel
+should live — the ladder wins.
+
+Note the naming split this implies, and keep it:
+
+- **"restyle" / "ladder" / "roll"** is the vocabulary of the *product*.
+- **"note"** is still the vocabulary of the *stored entity*, because that is
+  genuinely what it is: a title, a body, a pin, an owner. The `Note` model,
+  the `notes` table and `/api/notes` all keep their names deliberately. Renaming
+  them would cost a migration and make the code less accurate, not more.
+
+Two surfaces, one object:
+
+- **`/` — the editor.** The most recently touched note, set as a full-page hero.
   Live and editable. This is the landing page.
-- **`/notes` — the library.** The same note, wrapped in a box, with the grid of
-  every other note beneath it. `?open=<id>` says which note is open.
+- **`/library` — everything else.** The same note, wrapped in a box, with the
+  grid of every other note beneath it. `?open=<id>` says which one is open.
 
-Double clicking the note toggles between the two, in both directions. That
-gesture is the only navigation — there is no sidebar, nav bar, or exit link.
+Double clicking toggles between the two, in both directions. That gesture is the
+only navigation — there is no sidebar, nav bar, or exit link.
 
 ---
 
@@ -66,14 +84,14 @@ in the container.
 
 ### The persistent note surface
 
-`/` and `/notes` are **children of a layout route**. React Router keeps a parent
+`/` and `/library` are **children of a layout route**. React Router keeps a parent
 mounted while its children change, so the note survives navigation between the
 two pages. This is the single most important structural fact in the app.
 
 ```
 layout("routes/workspace.tsx")   ← owns the note surface; never unmounts
 ├── index  "routes/home.tsx"     ← landing mode (renders null)
-└── route  "notes"               ← library mode (renders the grid)
+└── route  "library"             ← library mode (renders the grid)
 ```
 
 Because the title and body are literally the same DOM nodes on both pages,
@@ -91,10 +109,10 @@ values. That approach was built, tried, and deleted — see
 | --- | --- |
 | `app/routes.ts` | Route config; the layout wrapper lives here |
 | `app/routes/workspace.tsx` | Layout route. Loads the note list once, picks the focused note, touches it on open, renders the surface + `<Outlet/>` |
-| `app/workspace/note-surface.tsx` | **The** note. Modes `page` / `boxed`. Auto-height fields, save-on-blur, double-click toggle |
+| `app/workspace/editor.tsx` | **The** note. Modes `page` / `boxed`. Auto-height fields, save-on-blur, double-click toggle |
 | `app/workspace/word-roller.tsx` | Chevrons above/below the caret's **unit** + slot-machine roll. Holds the climb, and the widened unit span, across re-locates |
-| `app/notes/notegrid.tsx` | The library grid (CSS columns), note cards, ghost `+` card, vocabulary dialog |
-| `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
+| `app/library/grid.tsx` | The library grid (CSS columns), note cards, ghost `+` card, vocabulary dialog |
+| `app/routes/library.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
 | `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
 | `app/routes/api.word-ladder.tsx` | Loader-only resource route feeding the roller. Outside the layout on purpose — a lookup inside it would revalidate the note list on every chevron click |
@@ -106,7 +124,7 @@ values. That approach was built, tried, and deleted — see
 
 - One loader (the layout's) fetches the note list. Children read it with
   `useRouteLoaderData("routes/workspace")`.
-- All mutations post to `/notes`'s action with an `intent`:
+- All mutations post to `/library`'s action with an `intent`:
   `create` · `update` · `togglePin` · `touch` · `delete`.
 - After any action React Router revalidates the layout loader, so the UI follows
   the database with no manual refetching.
@@ -208,7 +226,7 @@ Each of these cost real time. They are all commented at the site too.
     changes.** Restoring it in `requestAnimationFrame` runs *before* React
     commits, so the restore is silently undone. The chevrons then vanish
     mid-climb because the caret is no longer inside the word. Use a layout
-    effect (`pendingCaret` in `note-surface.tsx`) — after the DOM updates,
+    effect (`pendingCaret` in `editor.tsx`) — after the DOM updates,
     before paint. This was invisible while the roller rolled a word to itself.
 
 13. **`useFetcher()` keeps only the newest response.** The caret crosses words
@@ -289,7 +307,7 @@ Each of these cost real time. They are all commented at the site too.
 - Escape also saves and closes; nothing discards.
 - Saves only submit when the text actually changed.
 - Animation: tweens, never springs (springs wobble even at `bounce: 0`).
-  `NOTE_LAYOUT_TRANSITION` in `note-surface.tsx` is the shared curve.
+  `NOTE_LAYOUT_TRANSITION` in `editor.tsx` is the shared curve.
 - Serif everywhere: Playfair Display (display) + EB Garamond (body).
 
 ---
@@ -316,7 +334,7 @@ place, double-click to open it in the grid.
 shrinking when a note opens.
 
 **The restructure.** Repeated "it still jumps" reports traced to a single root
-cause: `/` and `/notes` were separate routes, so nothing survived navigation and
+cause: `/` and `/library` were separate routes, so nothing survived navigation and
 every transition was two elements imitating each other. Rebuilt around the
 layout route above. Added `updated_at` + `touch` so the landing note follows
 what you actually opened.
@@ -339,7 +357,7 @@ needed the same tightly fitting relative wrapper the body already had.
 The reel masks the live word with an opaque strip, so it has to know what it is
 sitting on. That colour is not constant: the landing page is bare `paper` and
 the boxed note is `paper-raised`, and hardcoding the latter left a visible patch
-on `/`. `note-surface` now passes the surface colour down. The reel also copies
+on `/`. `editor` now passes the surface colour down. The reel also copies
 the field's own typography — sitting outside the textarea, it otherwise
 inherited the wrapper's type and rendered the display-face title at body size.
 
@@ -363,7 +381,7 @@ but it destroyed meaning, because fill-mask proposes what *fits the slot*, not
 what means the same: `big → small`, `use → know, take, love`, `good → public`.
 It also cut off the rare end of the ladder for the tokenizer reason in trap 18.
 Latency was never the problem (~40–70ms). The branch was closed as
-[#14](https://github.com/TS-24/notes-2.0/pull/14); its torch/transformers
+[#14](https://github.com/TS-24/library-2.0/pull/14); its torch/transformers
 plumbing was kept. **Do not re-attempt generation** — the failure is structural,
 not a matter of prompting or thresholds.
 
@@ -424,7 +442,7 @@ Ordered by how likely they are to bite.
    way back to `/` is the browser's back button. Decide between: make those
    actions also return to `/`, or give the bare library its own quiet exit.
 
-5. **Vocabulary analysis is not wired up.** `notegrid.tsx` still calls
+5. **Vocabulary analysis is not wired up.** `library/grid.tsx` still calls
    `http://127.0.0.1:8000/api/analyze/vocabulary` **directly from the browser** —
    the last place that bypasses the server-only API client — and the endpoint
    does not exist. See the `TODO(step 6)` in that file.

@@ -110,7 +110,7 @@ function useAutoHeight() {
   return { ref, measure, track };
 }
 
-export default function NoteSurface({
+export default function Editor({
   note,
   mode,
   onOpen,
@@ -216,7 +216,7 @@ export default function NoteSurface({
         title: nextTitle || "Untitled",
         content: nextContent,
       },
-      { method: "post", action: "/notes" },
+      { method: "post", action: "/library" },
     );
   };
 
