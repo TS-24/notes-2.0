@@ -63,6 +63,7 @@ notes-2.0/
 │   ├── alembic/               # Database migrations
 │   └── tests/                 # 36 tests over the ladder logic
 ├── docker-compose.yml         # frontend + backend + PostgreSQL
+├── .env.example               # Config template; copy to .env (which is ignored)
 ├── DESIGN.md                  # Visual and navigation direction
 └── PROGRESS.md                # Working context: architecture, traps, open items
 ```
@@ -162,14 +163,20 @@ docker compose up -d --build
 Frontend on `http://localhost:3000`, API on `http://localhost:8000`, PostgreSQL on `5432`. The
 backend entrypoint runs `alembic upgrade head` before uvicorn, gated on the database healthcheck.
 
-Configuration comes from `.env` at the repo root (`POSTGRES_USER`, `POSTGRES_PASSWORD`,
-`POSTGRES_DB`, `POSTGRES_PORT`). Inside the compose network the frontend reaches the API at
-`http://backend:8000` and the backend reaches the database at host `db`, since containers don't
-share the host's loopback.
+Configuration comes from `.env` at the repo root, which is gitignored. Copy the template first:
 
-> **Note:** the inline defaults in `docker-compose.yml` and the values in `.env` differ — compose
-> falls back to password `postgres`, while `.env` sets its own. Since compose reads `.env`, the
-> file wins; just don't rely on the inline defaults.
+```bash
+cp .env.example .env      # then fill in POSTGRES_PASSWORD
+```
+
+It sets `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` and `DATABASE_URL`.
+Inside the compose network the frontend reaches the API at `http://backend:8000` and the backend
+reaches the database at host `db`, since containers don't share the host's loopback — so
+`DATABASE_URL` uses `db` under compose and `localhost` outside it.
+
+> **Note:** the inline defaults in `docker-compose.yml` differ from the template — compose falls
+> back to user and password `postgres`. Since compose reads `.env`, the file wins; just don't rely
+> on the inline defaults.
 
 ### Working on the frontend without Node on the host
 
@@ -200,7 +207,8 @@ docker compose exec backend python -m pytest tests/ -q
 
 ### Running outside Docker
 
-Possible, but `backend/venv/` is committed and **its interpreter does not work** — build your own:
+A stale `backend/venv/` may still be sitting on disk from before it was untracked; **its
+interpreter does not work**. Ignore it and build your own:
 
 ```bash
 cd backend
@@ -236,9 +244,9 @@ The ladder, the note surface, and persistence are wired end to end. What is not:
   Both are per-deployment rather than per-keystroke, but the first press on a new sentence is
   visibly slower than the 460ms roll.
 - **Dark mode does not exist**, and the ornament layer in `DESIGN.md` §6 is specified but unbuilt.
-- **Repo hygiene.** `backend/venv/` (~5,800 files) and ~2,500 `__pycache__` files are tracked,
-  and `notes2.0/.git.bak/` is a committed copy of an old nested git directory. The root
-  `.gitignore` is UTF-16 encoded, which is why its entries never matched.
+- **The old `.env` is still in git history.** The tracked copy is gone and `.env` is ignored now,
+  but this repo is public, so the Postgres password that was in it should be treated as burned. It
+  pointed at a throwaway localhost database and no history rewrite was done.
 
 `PROGRESS.md` carries the full open-items list and 23 documented traps that cost real time — read
 it before touching the UI.
