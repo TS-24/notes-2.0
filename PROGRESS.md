@@ -6,12 +6,12 @@ recorded in [Traps](#traps-do-not-re-litigate-these).
 
 Companion documents:
 
-- [DESIGN.md](DESIGN.md) — the visual and navigation direction. Authoritative
-  over `agent.md` §3, which still describes the old look.
-- [README.md](README.md) — setup.
+- [DESIGN.md](DESIGN.md) — the visual and navigation direction. Its §12 tracks
+  what is applied and what is still outstanding.
+- [README.md](README.md) — what the app is, the API, and setup.
 
-Last updated: 2026-08-01 · branch `dev` (`prod` and `master` are still at
-`fce0475`, one session behind — nothing here has been promoted)
+Last updated: 2026-08-03 · branch `dev` (`prod` and `master` are still at
+`fce0475`, two sessions behind — nothing here has been promoted)
 
 ---
 
@@ -441,8 +441,11 @@ Ordered by how likely they are to bite.
 9. **`/analytics` and `/settings` are outside the workspace layout** and
    un-migrated. `/settings` is a placeholder.
 
-10. **`agent.md` §3 contradicts DESIGN.md** (it asks for gradients). It should be
-   replaced with a pointer to DESIGN.md.
+10. **The root `.gitignore` is UTF-16 encoded**, so git has never matched a single
+   entry in it. That is why `backend/venv/` (5,807 files, and the interpreter
+   does not work anyway), 2,558 `__pycache__` files, and `notes2.0/.git.bak/`
+   are all tracked. Rewrite it as UTF-8 and `git rm -r --cached` the three.
+   Cheap, and it makes every `git status` legible again.
 
 ---
 

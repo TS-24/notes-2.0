@@ -1,8 +1,10 @@
 # Notes 2.0 — Design Direction
 
 The visual brief for the app. Anything new in `notes2.0/app/` should be able to point at
-a rule in here. Where this document and `agent.md` §3 (Styling & Aesthetics) disagree,
-**this document wins** — see [Conflicts with agent.md](#conflicts-with-agentmd).
+a rule in here.
+
+Status: §§3–5 (type, colour, hierarchy) are **applied**. §6 (ornament) and dark mode in §4 are
+**specified but unbuilt**. §12 tracks what remains.
 
 ---
 
@@ -25,7 +27,7 @@ setting, a single dusty-rose surface carrying the focal content, uniformly-tinte
 with rose hairlines, and — the part that makes it — **fine line-art drifting behind everything
 at roughly a tenth of full contrast**.
 
-Where §§3–11 below contradict the earlier draft of this document, the reference wins. Three
+Where §§3–11 below contradict an earlier draft of this document, the reference wins. Three
 rules changed as a result:
 
 | Earlier rule | Revised |
@@ -136,8 +138,8 @@ a fill, or a colour is what tells you which item matters, it is doing type's job
 at the `hairline` token, inset from content, never a full-strength `border-*`.
 
 **Retired:** card borders (`border border-slate-200`), the toolbar rule (`border-t
-border-zinc-950/5`) in `notegrid.tsx`, and the header/footer rules in `expanded-note.tsx`. All
-three become whitespace.
+border-zinc-950/5`) in `notegrid.tsx`, and the header/footer rules on the expanded note. All
+three became whitespace. Done.
 
 ---
 
@@ -215,9 +217,10 @@ ink weight. The one place a pill is correct.
 
 **Note actions** — icon-only, low-contrast, revealed by opacity, no rule above them.
 
-**Expanded note** — keeps its current behaviour (`expanded-note.tsx`): leaves the grid, takes the
-full column width, other notes reflow around it. The one place a shadow is correct, because it
-genuinely is lifted. Header and footer separate from the body by space, not rules.
+**The note surface** (`app/workspace/note-surface.tsx`) — one element in two modes. `page` is the
+bare hero on `/`; `boxed` takes the full column width on `/notes` and the other notes reflow
+around it. `boxed` is the one place a shadow is correct, because it genuinely is lifted. Header
+and footer separate from the body by space, not rules.
 
 **Composer** — de-pill it. Same paper tone as a card, 16px radius, serif placeholder at Body size,
 no ring, no gradient button.
@@ -311,8 +314,8 @@ quiet way back out, and nothing more.
 ## 10. Motion
 
 Calm and quick. The layout transition is settled and should be reused rather than re-invented:
-`NOTE_LAYOUT_TRANSITION` in `notes2.0/app/notes/expanded-note.tsx` —
-`{ type: "tween", duration: 0.42, ease: [0.4, 0, 0.2, 1] }`.
+`NOTE_LAYOUT_TRANSITION` in `notes2.0/app/workspace/note-surface.tsx` —
+`{ type: "tween", duration: 0.55, ease: [0.4, 0, 0.2, 1] }`.
 
 - Tweens, not springs. Springs wobble as they settle even at `bounce: 0`.
 - One thing moves at a time; when several must move, they share one curve.
@@ -350,33 +353,39 @@ If a screen trips three or more, fix it.
 
 ## 12. Migration checklist
 
+### Done
+
+- **`app/app.css`** — serif imports and `--font-*` tokens in; the cool slate ramp replaced with
+  the warm paper/ink/rose set from §4; radius raised.
+- **`app/notes/notegrid.tsx`** — uppercase micro-labels replaced with Playfair section headers;
+  `border`, `shadow-xs` and `backdrop-blur-xs` dropped from the cards; toolbar rule became
+  whitespace; body type raised off `text-xs`.
+- **The expanded note** — rules became whitespace, type moved onto the serif scale, the lift
+  shadow and the layout transition kept. It is now a mode of `app/workspace/note-surface.tsx`
+  rather than its own component.
+- **The composer** — de-pilled. `notemaker.tsx` is gone; creation is the ghost `+` card in the
+  grid.
+- **The sidebar** — `app/components/app-sidebar.tsx` deleted outright, along with `welcome.tsx`
+  and the `SidebarProvider` / `SidebarInset` wrapper in `app/root.tsx`.
+- **Route transitions** (§9 rules 1–3) — solved structurally rather than with a wrapper. `/` and
+  `/notes` are children of a layout route, so the note surface never unmounts and there is
+  nothing to transition between. See `PROGRESS.md` §3.
+
+### Remaining
+
 In dependency order:
 
-1. `notes2.0/app/app.css` — swap font imports and the `--font-*` tokens; replace the neutral ramp
-   with §4; raise `--radius`; add `--ornament-opacity`.
-2. `notes2.0/app/components/ornament/` — new. Motif SVGs plus the `<Ornament />` layer, mounted
-   once in `app/root.tsx` above the route outlet so it survives navigation (§9, rule 2).
-3. `notes2.0/app/notes/notegrid.tsx` — section headers (`text-[10px] … uppercase` → Playfair
-   Section); card chrome (drop `border`, `shadow-xs`, `backdrop-blur-xs`); toolbar rule →
-   whitespace; body `text-xs` → Body scale.
-4. `notes2.0/app/notes/expanded-note.tsx` — header/footer rules → whitespace; type to the serif
-   scale; keep the lift shadow and the layout transition.
-5. `notes2.0/app/notes/notemaker.tsx` — de-pill the composer; remove the internal `border-t`.
-6. `notes2.0/app/components/app-sidebar.tsx` — **delete**, along with the `SidebarProvider` /
-   `SidebarInset` wrapper in `app/root.tsx`. Each view gains one quiet exit link instead.
-7. `notes2.0/app/components/ui/*` — align radius and type with the tokens above.
-8. Route transitions — a wrapper around the outlet that gives navigation direction (§9, rule 4)
-   and holds the outgoing view until the incoming one is ready (§9, rule 9). One shared curve
-   with `NOTE_LAYOUT_TRANSITION`.
-9. Onward links — each of notes / vocabulary / sentences ends by proposing the next step in the
-   reading path (§9, "For this app"). This is a data question as much as a layout one: the API
-   already relates notes to words (`Note.words`), which is the spine of that path.
-
----
-
-## Conflicts with agent.md
-
-`agent.md` §3 currently instructs: *"use smooth Tailwind gradients"*, *"sleek dark mode"*, and
-*"clean typography"* with no family specified. The gradient instruction directly contradicts §4,
-and the section as a whole is what produced the current look. It should be replaced with a
-pointer to this document.
+1. **Dark mode** (§4) — does not exist. `app.css` pins `color-scheme: light` and the paper ramp
+   has no inverted counterpart.
+2. **`app/components/ornament/`** (§6) — unbuilt, and the blocker is assets: it needs real SVG
+   line art, not code. Motif SVGs plus an `<Ornament />` layer mounted once in `app/root.tsx`
+   above the route outlet so it survives navigation (§9, rule 2).
+3. **`app/components/ui/*`** — still shadcn defaults, off the design tokens above.
+4. **`/analytics` and `/settings`** — outside the workspace layout and unmigrated. `/settings` is
+   a placeholder.
+5. **Directional navigation** (§9, rules 4 and 9) — the layout route removed the tearing, but
+   nothing yet encodes *direction*, and there is no pending-navigation hint.
+6. **Onward links** (§9, rule 5) — each of notes / vocabulary / sentences should propose the next
+   step in the reading path. This is a data question as much as a layout one: the API already
+   relates notes to words (`Note.words`), which is the spine of that path. Blocked on the
+   vocabulary endpoints, which do not currently exist — see `PROGRESS.md` §7.
