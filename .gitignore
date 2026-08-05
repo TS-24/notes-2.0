@@ -35,3 +35,7 @@ Thumbs.db
 *.bak
 *.orig
 .git.bak/
+
+# One-shot WordNet loader, not part of the app. No __main__ guard, so importing
+# it runs the whole load against a live database.
+backend/app/services/run_once.py

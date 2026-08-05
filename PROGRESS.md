@@ -441,6 +441,20 @@ Ordered by how likely they are to bite.
 9. **`/analytics` and `/settings` are outside the workspace layout** and
    un-migrated. `/settings` is a placeholder.
 
+9a. **`backend/venv` cannot run the app — rebuild it when off a metered
+   connection.** The interpreter is fine (3.12.13) but only 16 packages are
+   installed, and `fastapi`, `uvicorn`, `SQLAlchemy`, `alembic` and `pytest` are
+   not among them: `venv/bin/python -c "import main"` dies on
+   `ModuleNotFoundError: No module named 'fastapi'`. It is the scratch env for
+   `app/services/run_once.py` (the only importer of `wn` and `defusedxml`,
+   neither of which belongs in `requirements.txt`), not a stale backend env.
+   Fix is `venv/bin/pip install -r requirements.txt`, which
+   pulls torch and transformers, so it is a large download — deferred on
+   purpose, not forgotten. The `psycopg2-binary` pin against the venv's
+   `psycopg` 3 is *not* a conflict: SQLAlchemy resolves the bare `postgresql://`
+   URL in `app/db/database.py:12` to psycopg2, and `run_once.py` uses psycopg 3
+   on its own. See SAFETY-UPDATES.md.
+
 10. ~~**The root `.gitignore` is UTF-16 encoded.**~~ **Fixed.** Both ignore files
    are UTF-8 now and 5,914 files were dropped from the index: `backend/venv/`
    (5,807), `notes2.0/.git.bak/` (101), the 5 stray `__pycache__` files outside
