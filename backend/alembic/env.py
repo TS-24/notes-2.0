@@ -73,7 +73,14 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            # SQLite cannot ALTER a column or a constraint, so autogenerate has
+            # to emit batch_alter_table there — otherwise the next migration
+            # that changes an existing table works on compose and stops the
+            # desktop build dead. No effect on Postgres, which renders batch
+            # operations as the plain ALTER anyway.
+            render_as_batch=connection.dialect.name == "sqlite",
         )
 
         with context.begin_transaction():
