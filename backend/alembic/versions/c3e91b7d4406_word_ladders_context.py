@@ -32,13 +32,17 @@ def upgrade() -> None:
     # The word alone is no longer unique; the pair is.
     op.drop_index(op.f("ix_word_ladders_word"), table_name="word_ladders")
     op.create_index(op.f("ix_word_ladders_word"), "word_ladders", ["word"])
-    op.create_unique_constraint(
-        "uq_word_ladders_word_context", "word_ladders", ["word", "context_hash"]
-    )
+    # Batch mode so this also applies on SQLite, which cannot ALTER a
+    # constraint onto an existing table and has to copy-and-move instead.
+    with op.batch_alter_table("word_ladders") as batch:
+        batch.create_unique_constraint(
+            "uq_word_ladders_word_context", ["word", "context_hash"]
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_word_ladders_word_context", "word_ladders", type_="unique")
+    with op.batch_alter_table("word_ladders") as batch:
+        batch.drop_constraint("uq_word_ladders_word_context", type_="unique")
     # Going back to a unique word means dropping every contextual row, since
     # several of them can share one word.
     op.execute("DELETE FROM word_ladders WHERE context_hash <> ''")
