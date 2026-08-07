@@ -116,3 +116,30 @@ class WordLadder(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class KnownWord(Base):
+    """
+    A word the user has said they already know.
+
+    Kept per user rather than globally: "difficult" is a fact about a reader,
+    not about a word, and the whole point of dismissing one is that this reader
+    is done being shown it.
+
+    Stored as the surface form the analysis offered, because that is what the
+    user was actually looking at when they dismissed it. Lemmatising here would
+    quietly dismiss "running" along with "run", which is a bigger claim than
+    the user made.
+    """
+
+    __tablename__ = "known_words"
+    __table_args__ = (
+        UniqueConstraint("user_id", "word", name="uq_known_words_user_word"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
