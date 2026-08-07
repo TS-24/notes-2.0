@@ -92,7 +92,9 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 - **Database:** PostgreSQL 15 via SQLAlchemy 2.0 ORM, migrations with Alembic
 - **Lexicon:** NLTK's WordNet (synonyms, senses, adjective satellites), `lemminflect`
   (lemmatisation and re-inflection), `wordfreq` (the difficulty axis)
-- **Ranking:** `transformers` + CPU `torch`, running `distilbert-base-uncased` as a scorer
+- **Ranking:** a hosted sentence-embedding model via `huggingface_hub`, used to pick the sense
+  that belongs in the sentence. Optional — without credentials the ladder falls back to the
+  dictionary's own ordering
 
 ### Data model
 
@@ -145,12 +147,13 @@ it. The resolved span comes back as `start`/`end` so the caller knows what to sw
 ladder arrives in one response rather than a rung at a time: the roller's animation is 460ms, and
 a network round trip inside it would stall the reel.
 
-Two environment switches:
+Environment switches:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word, no torch loaded |
-| `MLM_MODEL` | `distilbert-base-uncased` | Baked into the image at build time |
+| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word |
+| `HF_TOKEN` | unset | Credentials for the hosted ranker. Unset behaves like `LADDER_RANKING=off`, and is checked before any request so a token-less install never pays a timeout to discover it |
+| `HF_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | The embedding model the ranker calls |
 
 ## 🚀 Getting Started
 
@@ -240,9 +243,11 @@ The ladder, the note surface, and persistence are wired end to end. What is not:
   it — it needs either a guard that declines on unknown tokens or an open-vocabulary fallback.
 - **Noun senses still discriminate poorly.** Verbs are reliable; `model` returns the
   *example/exemplar* reading in both "a ML model" and "a model in Paris".
-- **The ranker costs 400–800ms on a cache miss** and ~1GB of image for torch and the weights.
-  Both are per-deployment rather than per-keystroke, but the first press on a new sentence is
-  visibly slower than the 460ms roll.
+- **The ranker now needs the network.** It calls a hosted model, so a cache miss costs a round
+  trip and an offline install has no ranking at all — the ladder still works, but wrong-sense
+  rungs come back ("escape" for "run"). Ranking by embedding similarity is also a weaker signal
+  than the masked language model it replaced: it asks whether a substitution preserves the
+  sentence's meaning, not whether it is grammatical.
 - **Dark mode does not exist**, and the ornament layer in `DESIGN.md` §6 is specified but unbuilt.
 - **The old `.env` is still in git history.** The tracked copy is gone and `.env` is ignored now,
   but this repo is public, so the Postgres password that was in it is permanently exposed. It has

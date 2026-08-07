@@ -25,6 +25,8 @@ from lemminflect import getAllInflections, getInflection
 from nltk.corpus import wordnet
 from wordfreq import zipf_frequency
 
+from . import ranker
+
 # How far the ladder may reach in each direction. A cap keeps one absurd rarity
 # from sitting at the top of every climb, and keeps the payload small enough to
 # send in one request — which is the point of sending a ladder at all rather
@@ -221,7 +223,6 @@ def _choose_sense(surface, lemma, wn_pos, synsets, context):
     contains, rendered in the form they would appear in — "escaping", not
     "escape" — because the model is judging a sentence, not a dictionary.
     """
-    from . import ranker
 
     sentence, at, to = context
     tag = _inflection_of(surface, lemma, _POS_TO_UPOS[wn_pos])
@@ -272,7 +273,15 @@ def word_ladder(
     # With a sentence to read, look at more senses and pick the one that belongs
     # here; without one, stay narrow, because nothing downstream can tell a
     # wrong sense from a merely rare word.
-    ranking = context and os.getenv("LADDER_RANKING", "on") != "off"
+    # `ranker.enabled()` as well as the switch: ranking now needs a hosted
+    # model, and treating "no credentials" as ranking-off keeps a token-less
+    # install on the fast dictionary path instead of paying a timeout per
+    # lookup to discover the same thing.
+    ranking = (
+        context
+        and os.getenv("LADDER_RANKING", "on") != "off"
+        and ranker.enabled()
+    )
     synsets = wordnet.synsets(lemma, pos=wn_pos)[: SENSES_RANKED if ranking else SENSES]
     if ranking and len(synsets) > 1:
         synsets = _choose_sense(surface, lemma, wn_pos, synsets, context)
@@ -494,7 +503,6 @@ def _settle_phrase_or_word(sentence: str, caret: int, unit: Unit) -> Unit:
         ]
         groups.append(names[:MEMBERS_PER_SENSE] or [key.replace("_", " ")])
 
-    from . import ranker
 
     order = ranker.rank_senses(sentence, unit.start, unit.end, groups)
     if order is None or order[0] == 0:
