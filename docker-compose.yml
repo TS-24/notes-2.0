@@ -26,6 +26,12 @@ services:
       # localhost here would resolve to the backend container itself.
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notes_db}
       ENVIRONMENT: development
+      # Without these the ranker can never run under compose, whatever .env
+      # says: the container only sees what is forwarded here. Unset is fine —
+      # the ladder falls back to the dictionary's own ordering.
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_MODEL: ${HF_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      LADDER_RANKING: ${LADDER_RANKING:-on}
     depends_on:
       db:
         condition: service_healthy
