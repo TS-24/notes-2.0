@@ -1,7 +1,7 @@
 services:
   frontend:
     build:
-      context: ./notes2.0
+      context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "3000:3000"

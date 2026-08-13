@@ -1,4 +1,4 @@
-# Notes 2.0 — Progress Log
+# Restyle — Progress Log
 
 Working context for whoever picks this up next. Read this before touching the
 UI; a lot of what looks like odd code here is load-bearing, and the reasons are
@@ -48,13 +48,13 @@ Frontend on `:3000`, API on `:8000`. The backend entrypoint runs
 **There is no Node on the host.** Typecheck and build through Docker:
 
 ```bash
-docker run --rm -v "$PWD/notes2.0":/app -w /app node:20-alpine sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
+docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
 ```
 
 To add a dependency without touching the host's `node_modules`:
 
 ```bash
-docker run --rm -v "$PWD/notes2.0":/app -w /app node:20-alpine npm install --package-lock-only --save <pkg>
+docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine npm install --package-lock-only --save <pkg>
 ```
 
 The committed `backend/venv` is broken — do not try to use it. Run backend work
@@ -363,7 +363,7 @@ but it destroyed meaning, because fill-mask proposes what *fits the slot*, not
 what means the same: `big → small`, `use → know, take, love`, `good → public`.
 It also cut off the rare end of the ladder for the tokenizer reason in trap 18.
 Latency was never the problem (~40–70ms). The branch was closed as
-[#14](https://github.com/TS-24/notes-2.0/pull/14); its torch/transformers
+[#14](https://github.com/TS-24/restyle/pull/14); its torch/transformers
 plumbing was kept. **Do not re-attempt generation** — the failure is structural,
 not a matter of prompting or thresholds.
 
@@ -457,7 +457,7 @@ Ordered by how likely they are to bite.
 
 10. ~~**The root `.gitignore` is UTF-16 encoded.**~~ **Fixed.** Both ignore files
    are UTF-8 now and 5,914 files were dropped from the index: `backend/venv/`
-   (5,807), `notes2.0/.git.bak/` (101), the 5 stray `__pycache__` files outside
+   (5,807), `notes2.0/.git.bak/` (101, now `frontend/.git.bak/`), the 5 stray `__pycache__` files outside
    the venv, and `.env`. All of them are still on disk; only the tracking is
    gone. `.env.example` is the template now.
 

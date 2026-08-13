@@ -25,10 +25,10 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // TODO(step 6): /api/analyze/vocabulary does not exist yet. The notes now
-  // come from the database via the loader above, but the analysis call still
-  // reaches the backend directly from the browser and will 404 until the
-  // vocabulary service is built.
+  // TODO: the endpoint exists now, but this call still reaches the backend
+  // directly from the browser with a hardcoded host, so it only works when the
+  // API is on the viewer's own localhost. It should go through api.server.ts
+  // like the loader above.
   useEffect(() => {
     async function fetchVocabulary() {
       try {

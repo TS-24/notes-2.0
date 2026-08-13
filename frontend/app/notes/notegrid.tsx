@@ -84,9 +84,9 @@ function NoteCard({
     }
   };
 
-  // TODO(step 6): /api/analyze/vocabulary does not exist yet, and this is the
-  // last place the browser still calls the backend directly. Both are fixed
-  // when the vocabulary service is built.
+  // TODO: the endpoint exists now, but this and analytics.tsx are the last
+  // places the browser still calls the backend directly. The hardcoded host
+  // breaks anywhere the API is not on the viewer's own localhost.
   const fetchVocabulary = async () => {
     setLoading(true);
     try {

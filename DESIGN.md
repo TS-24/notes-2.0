@@ -1,6 +1,6 @@
-# Notes 2.0 — Design Direction
+# Restyle — Design Direction
 
-The visual brief for the app. Anything new in `notes2.0/app/` should be able to point at
+The visual brief for the app. Anything new in `frontend/app/` should be able to point at
 a rule in here.
 
 Status: §§3–5 (type, colour, hierarchy) are **applied**. §6 (ornament) and dark mode in §4 are
@@ -56,7 +56,7 @@ modulation. EB Garamond gives the warm oldstyle body and the italics the referen
 meta lines. Substitutes if either proves wrong in situ: `@fontsource-variable/fraunces` (softer,
 more idiosyncratic display) or `@fontsource-variable/newsreader` (more neutral body).
 
-Wire them in `notes2.0/app/app.css`: drop the Inter import, replace the `--font-sans: "Inter"`
+Wire them in `frontend/app/app.css`: drop the Inter import, replace the `--font-sans: "Inter"`
 token in `@theme` with `--font-serif` / `--font-display`, and repoint `html { @apply font-sans }`.
 
 ### Scale
@@ -168,7 +168,7 @@ the left of the column and again bleeding off the bottom.
   `prefers-reduced-motion`.
 - **Inert:** `pointer-events-none` and `aria-hidden="true"`, always.
 
-**Implementation:** inline SVG components under `notes2.0/app/components/ornament/`, composed by
+**Implementation:** inline SVG components under `frontend/app/components/ornament/`, composed by
 one `<Ornament />` layer mounted **once in the root layout, above the route outlet** — not per
 route and not per card. It must survive navigation without re-mounting; that persistence is
 load-bearing (§9, rule 2). Strokes use `currentColor` so a single opacity token drives both
@@ -314,7 +314,7 @@ quiet way back out, and nothing more.
 ## 10. Motion
 
 Calm and quick. The layout transition is settled and should be reused rather than re-invented:
-`NOTE_LAYOUT_TRANSITION` in `notes2.0/app/workspace/note-surface.tsx` —
+`NOTE_LAYOUT_TRANSITION` in `frontend/app/workspace/note-surface.tsx` —
 `{ type: "tween", duration: 0.55, ease: [0.4, 0, 0.2, 1] }`.
 
 - Tweens, not springs. Springs wobble as they settle even at `bounce: 0`.
