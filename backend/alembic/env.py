@@ -25,8 +25,8 @@ if config.config_file_name is not None:
 from app.db.models import Base
 target_metadata = Base.metadata
 
-database_url = os.getenv("DATABASE_URL", "postgresql://postgres:mysecretpassword@localhost:5432/notes_db")
-config.set_main_option("sqlalchemy.url", database_url)
+# See app/db/database.py: no fallback, the old one embedded a real password.
+config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -73,7 +73,14 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            # SQLite cannot ALTER a column or a constraint, so autogenerate has
+            # to emit batch_alter_table there — otherwise the next migration
+            # that changes an existing table works on compose and stops the
+            # desktop build dead. No effect on Postgres, which renders batch
+            # operations as the plain ALTER anyway.
+            render_as_batch=connection.dialect.name == "sqlite",
         )
 
         with context.begin_transaction():

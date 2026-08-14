@@ -1,4 +1,4 @@
-# Notes 2.0 — Progress Log
+# Restyle — Progress Log
 
 Working context for whoever picks this up next. Read this before touching the
 UI; a lot of what looks like odd code here is load-bearing, and the reasons are
@@ -6,12 +6,12 @@ recorded in [Traps](#traps-do-not-re-litigate-these).
 
 Companion documents:
 
-- [DESIGN.md](DESIGN.md) — the visual and navigation direction. Authoritative
-  over `agent.md` §3, which still describes the old look.
-- [README.md](README.md) — setup.
+- [DESIGN.md](DESIGN.md) — the visual and navigation direction. Its §12 tracks
+  what is applied and what is still outstanding.
+- [README.md](README.md) — what the app is, the API, and setup.
 
-Last updated: 2026-08-01 · branch `dev` (`prod` and `master` are still at
-`fce0475`, one session behind — nothing here has been promoted)
+Last updated: 2026-08-03 · branch `dev` (`prod` and `master` are still at
+`fce0475`, two sessions behind — nothing here has been promoted)
 
 ---
 
@@ -48,13 +48,13 @@ Frontend on `:3000`, API on `:8000`. The backend entrypoint runs
 **There is no Node on the host.** Typecheck and build through Docker:
 
 ```bash
-docker run --rm -v "$PWD/notes2.0":/app -w /app node:20-alpine sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
+docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
 ```
 
 To add a dependency without touching the host's `node_modules`:
 
 ```bash
-docker run --rm -v "$PWD/notes2.0":/app -w /app node:20-alpine npm install --package-lock-only --save <pkg>
+docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine npm install --package-lock-only --save <pkg>
 ```
 
 The committed `backend/venv` is broken — do not try to use it. Run backend work
@@ -363,7 +363,7 @@ but it destroyed meaning, because fill-mask proposes what *fits the slot*, not
 what means the same: `big → small`, `use → know, take, love`, `good → public`.
 It also cut off the rare end of the ladder for the tokenizer reason in trap 18.
 Latency was never the problem (~40–70ms). The branch was closed as
-[#14](https://github.com/TS-24/notes-2.0/pull/14); its torch/transformers
+[#14](https://github.com/TS-24/restyle/pull/14); its torch/transformers
 plumbing was kept. **Do not re-attempt generation** — the failure is structural,
 not a matter of prompting or thresholds.
 
@@ -441,8 +441,33 @@ Ordered by how likely they are to bite.
 9. **`/analytics` and `/settings` are outside the workspace layout** and
    un-migrated. `/settings` is a placeholder.
 
-10. **`agent.md` §3 contradicts DESIGN.md** (it asks for gradients). It should be
-   replaced with a pointer to DESIGN.md.
+9a. **`backend/venv` cannot run the app — rebuild it when off a metered
+   connection.** The interpreter is fine (3.12.13) but only 16 packages are
+   installed, and `fastapi`, `uvicorn`, `SQLAlchemy`, `alembic` and `pytest` are
+   not among them: `venv/bin/python -c "import main"` dies on
+   `ModuleNotFoundError: No module named 'fastapi'`. It is the scratch env for
+   `app/services/run_once.py` (the only importer of `wn` and `defusedxml`,
+   neither of which belongs in `requirements.txt`), not a stale backend env.
+   Fix is `venv/bin/pip install -r requirements.txt`, which
+   pulls torch and transformers, so it is a large download — deferred on
+   purpose, not forgotten. The `psycopg2-binary` pin against the venv's
+   `psycopg` 3 is *not* a conflict: SQLAlchemy resolves the bare `postgresql://`
+   URL in `app/db/database.py:12` to psycopg2, and `run_once.py` uses psycopg 3
+   on its own. See SAFETY-UPDATES.md.
+
+10. ~~**The root `.gitignore` is UTF-16 encoded.**~~ **Fixed.** Both ignore files
+   are UTF-8 now and 5,914 files were dropped from the index: `backend/venv/`
+   (5,807), `notes2.0/.git.bak/` (101, now `frontend/.git.bak/`), the 5 stray `__pycache__` files outside
+   the venv, and `.env`. All of them are still on disk; only the tracking is
+   gone. `.env.example` is the template now.
+
+   **Two things to know.** First, `.env` remains in git history and this repo is
+   public, so treat that Postgres password as burned — it is a throwaway pointing
+   at `localhost`, but do not reuse it. Removing it properly means a history
+   rewrite (`git filter-repo`), which was not done. Second, and this is the trap:
+   **an editor that saves as UTF-16 will silently do it again.** `file .gitignore`
+   must say ASCII or UTF-8. It is worth checking after any edit to that file,
+   because git gives you no error at all — the patterns simply stop matching.
 
 ---
 

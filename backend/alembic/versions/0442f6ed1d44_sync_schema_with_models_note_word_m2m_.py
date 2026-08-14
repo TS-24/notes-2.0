@@ -29,11 +29,23 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('note_id', 'word_id')
     )
     op.add_column('notes', sa.Column('is_pinned', sa.Boolean(), server_default='false', nullable=False))
-    op.add_column('notes', sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
-    op.drop_constraint(op.f('word_definitions_user_id_fkey'), 'word_definitions', type_='foreignkey')
-    op.drop_constraint(op.f('word_definitions_note_id_fkey'), 'word_definitions', type_='foreignkey')
-    op.drop_column('word_definitions', 'note_id')
-    op.drop_column('word_definitions', 'user_id')
+    # sa.func.now() rather than sa.text('now()'): the literal renders as-is and
+    # SQLite has no now(), so the desktop build would fail here. The function
+    # form is rendered per dialect — now() on Postgres, CURRENT_TIMESTAMP on
+    # SQLite.
+    op.add_column('notes', sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False))
+    # SQLite cannot drop a constraint, so the columns are dropped in batch mode
+    # instead — rebuilding the table without them takes their foreign keys with
+    # it, which is the whole point of dropping the constraints first elsewhere.
+    if op.get_bind().dialect.name == 'sqlite':
+        with op.batch_alter_table('word_definitions') as batch:
+            batch.drop_column('note_id')
+            batch.drop_column('user_id')
+    else:
+        op.drop_constraint(op.f('word_definitions_user_id_fkey'), 'word_definitions', type_='foreignkey')
+        op.drop_constraint(op.f('word_definitions_note_id_fkey'), 'word_definitions', type_='foreignkey')
+        op.drop_column('word_definitions', 'note_id')
+        op.drop_column('word_definitions', 'user_id')
     # ### end Alembic commands ###
 
 

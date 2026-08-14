@@ -1,158 +1,130 @@
 """
-Does this word fit *here*? — a masked language model used as a judge.
+Does this word fit *here*? — sense selection by semantic similarity.
 
 The dictionary in `vocab.py` knows what a word's synonyms are but not which of
 them belongs in the sentence in front of it, which is why "running through the
-park" could be offered "escaping". A language model knows the opposite: it reads
-the sentence and has no idea what a synonym is, which is why asking it directly
-for replacements offers "small" for "big".
+park" could be offered "escaping". Something has to read the sentence and say
+which reading is the live one.
 
-So neither generates here. The dictionary proposes and the model ranks:
+So the dictionary still proposes and this file still only ranks:
 
     candidates ── WordNet ──▶  every synonym, right sense or wrong
                                         │
                                         ▼
-    scores    ──  this file ──▶  how well each one reads in this sentence
+    order     ──  this file ──▶  which senses belong in this sentence
                                         │
                                         ▼
     rungs                        the ones that fit, ordered by difficulty
 
-Ranking rather than generating is also what lifts the vocabulary ceiling. A
-masked slot emits exactly one token, and the model's ~30k-piece vocabulary has
-no single token for "felicitous" — it is `fe ##lic ##ito ##us`, so no amount of
-prompting makes a `[MASK]` produce it. Scoring a word you already hold has no
-such limit: mask its pieces one at a time and read off how probable each was.
-The words a generator structurally cannot say, a judge can happily score.
+What it ranks *with* is a hosted embedding model rather than a local masked
+language model. The question asked is "if I swap this sense in, is it still the
+same sentence?" — each sense is substituted into the sentence, both versions
+are embedded, and the senses whose substitution drifts least from the original
+come first. Scoring the sense as a group rather than word by word is the part
+worth keeping from the previous design: a lone word cannot distinguish a wrong
+sense that happens to read fluently, but a group of words that all mean the
+same thing either belongs here or does not.
+
+This is a weaker signal than judging grammatical fit directly, and it is meant
+to be: the feature degrades to the dictionary's own ordering whenever the model
+cannot be reached, and that fallback is the normal offline state rather than an
+error path. Every failure here returns None.
 """
 
 import math
 import os
 from functools import lru_cache
 
-from wordfreq import zipf_frequency
-
-MODEL_NAME = os.getenv("MLM_MODEL", "distilbert-base-uncased")
-
-# Candidates scoring this far below the original — in mean log-probability per
-# token — are reading as wrong-sense rather than merely rarer. Rarity costs some
-# probability all on its own, so the margin has to be loose enough not to punish
-# a word simply for being unusual, which is the whole point of the ladder.
-FIT_MARGIN = 4.5
+MODEL_NAME = os.getenv("HF_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
 # Ranking is only worth its latency when there is something to choose between.
 MIN_CANDIDATES = 2
 
+# The word roller's animation is 460ms and it asks for a ladder mid-keystroke.
+# A slow rank has to become a dictionary ladder rather than a stalled reel, so
+# this is deliberately shorter than a request would normally be given.
+TIMEOUT_SECONDS = 3.0
+
 
 @lru_cache(maxsize=1)
-def _model():
+def _client():
     """
-    Tokenizer and model, loaded once per process on first use.
+    The inference client, built once per process.
 
-    Lazy on purpose: importing torch and materialising the weights costs seconds
-    and hundreds of megabytes, and a deployment with ranking switched off should
-    never pay for it.
+    Lazy because a deployment with ranking switched off should never pay for
+    the import, and because the token is read at first use rather than at
+    import — the desktop build supplies it after the process is already up.
     """
-    import torch
-    from transformers import AutoModelForMaskedLM, AutoTokenizer
+    from huggingface_hub import InferenceClient
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
-    model.eval()
-    return torch, tokenizer, model
+    return InferenceClient(model=MODEL_NAME, token=os.getenv("HF_TOKEN"), timeout=TIMEOUT_SECONDS)
 
 
-def _mean_log_prob(torch, tokenizer, model, sentence: str, start: int, end: int, candidate: str):
+def enabled() -> bool:
     """
-    How well `candidate` reads in place of [start:end], per token.
+    Whether ranking should be attempted at all — env only, no network.
 
-    Pseudo-log-likelihood: put the candidate in, then hide one of its tokens at
-    a time and ask the model how surprised it is to find it there. Averaging
-    over the tokens rather than summing keeps a four-piece word comparable with
-    a one-piece word — a sum would rank every long word last purely for being
-    long, which is precisely the bias that made generation useless here.
+    Separate from `is_available` on purpose. This is checked on the hot path,
+    before a ladder is built, so it has to be free; `is_available` proves the
+    model answers and costs a round trip.
+
+    Without it a token-less install would attempt a call on every uncached
+    lookup and wait out the timeout before falling back — and since a ranked
+    ladder is cached per sentence rather than per word, those misses are the
+    common case. The old local model was always there or always absent; a
+    hosted one is absent in a way that costs seconds, so absence has to be
+    settled before the request rather than by it.
     """
-    filled = sentence[:start] + candidate + sentence[end:]
-    encoded = tokenizer(filled, return_tensors="pt")
-    ids = encoded["input_ids"][0]
-
-    # Which tokens are the candidate's? Re-tokenise the prefix to find where it
-    # begins; character offsets do not survive tokenisation.
-    prefix = tokenizer(sentence[:start], add_special_tokens=False)["input_ids"]
-    body = tokenizer(candidate, add_special_tokens=False)["input_ids"]
-    first = 1 + len(prefix)  # 1 for [CLS]
-    positions = range(first, first + len(body))
-    if not body or first + len(body) > len(ids):
-        return None
-
-    # One masked copy per token of the candidate, scored in a single batch.
-    batch = ids.repeat(len(body), 1)
-    for row, position in enumerate(positions):
-        batch[row][position] = tokenizer.mask_token_id
-
-    with torch.no_grad():
-        logits = model(input_ids=batch, attention_mask=torch.ones_like(batch)).logits
-
-    total = 0.0
-    for row, position in enumerate(positions):
-        probabilities = torch.log_softmax(logits[row, position], dim=-1)
-        total += float(probabilities[ids[position]])
-    return total / len(body)
+    return bool(os.getenv("HF_TOKEN"))
 
 
-def score_in_context(
-    sentence: str, start: int, end: int, candidates: list[str]
-) -> dict[str, float] | None:
+def _cosine(a, b) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return dot / norm if norm else 0.0
+
+
+def _flatten(vector):
     """
-    How well each candidate reads in place of [start:end].
+    Reduce whatever the endpoint returned to one list of floats.
 
-    Returns None when there is nothing to judge or the model cannot be reached,
-    so a caller can fall back to the dictionary alone rather than fail.
+    Sentence-transformers models return a vector per sentence, but some return
+    a vector per *token* instead, which arrives as a list of lists. Averaging
+    over that gives the sentence vector, and is a no-op for models that already
+    pooled.
     """
-    if len(candidates) < MIN_CANDIDATES or not sentence:
-        return None
+    values = list(vector)
+    if values and isinstance(values[0], (list, tuple)):
+        columns = list(zip(*values))
+        return [sum(column) / len(column) for column in columns]
+    return [float(value) for value in values]
 
+
+def _embed(sentences: list[str]) -> list[list[float]] | None:
     try:
-        torch, tokenizer, model = _model()
+        raw = _client().feature_extraction(sentences)
     except Exception:
-        # A missing model is a degraded ladder, never a broken editor.
+        # No token, no network, a cold model, a timeout — all the same answer.
         return None
-
-    scores: dict[str, float] = {}
-    for candidate in candidates:
-        score = _mean_log_prob(torch, tokenizer, model, sentence, start, end, candidate)
-        if score is not None:
-            scores[candidate] = score
-    return scores or None
-
-
-# Note on what this deliberately does *not* do: normalise by the candidate's own
-# frequency. Subtracting the prior — pointwise mutual information, the textbook
-# correction for "common words score well everywhere" — was tried and made
-# things worse. It rewards rarity, and this ranker feeds a ladder that already
-# climbs toward rarity, so the two compound: "running through the park" went
-# straight back to offering "escaping" and "heading for the hills", the exact
-# wrong-sense failure the ranking exists to remove. Raw fit is the better
-# signal here precisely because the difficulty axis is applied separately,
-# afterwards, by `_difficulty`.
+    try:
+        embedded = [_flatten(vector) for vector in raw]
+    except TypeError:
+        return None
+    if len(embedded) != len(sentences) or not all(embedded):
+        return None
+    return embedded
 
 
 def rank_senses(
     sentence: str, start: int, end: int, senses: list[list[str]]
 ) -> list[int] | None:
     """
-    Which sense the word is being used in, judged by how its synonyms read.
-
-    Scoring the *sense* rather than each word separately is the point. A fluency
-    score cannot tell a wrong sense from a right one on its own — "this is a bad
-    problem" reads perfectly well, so filtering loose candidates by fluency lets
-    "bad" through as a synonym for "big". But a sense is a group of words that
-    mean the same thing, and the group that belongs here reads well *as a group*
-    while the wrong one does not. Judging them together is what makes the
-    evidence discriminating.
+    Which sense the word is being used in, judged by what its synonyms do to
+    the sentence.
 
     `senses` is one list of candidate surface forms per sense, in WordNet's
-    order. Returns their indices best-first, or None when the model cannot
-    judge.
+    order. Returns their indices best-first, or None when nothing can be
+    judged.
 
     An order rather than a winner, because senses are uneven: WordNet's first
     sense of "run" contains nothing but "run", so taking only the best sense
@@ -160,28 +132,42 @@ def rank_senses(
     once it has enough rungs, which prefers the right sense without letting a
     thin one empty the ladder.
     """
-    flat = [word for sense in senses for word in sense]
-    scores = score_in_context(sentence, start, end, list(dict.fromkeys(flat)))
-    if not scores:
+    if not enabled() or not sentence or not senses:
+        return None
+    if sum(len(sense) for sense in senses) < MIN_CANDIDATES:
         return None
 
-    rated: list[tuple[float, int]] = []
+    # One substituted sentence per candidate, kept alongside the sense it came
+    # from so the scores can be pooled per sense afterwards.
+    variants: list[str] = []
+    owners: list[int] = []
     for index, sense in enumerate(senses):
-        marks = [scores[word] for word in sense if word in scores]
-        if not marks:
-            continue
-        # The mean over the sense, not its best member: one lucky word should
-        # not carry a sense that otherwise reads badly here.
-        rated.append((sum(marks) / len(marks), index))
+        for word in sense:
+            variants.append(sentence[:start] + word + sentence[end:])
+            owners.append(index)
+    if not variants:
+        return None
 
+    embedded = _embed([sentence] + variants)
+    if embedded is None:
+        return None
+    original, rest = embedded[0], embedded[1:]
+
+    totals: dict[int, list[float]] = {}
+    for owner, vector in zip(owners, rest):
+        totals.setdefault(owner, []).append(_cosine(original, vector))
+
+    # The mean over the sense, not its best member: one lucky word should not
+    # carry a sense that otherwise reads badly here.
+    rated = [(sum(marks) / len(marks), index) for index, marks in totals.items() if marks]
+    if not rated:
+        return None
     rated.sort(reverse=True)
-    return [index for _, index in rated] or None
+    return [index for _, index in rated]
 
 
 def is_available() -> bool:
     """Whether ranking can run at all — used to decide, not to fail."""
-    try:
-        _model()
-        return True
-    except Exception:
+    if not enabled():
         return False
+    return _embed(["a test sentence"]) is not None
