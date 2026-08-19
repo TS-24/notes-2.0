@@ -334,7 +334,11 @@ Each of these cost real time. They are all commented at the site too.
 
 ## 5. Conventions
 
-- **Enter commits, Shift+Enter is a newline.** Everywhere.
+- **Enter commits, Shift+Enter is a newline** — in every single-line field.
+  **Not in a note's body**, where Enter is a paragraph break like anywhere
+  else. "Everywhere" is what this line used to say, and taking it literally is
+  what made the note untypable: the handler sits on the container, so it caught
+  the body too, and Enter blurred the field mid-sentence.
 - Escape also saves and closes; nothing discards.
 - Saves only submit when the text actually changed.
 - Animation: tweens, never springs (springs wobble even at `bounce: 0`).
