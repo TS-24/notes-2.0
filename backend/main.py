@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
 
 app = FastAPI(
-    title="Notes 2.0 API",
-    description="Backend API for the Notes 2.0 application",
+    title="Restyle API",
+    description="Backend API for the Restyle application",
     version="1.0.0",
 )
 

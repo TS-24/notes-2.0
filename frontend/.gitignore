@@ -1,0 +1,11 @@
+.DS_Store
+.env
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+
+# An old nested git directory, kept as a copy. The line below was previously
+# appended as UTF-16, so it never matched and all 101 files were tracked.
+/.git.bak/

@@ -1,7 +1,19 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -67,4 +79,67 @@ class WordDefinition(Base):
 
     notes: Mapped[List["Note"]] = relationship(
         secondary=note_word_association, back_populates="words"
+    )
+
+
+class WordLadder(Base):
+    """
+    A cached word ladder — see app/services/vocab.py.
+
+    Building one means walking WordNet and scoring every candidate, which is
+    the same answer every time for the same word, so it is worth computing once
+    for everybody rather than once per keystroke.
+
+    Keyed on the *surface* form, not the lemma: the rungs are inflected to match
+    what was asked about, so "run" and "running" are legitimately separate rows.
+    """
+
+    # `pos` is the part of speech the ladder was *resolved* to, not a lookup
+    # key — the caller does not say which one they meant, so the service picks.
+
+    __tablename__ = "word_ladders"
+    __table_args__ = (
+        UniqueConstraint("word", "context_hash", name="uq_word_ladders_word_context"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # Which sentence the ladder was built for, hashed — empty when the ranker is
+    # off, since a dictionary ladder depends on nothing but the word. This is
+    # the price of context: the answer stops being a property of the word, so
+    # the cache converges on sentences rather than on vocabulary.
+    context_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
+    pos: Mapped[str] = mapped_column(String(2), nullable=False, server_default="")
+    # The rungs in order, plainest first.
+    rungs: Mapped[list] = mapped_column(JSON, nullable=False)
+    origin_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class KnownWord(Base):
+    """
+    A word the user has said they already know.
+
+    Kept per user rather than globally: "difficult" is a fact about a reader,
+    not about a word, and the whole point of dismissing one is that this reader
+    is done being shown it.
+
+    Stored as the surface form the analysis offered, because that is what the
+    user was actually looking at when they dismissed it. Lemmatising here would
+    quietly dismiss "running" along with "run", which is a bigger claim than
+    the user made.
+    """
+
+    __tablename__ = "known_words"
+    __table_args__ = (
+        UniqueConstraint("user_id", "word", name="uq_known_words_user_word"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    word: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
