@@ -5,10 +5,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
+IS_DEVELOPMENT = ENVIRONMENT == "development"
+
 app = FastAPI(
     title="Restyle API",
     description="Backend API for the Restyle application",
     version="1.0.0",
+    # The interactive docs are a map of every route, including the auth ones,
+    # served to anyone who finds the host. Useful while building, an invitation
+    # once this is reachable from outside. Off unless ENVIRONMENT says dev.
+    docs_url="/docs" if IS_DEVELOPMENT else None,
+    redoc_url="/redoc" if IS_DEVELOPMENT else None,
+    openapi_url="/openapi.json" if IS_DEVELOPMENT else None,
 )
 
 # In the ordinary path nothing cross-origin reaches this API at all: the
