@@ -5,7 +5,7 @@ import { requireToken } from "~/lib/session.server";
 import type { Route } from "./+types/menu";
 
 export function meta() {
-  return [{ title: "Settings — Restyle" }];
+  return [{ title: "Account — Restyle" }];
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -18,7 +18,13 @@ export default function Menu({ loaderData }: Route.ComponentProps) {
 
   return (
     <main className="mx-auto max-w-prose space-y-8 p-8">
-      <h1 className="font-display text-3xl">Settings</h1>
+      {/* The exit sits at the head of the column, at Meta size — DESIGN.md's
+          form for leaving a view, in place of a back button or a rail. */}
+      <Link to="/notes" className="block text-sm tracking-wide text-ink/50 hover:text-ink">
+        ← Your notes
+      </Link>
+
+      <h1 className="font-display text-3xl">Account</h1>
 
       <section className="space-y-1">
         <h2 className="text-sm text-ink/60">Signed in as</h2>
@@ -37,9 +43,6 @@ export default function Menu({ loaderData }: Route.ComponentProps) {
         </button>
       </Form>
 
-      <Link to="/" className="block text-sm text-ink/60 underline">
-        Back to your notes
-      </Link>
     </main>
   );
 }
