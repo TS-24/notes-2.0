@@ -13,10 +13,6 @@ class UserBase(BaseModel):
     email: Email
 
 
-class UserCreate(UserBase):
-    pass
-
-
 class UserUpdate(BaseModel):
     username: Username | None = None
     email: Email | None = None
