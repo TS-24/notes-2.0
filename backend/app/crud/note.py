@@ -8,6 +8,11 @@ from ..db.models import Note, WordDefinition
 # A note's owner is fixed at creation time, so user_id is intentionally not updatable.
 UPDATABLE_FIELDS = {"title", "content", "is_pinned"}
 
+# Every lookup below takes the owner as a required argument rather than an
+# optional filter. That is deliberate: an optional one defaults to "any user"
+# when a caller forgets it, which is silent and wrong, while a required one
+# makes the same mistake a TypeError the first time the tests run.
+
 
 def create_note(db: Session, user_id: int, title: str, content: str | None = None) -> Note:
     """Insert a new note owned by the given user and return it."""
@@ -18,23 +23,30 @@ def create_note(db: Session, user_id: int, title: str, content: str | None = Non
     return note
 
 
-def get_note(db: Session, note_id: int) -> Note | None:
-    """Fetch a single note by primary key."""
-    stmt = select(Note).where(Note.id == note_id).options(selectinload(Note.words))
+def get_note(db: Session, note_id: int, user_id: int) -> Note | None:
+    """Fetch one of this user's notes. None if it is missing or is not theirs.
+
+    Those two cases are not distinguished on purpose: the caller turns both
+    into the same 404, because a different answer would confirm that a note
+    exists and belongs to someone else.
+    """
+    stmt = (
+        select(Note)
+        .where(Note.id == note_id, Note.user_id == user_id)
+        .options(selectinload(Note.words))
+    )
     return db.scalars(stmt).first()
 
 
 def list_notes(
     db: Session,
-    user_id: int | None = None,
+    user_id: int,
     search: str | None = None,
     skip: int = 0,
     limit: int = 100,
 ) -> list[Note]:
-    """Return a page of notes, optionally filtered to one user and/or a title search."""
-    stmt = select(Note).options(selectinload(Note.words))
-    if user_id is not None:
-        stmt = stmt.where(Note.user_id == user_id)
+    """Return a page of one user's notes, optionally narrowed by a title search."""
+    stmt = select(Note).options(selectinload(Note.words)).where(Note.user_id == user_id)
     if search:
         stmt = stmt.where(Note.title.ilike(f"%{search}%"))
     # Most recently touched first, so the head of the list is the note the user
@@ -43,9 +55,9 @@ def list_notes(
     return list(db.scalars(stmt))
 
 
-def update_note(db: Session, note_id: int, **fields) -> Note | None:
-    """Update the given fields on a note and return the updated row."""
-    note = get_note(db, note_id)
+def update_note(db: Session, note_id: int, user_id: int, **fields) -> Note | None:
+    """Update the given fields on one of this user's notes."""
+    note = get_note(db, note_id, user_id)
     if note is None:
         return None
 
@@ -58,14 +70,14 @@ def update_note(db: Session, note_id: int, **fields) -> Note | None:
     return note
 
 
-def touch_note(db: Session, note_id: int) -> Note | None:
+def touch_note(db: Session, note_id: int, user_id: int) -> Note | None:
     """Mark a note as just-used without changing its content.
 
     Opening a note counts as an update for "where you left off", but an empty
     PATCH changes no attributes, so SQLAlchemy would not issue an UPDATE and
     `onupdate` would never fire. Setting the column explicitly forces it.
     """
-    note = get_note(db, note_id)
+    note = get_note(db, note_id, user_id)
     if note is None:
         return None
 
@@ -75,9 +87,9 @@ def touch_note(db: Session, note_id: int) -> Note | None:
     return note
 
 
-def delete_note(db: Session, note_id: int) -> bool:
-    """Delete a note; return True if a row was removed."""
-    note = db.get(Note, note_id)
+def delete_note(db: Session, note_id: int, user_id: int) -> bool:
+    """Delete one of this user's notes; return True if a row was removed."""
+    note = get_note(db, note_id, user_id)
     if note is None:
         return False
 
@@ -86,9 +98,9 @@ def delete_note(db: Session, note_id: int) -> bool:
     return True
 
 
-def add_word_to_note(db: Session, note_id: int, word_id: int) -> Note | None:
-    """Associate an existing word definition with a note."""
-    note = get_note(db, note_id)
+def add_word_to_note(db: Session, note_id: int, word_id: int, user_id: int) -> Note | None:
+    """Associate an existing word definition with one of this user's notes."""
+    note = get_note(db, note_id, user_id)
     word = db.get(WordDefinition, word_id)
     if note is None or word is None:
         return None
@@ -100,9 +112,9 @@ def add_word_to_note(db: Session, note_id: int, word_id: int) -> Note | None:
     return note
 
 
-def remove_word_from_note(db: Session, note_id: int, word_id: int) -> Note | None:
-    """Remove the association between a word definition and a note."""
-    note = get_note(db, note_id)
+def remove_word_from_note(db: Session, note_id: int, word_id: int, user_id: int) -> Note | None:
+    """Remove the association between a word definition and this user's note."""
+    note = get_note(db, note_id, user_id)
     word = db.get(WordDefinition, word_id)
     if note is None or word is None:
         return None

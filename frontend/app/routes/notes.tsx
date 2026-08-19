@@ -2,6 +2,7 @@ import { useRouteLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/notes";
 import Notegrid from "~/notes/notegrid";
 import { api, ApiError } from "~/lib/api.server";
+import { requireToken } from "~/lib/session.server";
 import type { Note } from "~/lib/types";
 
 export function meta() {
@@ -17,6 +18,7 @@ export function meta() {
  * so the UI reflects the database without any manual refetching.
  */
 export async function action({ request }: Route.ActionArgs) {
+  const token = await requireToken(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -28,7 +30,7 @@ export async function action({ request }: Route.ActionArgs) {
         // The API requires a non-empty title, but the composer allows
         // body-only notes, so fall back to a placeholder.
         // The id comes back so the ghost card can open the note it just made.
-        const created = await api.createNote({ title: title || "Untitled", content });
+        const created = await api.createNote(token, { title: title || "Untitled", content });
         return { ok: true, id: created.id };
       }
       case "update": {
@@ -37,22 +39,30 @@ export async function action({ request }: Route.ActionArgs) {
         const content = String(formData.get("content") ?? "").trim();
         // Same fallback as create: the API rejects an empty title, but the
         // expanded editor lets you clear the field.
-        await api.updateNote(id, { title: title || "Untitled", content });
+        await api.updateNote(token, id, { title: title || "Untitled", content });
         return { ok: true };
       }
       case "togglePin": {
         const id = Number(formData.get("id"));
         const isPinned = formData.get("isPinned") === "true";
-        await api.updateNote(id, { is_pinned: !isPinned });
+        await api.updateNote(token, id, { is_pinned: !isPinned });
         return { ok: true };
       }
       case "touch": {
         // Opening a note counts as an update for "where you left off".
-        await api.touchNote(Number(formData.get("id")));
+        await api.touchNote(token, Number(formData.get("id")));
         return { ok: true };
       }
       case "delete": {
-        await api.deleteNote(Number(formData.get("id")));
+        await api.deleteNote(token, Number(formData.get("id")));
+        return { ok: true };
+      }
+      case "markKnown": {
+        // Moved off a browser fetch to a hardcoded host. It is a user-scoped
+        // write, so it is the one of the three that silently did nothing
+        // rather than merely failing to load.
+        const words = formData.getAll("word").map(String);
+        await api.markWordsKnown(token, words);
         return { ok: true };
       }
       default:

@@ -4,13 +4,20 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      # Host ports are parameterised and default to a block unique to this
+      # project, so a neighbour on 3000 or 5432 costs nothing. Only the host
+      # side moves: inside the network these still listen on 3000 and 8000.
+      - "${FRONTEND_PORT:-3700}:3000"
     environment:
       NODE_ENV: production
       # Loaders and actions run inside this container and reach the backend by
       # its compose service name. The browser never calls the backend directly,
       # so no public API URL is needed (and there is no CORS to configure).
       API_URL: http://backend:8000
+      # Signs the session cookie this server sets. Distinct from JWT_SECRET:
+      # that one signs the token inside, this one signs the envelope, and they
+      # belong to different services.
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
     depends_on:
       - backend
     restart: unless-stopped
@@ -20,12 +27,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8700}:8000"
     environment:
       # "db" is the compose DNS name for the Postgres service below. Using
       # localhost here would resolve to the backend container itself.
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notes_db}
       ENVIRONMENT: development
+      # No default: a fallback signing key would be a skeleton key for every
+      # deployment that forgot to set one. Compose refuses to start without it.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       # Without these the ranker can never run under compose, whatever .env
       # says: the container only sees what is forwarded here. Unset is fine —
       # the ladder falls back to the dictionary's own ordering.
@@ -40,7 +50,7 @@ services:
   db:
     image: postgres:15-alpine
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5700}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

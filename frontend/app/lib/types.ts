@@ -51,3 +51,14 @@ export interface User {
   username: string;
   email: string;
 }
+
+/** Mirrors backend/app/schemas/analyze.py::VocabularyAnalysis */
+export interface VocabularyAnalysis {
+  total_difficult_words: number;
+  definitions: Record<string, string>;
+}
+
+/** The envelope the analyze endpoint returns it in. */
+export interface VocabularyAnalysisResponse {
+  vocabulary_analysis: VocabularyAnalysis;
+}

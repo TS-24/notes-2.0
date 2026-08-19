@@ -2,7 +2,10 @@ alembic==1.18.4
 annotated-doc==0.0.5
 annotated-types==0.7.0
 anyio==4.14.2
+argon2-cffi-bindings==25.1.0
+argon2-cffi==25.1.0
 certifi==2026.7.22
+cffi==2.1.1
 click==8.4.2
 fastapi==0.138.0
 ftfy==6.3.1
@@ -27,9 +30,11 @@ nltk==3.9.4
 packaging==26.2
 pluggy==1.6.0
 psycopg2-binary==2.9.12
+pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 Pygments==2.20.0
+PyJWT==2.13.0
 pyphen==0.17.2
 pytest==9.1.1
 python-dotenv==1.2.2

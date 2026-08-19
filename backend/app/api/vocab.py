@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 
 from ..crud import word_ladder as crud_word_ladder
 from ..db.database import get_db
+from ..db.models import User
 from ..schemas.word_ladder import WordLadderRead
+from .deps import get_current_user
 
 router = APIRouter(prefix="/vocab", tags=["vocab"])
 
@@ -17,6 +19,11 @@ def read_word_ladder(
     sentence: str = Query(..., min_length=1, max_length=MAX_SENTENCE),
     caret: int = Query(..., ge=0, description="Offset of the caret within `sentence`"),
     db: Session = Depends(get_db),
+    # The ladder and its cache are shared by everyone — a word means the same
+    # thing whoever is reading. The token is required so this is not a free
+    # WordNet-plus-a-ranker endpoint for anyone who finds the host, not to
+    # scope what comes back.
+    current_user: User = Depends(get_current_user),
 ) -> WordLadderRead:
     """
     The difficulty ladder for whatever the caret is standing in, plainest first.

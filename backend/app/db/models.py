@@ -35,8 +35,20 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Argon2 digests are around 100 characters; 255 leaves room to raise the
+    # parameters later without a migration.
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     notes: Mapped[List["Note"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
+    )
+    # Deleting an account has to take its known words with it. The foreign key
+    # alone does not do that: it would leave rows pointing at a missing user,
+    # which Postgres rejects and SQLite quietly keeps.
+    known_words: Mapped[List["KnownWord"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -139,7 +151,29 @@ class KnownWord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user: Mapped["User"] = relationship(back_populates="known_words")
     word: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class InviteCode(Base):
+    """
+    A single-use code that permits one registration.
+
+    Registration is invite-only, and these are issued by hand from the CLI:
+    there is no self-service. Redemption is the act of stamping `used_at`, so
+    the column doubles as the record of when the code was spent and as the
+    thing that stops it being spent twice.
+    """
+
+    __tablename__ = "invite_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    used_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
