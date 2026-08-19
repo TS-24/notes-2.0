@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { Route } from "./+types/analytics";
 import { api } from "~/lib/api.server";
+import { requireToken } from "~/lib/session.server";
 import {
   Sheet,
   SheetContent,
@@ -10,61 +11,27 @@ import {
   SheetTrigger
 } from "~/components/ui/sheet";
 
-interface VocabularyAnalysis {
-  total_difficult_words: number;
-  definitions: Record<string, string>;
-}
-
-export async function loader() {
-  return { notes: await api.listNotes() };
+export async function loader({ request }: Route.LoaderArgs) {
+  const token = await requireToken(request);
+  const notes = await api.listNotes(token);
+  // The analysis moved into the loader. It used to run in a useEffect against
+  // a hardcoded 127.0.0.1, which worked only on the machine hosting the API
+  // and could never carry an HttpOnly session cookie.
+  const combined = notes.map((n) => n.content ?? "").join("\n\n");
+  const analysis = notes.length
+    ? (await api.analyzeVocabulary(token, { title: "All Notes", content: combined }))
+        .vocabulary_analysis
+    : null;
+  return { notes, analysis };
 }
 
 export default function Analytics({ loaderData }: Route.ComponentProps) {
-  const { notes } = loaderData;
-  const [vocabData, setVocabData] = useState<VocabularyAnalysis | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // TODO: the endpoint exists now, but this call still reaches the backend
-  // directly from the browser with a hardcoded host, so it only works when the
-  // API is on the viewer's own localhost. It should go through api.server.ts
-  // like the loader above.
-  useEffect(() => {
-    async function fetchVocabulary() {
-      try {
-        if (notes.length === 0) {
-          setLoading(false);
-          return;
-        }
-
-        const combinedText = notes.map((n) => n.content ?? "").join("\n\n");
-
-        const response = await fetch("http://127.0.0.1:8700/api/analyze/vocabulary", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "All Notes", content: combinedText }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch vocabulary analysis");
-        }
-
-        const data = await response.json();
-        setVocabData(data.vocabulary_analysis);
-      } catch (err: any) {
-        setError(err.message || "An error occurred");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchVocabulary();
-  }, [notes]);
+  const { analysis } = loaderData;
 
   // Generate randomized scattered pattern for each word
   const wordsWithStyles = useMemo(() => {
-    if (!vocabData) return [];
-    const entries = Object.entries(vocabData.definitions);
+    if (!analysis) return [];
+    const entries = Object.entries(analysis.definitions);
     
     // sizes: text-sm to text-6xl
     const sizes = [
@@ -98,7 +65,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
         className: `cursor-pointer transition-colors hover:text-blue-500 ${sizeClass} ${weightClass} ${colorClass}`
       };
     });
-  }, [vocabData]);
+  }, [analysis]);
 
   return (
     <main className="flex-1 relative overflow-hidden bg-zinc-50 dark:bg-zinc-950 min-h-screen font-sans flex flex-col">
@@ -108,10 +75,13 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
           Click on any word to view its definition in a sidenote.
         </p>
         
-        {loading && <p className="mt-4 text-sm text-zinc-500">Analyzing notes...</p>}
-        {error && <p className="mt-4 text-sm text-red-500">Error: {error}</p>}
-        {!loading && vocabData?.total_difficult_words === 0 && (
+        {/* The analysis arrives with the page now, so there is no loading
+            state to show and no fetch of its own to fail. */}
+        {analysis?.total_difficult_words === 0 && (
           <p className="mt-4 text-sm text-zinc-500">No complex vocabulary found in your notes.</p>
+        )}
+        {analysis === null && (
+          <p className="mt-4 text-sm text-zinc-500">Write a note first.</p>
         )}
       </div>
 

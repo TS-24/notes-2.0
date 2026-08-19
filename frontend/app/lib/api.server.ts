@@ -7,7 +7,16 @@
  * configure and the API host stays private to the compose network.
  */
 
-import type { Note, User, WordDefinition, WordLadder } from "./types";
+import { redirect } from "react-router";
+
+import { destroyToken } from "./session.server";
+import type {
+  Note,
+  User,
+  VocabularyAnalysisResponse,
+  WordDefinition,
+  WordLadder,
+} from "./types";
 
 const API_URL = process.env.API_URL ?? "http://localhost:8700";
 
@@ -21,11 +30,32 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Every method takes the caller's token as its first argument rather than
+ * reading an ambient one. It is more typing at each call site, and it is what
+ * makes an unauthenticated request impossible to write by accident: there is
+ * no signature here that compiles without one.
+ */
+async function request<T>(
+  path: string,
+  token: string | null,
+  init?: RequestInit,
+): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
+
+  // An expired token is not an error the page can do anything with, so it
+  // becomes a trip to the login screen rather than the error boundary. The
+  // stale cookie is cleared on the way out, or the redirect would loop.
+  if (response.status === 401) {
+    throw redirect("/login", { headers: { "Set-Cookie": await destroyToken() } });
+  }
 
   if (!response.ok) {
     // FastAPI puts human-readable errors in `detail`; fall back to the status
@@ -46,41 +76,42 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  /** The signed-in user. Currently the seeded dev user. */
-  getCurrentUser: () => request<User>("/api/users/me"),
+  /** The signed-in user. */
+  getCurrentUser: (token: string) => request<User>("/api/users/me", token),
 
-  listNotes: (options: { search?: string } = {}) => {
+  listNotes: (token: string, options: { search?: string } = {}) => {
     const params = new URLSearchParams();
     if (options.search) params.set("search", options.search);
     const query = params.toString();
-    return request<Note[]>(`/api/notes${query ? `?${query}` : ""}`);
+    return request<Note[]>(`/api/notes${query ? `?${query}` : ""}`, token);
   },
 
-  getNote: (id: number) => request<Note>(`/api/notes/${id}`),
+  getNote: (token: string, id: number) => request<Note>(`/api/notes/${id}`, token),
 
-  createNote: (data: { title: string; content?: string | null }) =>
-    request<Note>("/api/notes", {
+  createNote: (token: string, data: { title: string; content?: string | null }) =>
+    request<Note>("/api/notes", token, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   updateNote: (
+    token: string,
     id: number,
     data: { title?: string; content?: string | null; is_pinned?: boolean },
   ) =>
-    request<Note>(`/api/notes/${id}`, {
+    request<Note>(`/api/notes/${id}`, token, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
   /** Records that a note was opened, moving it to the head of the list. */
-  touchNote: (id: number) =>
-    request<Note>(`/api/notes/${id}/touch`, { method: "POST" }),
+  touchNote: (token: string, id: number) =>
+    request<Note>(`/api/notes/${id}/touch`, token, { method: "POST" }),
 
-  deleteNote: (id: number) =>
-    request<void>(`/api/notes/${id}`, { method: "DELETE" }),
+  deleteNote: (token: string, id: number) =>
+    request<void>(`/api/notes/${id}`, token, { method: "DELETE" }),
 
-  listWords: () => request<WordDefinition[]>("/api/words"),
+  listWords: (token: string) => request<WordDefinition[]>("/api/words", token),
 
   /**
    * The ladder for whatever the caret is standing in, plainest to rarest.
@@ -90,14 +121,53 @@ export const api = {
    * travels with the word it attaches to. The response says which span it
    * resolved to.
    */
-  getWordLadder: (sentence: string, caret: number) =>
+  getWordLadder: (token: string, sentence: string, caret: number) =>
     request<WordLadder>(
       `/api/vocab/ladder?${new URLSearchParams({ sentence, caret: String(caret) })}`,
+      token,
     ),
 
-  attachWord: (noteId: number, wordId: number) =>
-    request<Note>(`/api/notes/${noteId}/words/${wordId}`, { method: "POST" }),
+  attachWord: (token: string, noteId: number, wordId: number) =>
+    request<Note>(`/api/notes/${noteId}/words/${wordId}`, token, { method: "POST" }),
 
-  detachWord: (noteId: number, wordId: number) =>
-    request<Note>(`/api/notes/${noteId}/words/${wordId}`, { method: "DELETE" }),
+  detachWord: (token: string, noteId: number, wordId: number) =>
+    request<Note>(`/api/notes/${noteId}/words/${wordId}`, token, { method: "DELETE" }),
+
+  /**
+   * The words worth learning in a body of text.
+   *
+   * Server-side like everything else here. It used to be called from the
+   * browser against a hardcoded 127.0.0.1, which worked only on the machine
+   * running the API and could not carry an HttpOnly cookie anywhere.
+   */
+  analyzeVocabulary: (token: string, data: { title: string; content: string }) =>
+    request<VocabularyAnalysisResponse>("/api/analyze/vocabulary", token, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** Records words the reader says they already know. Returns no body. */
+  markWordsKnown: (token: string, words: string[]) =>
+    request<void>("/api/words/known", token, {
+      method: "POST",
+      body: JSON.stringify({ words }),
+    }),
+
+  /** Exchanges credentials for a token. The only call with no token of its own. */
+  login: (email: string, password: string) =>
+    request<{ access_token: string }>("/api/auth/login", null, {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  register: (data: {
+    username: string;
+    email: string;
+    password: string;
+    invite_code: string;
+  }) =>
+    request<{ access_token: string }>("/api/auth/register", null, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };

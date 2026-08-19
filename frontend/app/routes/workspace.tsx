@@ -9,6 +9,7 @@ import {
 import type { Route } from "./+types/workspace";
 import NoteSurface from "~/workspace/note-surface";
 import { api } from "~/lib/api.server";
+import { requireToken } from "~/lib/session.server";
 
 /**
  * The workspace shell.
@@ -18,10 +19,13 @@ import { api } from "~/lib/api.server";
  * between the landing page and the grid. Nothing about the note is torn down
  * and rebuilt — only the child below it comes and goes.
  */
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  // requireToken redirects to /login when there is no session, so everything
+  // under this layout is behind authentication by virtue of being under it.
+  const token = await requireToken(request);
   // Loaded once here and read by both children, so there is a single list and
   // a single revalidation after any mutation.
-  return { notes: await api.listNotes() };
+  return { notes: await api.listNotes(token) };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {

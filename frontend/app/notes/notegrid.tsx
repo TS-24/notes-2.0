@@ -6,7 +6,7 @@ import {
   noteLayoutId,
   NOTE_LAYOUT_TRANSITION,
 } from "~/workspace/note-surface";
-import type { Note } from "~/lib/types";
+import type { Note, VocabularyAnalysis } from "~/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -52,9 +52,15 @@ function NoteCard({
   // Each card owns its fetcher so simultaneous pins/deletes don't clobber
   // each other's pending state.
   const fetcher = useFetcher();
+  const knownFetcher = useFetcher();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [vocabData, setVocabData] = useState<{ total_difficult_words: number, definitions: Record<string, string> } | null>(null);
-  const [loading, setLoading] = useState(false);
+  // The analysis comes back through a resource route, so the request carries
+  // the session cookie and works wherever the app is served from. It used to
+  // be a browser fetch to a hardcoded 127.0.0.1.
+  const vocabFetcher = useFetcher<VocabularyAnalysis>();
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const loading = vocabFetcher.state !== "idle";
+  const vocabData = vocabFetcher.data ?? null;
 
   // Flashcard State
   const [isQuizMode, setIsQuizMode] = useState(false);
@@ -79,66 +85,43 @@ function NoteCard({
     setIsQuizMode(true);
     setCurrentWordIndex(0);
     setIsDialogOpen(true);
-    if (!vocabData) {
-      fetchVocabulary();
+    if (!vocabData && vocabFetcher.state === "idle") {
+      vocabFetcher.submit(
+        { title: data.title, content: data.content ?? "" },
+        {
+          method: "post",
+          action: "/api/vocabulary",
+          encType: "application/json",
+        },
+      );
     }
   };
 
-  // TODO: the endpoint exists now, but this and analytics.tsx are the last
-  // places the browser still calls the backend directly. The hardcoded host
-  // breaks anywhere the API is not on the viewer's own localhost.
-  const fetchVocabulary = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("http://127.0.0.1:8700/api/analyze/vocabulary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setVocabData(result.vocabulary_analysis);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const words = vocabData ? Object.keys(vocabData.definitions) : [];
+  // Dismissed words are filtered out here rather than edited out of the
+  // fetcher's data, which is not ours to mutate.
+  const words = vocabData
+    ? Object.keys(vocabData.definitions).filter((w) => !dismissed.includes(w))
+    : [];
   const currentWord = words[currentWordIndex];
 
   const handleNext = () => {
     setCurrentWordIndex((prev) => (prev + 1) % words.length);
   };
 
-  const markAsKnown = async (word: string) => {
-    if (vocabData) {
-      const newDefs = { ...vocabData.definitions };
-      delete newDefs[word];
-      const remainingWords = Object.keys(newDefs);
-      
-      setVocabData({
-        ...vocabData,
-        definitions: newDefs,
-        total_difficult_words: remainingWords.length
-      });
-      
-      if (currentWordIndex >= remainingWords.length) {
-        setCurrentWordIndex(Math.max(0, remainingWords.length - 1));
-      }
+  const markAsKnown = (word: string) => {
+    // The card goes first and the request follows; the endpoint returns no
+    // body and there is nothing to wait for. It is idempotent by design, so a
+    // resend on retry is harmless.
+    const remaining = words.filter((w) => w !== word);
+    setDismissed((prev) => [...prev, word]);
+    if (currentWordIndex >= remaining.length) {
+      setCurrentWordIndex(Math.max(0, remaining.length - 1));
     }
 
-    try {
-      await fetch("http://127.0.0.1:8700/api/words/known", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ words: [word] })
-      });
-    } catch (e) {
-      console.error(e);
-    }
+    knownFetcher.submit(
+      { intent: "markKnown", word },
+      { method: "post", action: "/notes" },
+    );
   };
 
   // Remove the card immediately on delete instead of waiting for the round trip.
