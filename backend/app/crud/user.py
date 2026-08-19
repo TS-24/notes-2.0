@@ -6,9 +6,14 @@ from ..db.models import User
 UPDATABLE_FIELDS = {"username", "email"}
 
 
-def create_user(db: Session, username: str, email: str) -> User:
-    """Insert a new user and return it."""
-    user = User(username=username, email=email)
+def create_user(db: Session, username: str, email: str, password_hash: str) -> User:
+    """Insert a new user and return it.
+
+    Takes a hash rather than a password: this module has no business seeing a
+    plaintext one, and a signature that cannot accept it cannot store it by
+    mistake.
+    """
+    user = User(username=username, email=email, password_hash=password_hash)
     db.add(user)
     db.commit()
     db.refresh(user)

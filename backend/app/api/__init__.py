@@ -1,8 +1,9 @@
 from fastapi import APIRouter
 
-from . import analyze, known_words, notes, users, vocab, word_definitions
+from . import analyze, auth, known_words, notes, users, vocab, word_definitions
 
 api_router = APIRouter(prefix="/api")
+api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(notes.router)
 # Before word_definitions: both are mounted at /words, and that router's
