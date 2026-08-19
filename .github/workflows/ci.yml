@@ -1,0 +1,123 @@
+name: CI
+
+# Every push and every PR. The suite is hermetic and takes seconds, so there is
+# no reason to be selective about when it runs.
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+  workflow_dispatch:
+  # Called by publish.yml, which will not run without this even though the
+  # `uses:` reference looks like it should be enough on its own.
+  workflow_call:
+
+concurrency:
+  # A second push to the same branch makes the first run irrelevant.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch WordNet
+        # vocab.py imports nltk corpora at module scope, so collection fails
+        # without them even for the tests that never touch the ladder.
+        run: python -m nltk.downloader wordnet omw-1.4
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          # The suite sets these itself in conftest, but only via setdefault,
+          # so naming them here documents what the code requires to import at
+          # all rather than leaving it to a fixture.
+          DATABASE_URL: "sqlite://"
+          JWT_SECRET: "ci-secret-that-is-at-least-thirty-two-bytes-long"
+        run: python -m pytest tests/ -q
+
+  migrations:
+    name: Migrations on Postgres
+    runs-on: ubuntu-latest
+    # The suite builds its schema with create_all and never runs a migration,
+    # so a broken one passes every test. This job is the only thing that would
+    # catch it, and it uses Postgres because that is what production runs.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restyle_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Upgrade, downgrade, upgrade again
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/restyle_ci
+          JWT_SECRET: "ci-secret-that-is-at-least-thirty-two-bytes-long"
+        # Round-tripping proves the downgrades are real rather than stubs, which
+        # is what makes a bad migration recoverable instead of permanent.
+        run: |
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
+
+  frontend:
+    name: Frontend typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        # npm ci, so the lockfile is authoritative and a drifting transitive
+        # dependency fails here rather than in an image nobody rebuilt.
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        # typegen first: the route types every loader imports are generated,
+        # and tsc cannot resolve them until they exist.
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
