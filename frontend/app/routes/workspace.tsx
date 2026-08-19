@@ -25,7 +25,22 @@ export async function loader({ request }: Route.LoaderArgs) {
   const token = await requireToken(request);
   // Loaded once here and read by both children, so there is a single list and
   // a single revalidation after any mutation.
-  return { notes: await api.listNotes(token) };
+  const notes = await api.listNotes(token);
+
+  // An account with no notes has nothing for the surface below to render, and
+  // this page is the whole interface — no nav bar, no sidebar — so it would be
+  // a genuinely blank screen with no way out. A new account gets an empty note
+  // instead, which is also the truthful answer to "what were you last writing".
+  //
+  // A write in a loader is not free: two parallel requests against a brand-new
+  // account could both see zero and create one each. It happens once per
+  // account at most, the surplus is an empty untitled note, and the reader can
+  // delete it. That is a better failure than the blank page it replaces.
+  if (notes.length === 0) {
+    return { notes: [await api.createNote(token, { title: "Untitled", content: "" })] };
+  }
+
+  return { notes };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
