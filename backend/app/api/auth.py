@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.config import ACCESS_TOKEN_TTL, COOKIE_NAME, COOKIE_SECURE
-from ..core.security import create_access_token, hash_password, verify_password
+from ..core.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 from ..crud import invite_code as crud_invite
+from ..crud import revoked_token as crud_revoked
 from ..crud import user as crud_user
 from ..db.database import get_db
 from ..schemas.auth import LoginRequest, RegisterRequest, TokenResponse
+from .deps import token_from_request
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -104,16 +111,33 @@ def login(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(response: Response) -> None:
-    """Clear the API's cookie.
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> None:
+    """End this session, for real.
 
-    Tokens are stateless, so this cannot invalidate one that has already been
-    copied elsewhere; it only stops this browser from sending it. The frontend
-    clearing its own cookie is what actually ends a session.
+    The token's id is recorded so it is refused from here on. That is the part
+    that matters: clearing the cookie only stops this browser sending it, and
+    does nothing about a copy taken somewhere else.
 
-    The attributes have to match the ones it was set with, or the browser keeps
-    the original cookie and logging out silently does nothing.
+    Only this token. Other sessions for the same account keep working, because
+    signing out of one browser is not a request to sign out of all of them.
+
+    Deliberately not authenticated. Someone holding a token they cannot use is
+    still entitled to retire it, and a 401 here would leave a session alive
+    that the caller was trying to end.
     """
+    token = token_from_request(request)
+    if token is not None:
+        claims = decode_access_token(token)
+        if claims is not None:
+            crud_revoked.revoke(db, token, claims.user_id)
+            db.commit()
+
+    # The attributes have to match the ones it was set with, or the browser
+    # keeps the original cookie and logging out silently does nothing.
     response.delete_cookie(
         COOKIE_NAME, path="/", httponly=True, samesite="lax", secure=COOKIE_SECURE
     )

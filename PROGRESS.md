@@ -439,11 +439,13 @@ any way to revoke a token before it expires. Rotating `JWT_SECRET` invalidates
 every session at once and is the only lever. Accounts come from
 `python -m app.cli issue-invite` or `create-user`.
 
-**Before this faces the internet.** `ENVIRONMENT=production` turns off `/docs`
-and marks the cookie `Secure`, which then needs https to work at all. Postgres
-is still published to the host by `docker-compose.yml`, which is right for
-local work and wrong deployed; that wants a prod override. There is no TLS and
-no reverse proxy. CI publishes images to GHCR but nothing deploys them.
+**Before this faces the internet.** `docker-compose.prod.yml` now covers most
+of it: only Caddy is published, it terminates TLS and gets its own certificate,
+`ENVIRONMENT=production` turns off `/docs` and marks the cookie `Secure`, and
+neither Postgres nor either service is reachable except through the proxy. It
+needs `DOMAIN` set to a name that resolves to the host. What is still missing
+is anything that actually runs it: CI publishes images to GHCR and nothing
+deploys them, and there is no password reset.
 
 0. **Acronyms and jargon have no ladder at all, and ranking cannot give them
    one.** `ML` resolves to *millilitre*; `API` and `GPU` have no WordNet entry

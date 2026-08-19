@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .core.security import hash_password
 from .crud import invite_code as crud_invite
+from .crud import revoked_token as crud_revoked
 from .crud import user as crud_user
 from .db.database import SessionLocal
 from .db.models import KnownWord, Note, User
@@ -122,6 +123,18 @@ def adopt_dev_data(db: Session, args: argparse.Namespace) -> int:
     return 0
 
 
+def prune_tokens(db: Session, args: argparse.Namespace) -> int:
+    """Drop revocation records for tokens that have expired anyway.
+
+    Signing out writes a row and nothing removes it, so the table grows by one
+    per sign-out forever. Past its expiry a token is refused whether or not it
+    is listed, which is the moment its row stops meaning anything.
+    """
+    removed = crud_revoked.prune_expired(db)
+    print(f"Removed {removed} expired revocation record(s).")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -137,6 +150,10 @@ def build_parser() -> argparse.ArgumentParser:
     new_user.add_argument("--email", required=True)
     new_user.add_argument("--username", help="Defaults to the part before the @")
     new_user.set_defaults(func=create_user)
+
+    commands.add_parser(
+        "prune-tokens", help="Forget revoked tokens that have expired anyway"
+    ).set_defaults(func=prune_tokens)
 
     adopt = commands.add_parser(
         "adopt-dev-data", help="Move the seeded dev user's notes to a real account"

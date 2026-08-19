@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..core.config import COOKIE_NAME
 from ..core.security import decode_access_token
+from ..crud import revoked_token as crud_revoked
 from ..db.database import get_db
 from ..db.models import User
 
@@ -15,7 +16,7 @@ UNAUTHENTICATED = HTTPException(
 )
 
 
-def _token_from(request: Request) -> str | None:
+def token_from_request(request: Request) -> str | None:
     """The credential on this request, header first.
 
     The header is checked before the cookie so a script can override a stale
@@ -40,18 +41,24 @@ def get_current_user_optional(
     while signed out, and the place to draw that line is here rather than in
     each handler.
     """
-    token = _token_from(request)
+    token = token_from_request(request)
     if token is None:
         return None
 
-    user_id = decode_access_token(token)
-    if user_id is None:
+    claims = decode_access_token(token)
+    if claims is None:
         return None
 
-    # A token that decodes is not proof the account survived. Deleting a user
-    # does not reach the tokens already issued for them, so this lookup is the
-    # only thing standing between a deleted account and a working session.
-    return db.get(User, user_id)
+    # Signed and unexpired is not the same as still valid: signing out records
+    # the token's id, and this is where that record is honoured. One indexed
+    # lookup per request is the price of logout meaning anything.
+    if crud_revoked.is_revoked(db, claims.jti):
+        return None
+
+    # Nor is it proof the account survived. Deleting a user does not reach the
+    # tokens already issued for them, so this lookup is the only thing standing
+    # between a deleted account and a working session.
+    return db.get(User, claims.user_id)
 
 
 def get_current_user(user: User | None = Depends(get_current_user_optional)) -> User:

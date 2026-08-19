@@ -49,7 +49,7 @@ class TestAccessTokens:
     def test_a_token_round_trips_to_its_user_id(self):
         token = create_access_token(42)
 
-        assert decode_access_token(token) == 42
+        assert decode_access_token(token).user_id == 42
 
     def test_an_expired_token_is_rejected(self):
         token = create_access_token(42, expires_in=timedelta(seconds=-1))

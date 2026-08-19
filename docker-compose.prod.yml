@@ -1,0 +1,59 @@
+# Production overlay. Used together with the base file, never on its own:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What it changes, and why each one matters once this is reachable from
+# outside rather than from your own laptop:
+#
+#   - Nothing but Caddy is published. The base file exposes the database and
+#     both services on host ports, which is what makes local work convenient
+#     and is exactly wrong on a public host.
+#   - Caddy terminates TLS and gets certificates itself. The session cookie is
+#     marked Secure in production and a Secure cookie over plain http is
+#     silently dropped by the browser, so without https login does not fail
+#     loudly — it appears to succeed and no session ever exists.
+#   - ENVIRONMENT=production, which is what turns off /docs and sets that flag.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # The hostname to get a certificate for. Caddy needs a real name
+      # resolving to this machine; it cannot issue one for an IP address.
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. restyle.example.com}
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+  frontend:
+    # No ports. Caddy reaches it over the compose network by service name, and
+    # publishing it as well would leave a plain-http way in past the proxy.
+    ports: !reset []
+    environment:
+      NODE_ENV: production
+
+  backend:
+    ports: !reset []
+    environment:
+      ENVIRONMENT: production
+      # Read by main.py for CORS. In the ordinary path nothing cross-origin
+      # reaches the API at all, since the browser only ever talks to the
+      # frontend, but the wildcard has to go before this is public.
+      FRONTEND_ORIGIN: https://${DOMAIN}
+
+  db:
+    # The one that matters most. Published, Postgres is reachable from the
+    # internet with only a password in front of it.
+    ports: !reset []
+
+volumes:
+  caddy_data:
+  caddy_config:
