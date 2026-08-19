@@ -251,6 +251,32 @@ docker compose exec backend python -m app.cli adopt-dev-data --email you@example
 
 `list-invites` shows every code and whether it has been spent.
 
+### Deploying
+
+There is a production overlay. It is applied on top of the base file, never
+instead of it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+It publishes **only** Caddy, on 80 and 443. The base file exposes the database
+and both services on host ports, which is right on your own machine and wrong
+on a public one — Postgres in particular would otherwise be reachable from the
+internet with a password as the only thing in front of it. Caddy terminates TLS
+and obtains the certificate itself, which needs `DOMAIN` set to a name that
+resolves to the machine, and both ports reachable so the ACME challenge can be
+answered.
+
+`ENVIRONMENT=production` comes with it, which turns off `/docs` and marks the
+session cookie `Secure`. That flag is why the TLS is not optional: browsers
+silently drop a `Secure` cookie sent over plain http, so without https login
+appears to succeed and no session ever exists.
+
+Nothing deploys automatically. CI publishes images to
+`ghcr.io/ts-24/restyle-{backend,frontend}`, tagged `dev` and by commit sha; the
+sha tag is the one worth pulling, since `dev` moves.
+
 ### Working on the frontend without Node on the host
 
 Typecheck and build through Docker:
@@ -314,9 +340,9 @@ not:
 
 - **There is no password reset and no way to change a password.** Losing one means a new account
   or an `UPDATE` by hand. Registration being invite-only is what makes that survivable for now.
-- **A token cannot be revoked.** There is no refresh flow and no revocation table, so signing out
-  clears the cookie but a token already copied elsewhere stays valid until it expires, up to seven
-  days. Rotating `JWT_SECRET` invalidates every session at once, which is the only lever there is.
+- **There is no refresh flow.** Signing out revokes the token it was given, and only that one, so
+  other sessions on the same account keep working — but a token nobody signs out stays valid for
+  its full seven days. Rotating `JWT_SECRET` still invalidates every session at once.
 - **Acronyms and jargon have no ladder.** `ML` resolves to *millilitre*; `API` and `GPU` have no
   WordNet entry at all. This is a lexicon gap, not a ranking one, so nothing downstream can fix
   it — it needs either a guard that declines on unknown tokens or an open-vocabulary fallback.
