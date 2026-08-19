@@ -14,9 +14,9 @@ class NoteBase(BaseModel):
 
 
 class NoteCreate(NoteBase):
-    # Optional: defaults to the requesting user, so clients without a user
-    # concept can post just a title and content.
-    user_id: int | None = None
+    # No user_id. The owner is whoever the token names; letting the body say
+    # otherwise meant any caller could file a note under another account.
+    pass
 
 
 class NoteUpdate(BaseModel):

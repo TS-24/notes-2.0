@@ -8,8 +8,14 @@ from ..schemas.word_definition import (
     WordDefinitionRead,
     WordDefinitionUpdate,
 )
+from .deps import get_current_user
 
-router = APIRouter(prefix="/words", tags=["words"])
+# Definitions are shared across every note that uses the word, so they have no
+# owner and nothing here is scoped. Every route still requires a token: these
+# are writes to a table the whole install reads from.
+router = APIRouter(
+    prefix="/words", tags=["words"], dependencies=[Depends(get_current_user)]
+)
 
 
 @router.post("", response_model=WordDefinitionRead, status_code=status.HTTP_201_CREATED)

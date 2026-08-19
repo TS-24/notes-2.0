@@ -1,70 +1,63 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..core.config import COOKIE_NAME, COOKIE_SECURE
 from ..crud import user as crud_user
 from ..db.database import get_db
 from ..db.models import User
-from ..schemas.user import UserCreate, UserRead, UserUpdate
+from ..schemas.user import UserRead, UserUpdate
 from .deps import get_current_user
 
+# Every route here is about the signed-in account, so none of them takes an id.
+#
+# There used to be four that did, and none compared the id to the caller: any
+# account could read, rename or delete any other. There were also two without
+# any caller left — a listing of every registered email, and an unauthenticated
+# POST that created accounts beside the invite-only registration it ignored.
+# Both are gone rather than guarded, because a route that should never be
+# reachable is better deleted than defended.
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.post("", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserRead:
-    if crud_user.get_user_by_email(db, payload.email) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-    try:
-        return crud_user.create_user(db, username=payload.username, email=payload.email)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-
-
-@router.get("", response_model=list[UserRead])
-def list_users(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    db: Session = Depends(get_db),
-) -> list[UserRead]:
-    return crud_user.list_users(db, skip=skip, limit=limit)
-
-
-# Declared before /{user_id} so "me" is not parsed as a user id.
 @router.get("/me", response_model=UserRead)
 def get_current_user_route(current_user: User = Depends(get_current_user)) -> UserRead:
     """The signed-in user."""
     return current_user
 
 
-@router.get("/{user_id}", response_model=UserRead)
-def get_user(user_id: int, db: Session = Depends(get_db)) -> UserRead:
-    user = crud_user.get_user(db, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
-
-
-@router.patch("/{user_id}", response_model=UserRead)
-def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)) -> UserRead:
+@router.patch("/me", response_model=UserRead)
+def update_current_user(
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserRead:
     try:
-        user = crud_user.update_user(db, user_id, **payload.model_dump(exclude_unset=True))
+        user = crud_user.update_user(
+            db, current_user.id, **payload.model_dump(exclude_unset=True)
+        )
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    assert user is not None  # the token already proved this row exists
     return user
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(user_id: int, db: Session = Depends(get_db)) -> None:
-    if not crud_user.delete_user(db, user_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_current_user(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Delete the signed-in account, its notes and its known words.
+
+    The cookie goes with it. The token stays technically valid until it
+    expires, but it now names a user that no longer exists, which resolves to
+    a 401 like any other bad credential.
+    """
+    crud_user.delete_user(db, current_user.id)
+    response.delete_cookie(
+        COOKIE_NAME, path="/", httponly=True, samesite="lax", secure=COOKIE_SECURE
+    )
