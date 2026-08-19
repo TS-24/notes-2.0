@@ -6,13 +6,18 @@ is partly convenience — no container to start — and partly the point: the
 desktop build ships SQLite, so every test run is also a check that the models
 and queries stay portable across both.
 
-`app.db.database` reads DATABASE_URL at import time and deliberately has no
-fallback, so the variable has to exist before anything under `app` is imported.
+`app.db.database` and `app.core.config` read their environment at import time
+and deliberately have no fallbacks, so those variables have to exist before
+anything under `app` is imported.
 """
 
 import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite://")
+# app.core.config reads this at import time for the same reason, so it has to
+# be set here rather than in a fixture: the imports below would already have
+# failed by the time any fixture ran.
+os.environ.setdefault("JWT_SECRET", "test-secret-never-used-outside-the-suite")
 
 import pytest  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
