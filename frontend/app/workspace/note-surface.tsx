@@ -59,8 +59,21 @@ function useAutoHeight() {
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el || el.clientWidth === 0) return;
+    /*
+      Collapsing to `auto` is the only way to let the field shrink, but once a
+      note is taller than the window that collapse also shortens the document,
+      and the browser clamps the scroll position to the shorter page before the
+      real height goes back on. The height is restored a statement later and the
+      scroll position is not — so every keystroke past the first screenful threw
+      the reader back to the top of the note.
+
+      Both writes and the correction happen inside one synchronous block, before
+      the browser paints, so the collapse is never seen.
+    */
+    const scrolled = window.scrollY;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    if (window.scrollY !== scrolled) window.scrollTo(0, scrolled);
   }, []);
 
   /**
