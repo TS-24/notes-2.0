@@ -1,4 +1,4 @@
-import { Form, redirect, useNavigation, useSearchParams } from "react-router";
+import { Form, Link, redirect, useNavigation, useSearchParams } from "react-router";
 
 import { ApiError, api } from "~/lib/api.server";
 import { commitToken, getToken, safeRedirect } from "~/lib/session.server";
@@ -88,6 +88,10 @@ export default function Login({ actionData }: Route.ComponentProps) {
           {signingIn ? "Signing in…" : "Sign in"}
         </button>
       </Form>
+
+      <Link to="/register" className="mt-6 text-sm text-ink/60 underline">
+        Have an invite code? Create an account
+      </Link>
     </main>
   );
 }

@@ -234,8 +234,9 @@ Registration is invite-only and there is no admin UI, so the first code comes fr
 docker compose exec backend python -m app.cli issue-invite     # prints a code
 ```
 
-Register with it at `/login`'s sign-up form or straight against the API, or skip the invite
-entirely and create the account from the same CLI, which is already the privileged path:
+Then register at `/register` with that code, or skip the invite entirely and create the account
+from the same CLI, which is already the privileged path — it prompts for the password rather than
+taking it as a flag, so it stays out of your shell history:
 
 ```bash
 docker compose exec backend python -m app.cli create-user --email you@example.com

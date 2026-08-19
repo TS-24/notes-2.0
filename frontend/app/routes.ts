@@ -9,6 +9,7 @@ export default [
     // Outside the workspace layout on purpose: that layout's loader requires a
     // session, so nesting the login page inside it would redirect to itself.
     route("login", "routes/login.tsx"),
+    route("register", "routes/register.tsx"),
     route("logout", "routes/logout.tsx"),
     // The landing page and the grid share a layout so the note surface inside
     // it survives navigation between them — see app/routes/workspace.tsx.
