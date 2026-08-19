@@ -8,6 +8,8 @@ there is no admin role, and creating one bypassed the invite that registration
 exists to enforce.
 """
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 
 from app.db.models import KnownWord, User
@@ -38,6 +40,29 @@ class TestSelf:
 
         assert response.status_code == 204
         assert db.get(User, user.id) is None
+
+    def test_an_account_that_used_an_invite_can_still_be_deleted(self, client, db, user):
+        """
+        Registration leaves invite_codes.used_by_user_id pointing at the new
+        account, and that reference outlives nothing on its own. Without the
+        relationship it is a foreign key violation — a 500 on the delete — for
+        every account that came through the front door. The fixtures build
+        users directly, so only a test that redeems a code the way registration
+        does can catch it.
+        """
+        from app.db.models import InviteCode
+
+        db.add(InviteCode(code="spent", used_at=datetime.now(timezone.utc), used_by_user_id=user.id))
+        db.commit()
+
+        response = client.delete("/api/users/me")
+
+        assert response.status_code == 204
+        # The code stays, still marked spent; only the pointer to the account
+        # goes. It is a record that the invite was used, not a part of the user.
+        remaining = db.scalars(select(InviteCode)).one()
+        assert remaining.used_at is not None
+        assert remaining.used_by_user_id is None
 
     def test_deleting_me_takes_my_known_words(self, client, db, user):
         # The cascade this relies on is why DELETE used to fail on Postgres.

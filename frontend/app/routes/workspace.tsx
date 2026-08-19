@@ -25,7 +25,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const token = await requireToken(request);
   // Loaded once here and read by both children, so there is a single list and
   // a single revalidation after any mutation.
-  const notes = await api.listNotes(token);
+  // The user comes back with the notes rather than from a loader of its own.
+  // Only /notes draws the account bubble, but a loader on that child would
+  // refetch the account after every note edit, and this one is already running
+  // and already revalidating.
+  const [notes, user] = await Promise.all([
+    api.listNotes(token),
+    api.getCurrentUser(token),
+  ]);
 
   // An account with no notes has nothing for the surface below to render, and
   // this page is the whole interface — no nav bar, no sidebar — so it would be
@@ -37,10 +44,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // account at most, the surplus is an empty untitled note, and the reader can
   // delete it. That is a better failure than the blank page it replaces.
   if (notes.length === 0) {
-    return { notes: [await api.createNote(token, { title: "Untitled", content: "" })] };
+    return {
+      notes: [await api.createNote(token, { title: "Untitled", content: "" })],
+      user,
+    };
   }
 
-  return { notes };
+  return { notes, user };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {

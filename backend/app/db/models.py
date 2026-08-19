@@ -50,6 +50,11 @@ class User(Base):
     known_words: Mapped[List["KnownWord"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    # Not a cascade. An invite is a record that a code was spent, which stays
+    # true after the account it made is gone; only the pointer to that account
+    # is released. Without the relationship at all, the leftover foreign key
+    # makes deleting any account that registered through the front door a 500.
+    invites_used: Mapped[List["InviteCode"]] = relationship(back_populates="used_by")
 
 
 class Note(Base):
@@ -177,3 +182,4 @@ class InviteCode(Base):
     )
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     used_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    used_by: Mapped[Optional["User"]] = relationship(back_populates="invites_used")

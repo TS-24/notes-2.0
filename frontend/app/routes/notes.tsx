@@ -1,9 +1,10 @@
 import { useRouteLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/notes";
+import AccountBubble from "~/notes/account-bubble";
 import Notegrid from "~/notes/notegrid";
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
-import type { Note } from "~/lib/types";
+import type { Note, User } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Notes" }, { name: "description", content: "Your notes" }];
@@ -80,14 +81,21 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Notes() {
   const workspace = useRouteLoaderData("routes/workspace") as {
     notes: Note[];
+    user: User;
   };
   const [searchParams] = useSearchParams();
   const open = Number(searchParams.get("open"));
 
   return (
-    <Notegrid
-      notes={workspace.notes}
-      openNoteId={Number.isFinite(open) && open > 0 ? open : null}
-    />
+    <>
+      {/* Rendered here rather than in the layout above, which is what keeps it
+          off the landing page: both routes share that layout, only this one
+          draws the bubble. */}
+      <AccountBubble user={workspace.user} />
+      <Notegrid
+        notes={workspace.notes}
+        openNoteId={Number.isFinite(open) && open > 0 ? open : null}
+      />
+    </>
   );
 }
