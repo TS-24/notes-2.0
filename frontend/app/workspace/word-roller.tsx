@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { motion } from "framer-motion";
 import { ChevronUp, ChevronDown } from "lucide-react";
@@ -154,6 +154,29 @@ function isWorthLookingUp(word: string) {
 /** How far either side of the caret to look for a sentence boundary. */
 const CONTEXT_LIMIT = 400;
 
+/** How long the caret has to hold still before the backend is asked about it. */
+const SETTLE_DELAY = 350;
+
+/**
+ * `value`, but only once it has held still for `delay`.
+ *
+ * The caret passes through a great many words on its way to the one the writer
+ * means: every character of a word being typed is a different question, and so
+ * is every position an arrow key travels through. Asking each of them meant one
+ * request per keystroke against a backend that has to consult WordNet and rank
+ * the senses — and they queue, so the tenth answer came back slower than the
+ * first, for a word the caret had long since left. Waiting for the caret to
+ * settle asks once, about the word actually landed on.
+ */
+function useSettled<T>(value: T, delay: number) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return settled;
+}
+
 /**
  * The sentence around an offset, and where that sentence starts in the field.
  *
@@ -294,6 +317,23 @@ export default function WordRoller({
   const caretInSentence = context && span ? span.start - context.from : null;
 
   /*
+    What to ask about, and where the answer will map back to — held still.
+
+    Memoised on the primitives, so its identity changes only when the question
+    does; that is what lets `useSettled` recognise a caret that has stopped
+    moving. Everything the reader can see keeps tracking the caret immediately —
+    only the round trip waits.
+  */
+  const question = useMemo(
+    () =>
+      lookup && context && caretInSentence !== null
+        ? { sentence: context.sentence, caret: caretInSentence, from: context.from }
+        : null,
+    [lookup, context?.sentence, caretInSentence, context?.from],
+  );
+  const settled = useSettled(question, SETTLE_DELAY);
+
+  /*
     One fetcher per unit, keyed by the sentence and the caret in it.
 
     The caret can cross several words faster than the network answers for any of
@@ -303,7 +343,7 @@ export default function WordRoller({
     it doubles as a cache: returning to a word already visited needs no request.
   */
   const ladder = useFetcher<{ ladder: WordLadder | null }>({
-    key: `word-ladder:${context?.sentence ?? ""}:${caretInSentence ?? ""}`,
+    key: `word-ladder:${settled?.sentence ?? ""}:${settled?.caret ?? ""}`,
   });
 
   /*
@@ -319,15 +359,15 @@ export default function WordRoller({
   const current = climb && climb.rungs[climb.at] === word ? climb : null;
 
   useEffect(() => {
-    if (!lookup || !context || caretInSentence === null || current) return;
+    if (!settled || current) return;
     // Nothing in flight and nothing already fetched for this unit.
     if (ladder.state !== "idle" || ladder.data) return;
     const query = new URLSearchParams({
-      sentence: context.sentence,
-      caret: String(caretInSentence),
+      sentence: settled.sentence,
+      caret: String(settled.caret),
     });
     ladder.load(`/api/word-ladder?${query}`);
-  }, [lookup, context?.sentence, caretInSentence, current, ladder]);
+  }, [settled, current, ladder]);
 
   /*
     Adopt the unit the backend resolved to.
@@ -341,11 +381,14 @@ export default function WordRoller({
   useEffect(() => {
     if (current) return;
     const fetched = ladder.data?.ladder;
-    if (!fetched || !fetched.rungs.length || !context) return;
+    if (!fetched || !fetched.rungs.length || !settled) return;
 
     const field = fieldRef.current;
-    const start = context.from + fetched.start;
-    const end = context.from + fetched.end;
+    // The settled question, not the live one: these offsets are in the
+    // coordinates of the sentence that was actually asked about, and the
+    // writer may have typed on since.
+    const start = settled.from + fetched.start;
+    const end = settled.from + fetched.end;
     if (!field || field.value.slice(start, end) !== fetched.word) return;
 
     setClimb({ rungs: fetched.rungs, at: fetched.origin_index });
@@ -360,7 +403,7 @@ export default function WordRoller({
             ...measure(field, field.value, start, end),
           },
     );
-  }, [ladder.data, context?.from, current, fieldRef]);
+  }, [ladder.data, settled, current, fieldRef]);
 
   /** Where a press would land, or null when that end of the ladder is reached. */
   const rungAfter = (step: 1 | -1) => {
