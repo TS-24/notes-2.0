@@ -288,13 +288,18 @@ Each of these cost real time. They are all commented at the site too.
     kept because it will be true again the moment anything runs locally.)
 
 24. **`git checkout` silently overwrites gitignored files.** `.env` was tracked
-    until `bf9d899`. Checking out any branch older than that — `prod` is still
-    at `fce0475` — restores the old tracked copy over yours without a word,
-    and the next `pull` deletes it. This destroyed a live `.env` once. It was
-    recoverable only because the containers were still running and hold every
-    value in their environment: `docker exec restyle-db-1 printenv
-    POSTGRES_PASSWORD`. Had they been down, the database password existed
-    nowhere else. Do not check out `prod`.
+    until `bf9d899`. Checking out any branch older than that restores the old
+    tracked copy over yours without a word, and the next `pull` deletes it.
+    This destroyed a live `.env` once. It was recoverable only because the
+    containers were still running and hold every value in their environment:
+    `docker exec restyle-db-1 printenv POSTGRES_PASSWORD`. Had they been down,
+    the database password existed nowhere else — it is written down in exactly
+    one place.
+
+    Mostly defused: `prod` was fast-forwarded to `dev` and every merged branch
+    deleted. **Two branches still carry it**, both unmerged and both kept on
+    purpose: `feature/contextual-ladder` and `feature/restyle-reframe`. Copy
+    `.env` somewhere before checking out either.
 
 25. **The test suite never runs a migration.** `conftest.py` builds the schema
     with `Base.metadata.create_all`, so a broken migration passes all 138
