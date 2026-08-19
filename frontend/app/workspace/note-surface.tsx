@@ -101,7 +101,11 @@ function useAutoHeight() {
     [],
   );
 
-  useMeasureEffect(measure);
+  // Mount only. Re-measuring on every render costs a forced layout per field
+  // per keystroke, and the two fields never change together — the component
+  // below re-measures each one against its own text. The observer and the font
+  // callback beneath cover the cases where the height moves without the text.
+  useMeasureEffect(measure, [measure]);
 
   useEffect(() => {
     const el = ref.current;
@@ -176,12 +180,12 @@ export default function NoteSurface({
     pending.field.setSelectionRange(pending.at, pending.at);
   });
 
-  // Re-measure when the mode flips: the type changes size, so the number of
-  // lines can change even though the text did not.
-  useMeasureEffect(() => {
-    titleField.measure();
-    bodyField.measure();
-  });
+  // Re-measure a field when its own text changes, and both when the mode flips:
+  // the type changes size then, so the line count can change even though the
+  // text did not. Kept apart so that typing in the body does not also force a
+  // layout of the title.
+  useMeasureEffect(titleField.measure, [titleField.measure, title, boxed]);
+  useMeasureEffect(bodyField.measure, [bodyField.measure, content, boxed]);
 
   /*
     …and keep re-measuring for the length of the tween, not just at its ends.
@@ -233,20 +237,49 @@ export default function NoteSurface({
     );
   };
 
-  // Whether the surface already had focus when this click sequence began. A
-  // double click only navigates when the user was reading; once they are
-  // editing, the second click has to keep selecting words like any other text.
-  const wasEditing = useRef(false);
-  const handleMouseDownCapture = (event: React.MouseEvent) => {
-    // Only the opening click tells us anything — by the second mousedown the
-    // first has already focused a field.
-    if (event.detail > 1) return;
-    wasEditing.current = !!rootRef.current?.contains(document.activeElement);
+  /**
+   * A click that missed both fields still means "write here".
+   *
+   * The page *is* the note, but the fields are only ever as large as the words
+   * in them. On a 1440x783 window that left a 522x98 target floating in the
+   * middle of the screen: the whole lower half of the page, both margins, and
+   * the gap above the heading all landed on nothing at all. So a click that hit
+   * no field goes to the field it was nearest, caret at the end, the way
+   * clicking under the last line of any document does.
+   *
+   * mousedown rather than click, and the default prevented, because the
+   * browser's own response to a mousedown on something unfocusable is to clear
+   * focus once this returns — undoing it.
+   */
+  const handleMouseDown = (event: React.MouseEvent) => {
+    // Left button only: a right click is asking for the context menu, not for
+    // the caret.
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("textarea, button, a")) return;
+    const title = titleField.ref.current;
+    const body = bodyField.ref.current;
+    if (!title || !body) return;
+    // Above the note's first line reads as the heading. Everything lower — very
+    // nearly all of the page — is the note.
+    const field = event.clientY < body.getBoundingClientRect().top ? title : body;
+    event.preventDefault();
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
   };
 
-  // Double click toggles between the note's own page and the library around
-  // it, in both directions — not when the user is double clicking to select a
-  // word in a field.
+  /*
+    Double click toggles between the note's own page and the library around it,
+    in both directions — but never out of a field, where a double click already
+    means "select this word".
+
+    It used to also refuse whenever the surface had focus, aimed at that same
+    case and missing it: selecting a word only happens inside a field, which the
+    first line here already excludes. What that caught instead was every double
+    click after the user's first click landed anywhere — and with the handler
+    above now putting the caret in the note, that would have been all of them.
+    Since this gesture is the only way into an open note from the landing page,
+    it has to work on the second try as well as the first.
+  */
   const handleDoubleClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("input, textarea, button")) return;
     if (boxed) {
@@ -254,7 +287,6 @@ export default function NoteSurface({
       onReturn();
       return;
     }
-    if (wasEditing.current) return;
     (document.activeElement as HTMLElement | null)?.blur();
     save();
     onOpen();
@@ -285,7 +317,22 @@ export default function NoteSurface({
     if (boxed) onClose();
   };
 
-  // Boxed only: clicking the page around the note collapses it.
+  /*
+    Boxed only: clicking the page around the note collapses it.
+
+    The handler needs the current text and the current onClose, which is why
+    this used to carry no dependency array at all — and so re-subscribed after
+    every render, a document listener removed and added on every keystroke. A
+    ref carries the fresh closure instead, leaving the subscription to change
+    only when the mode does.
+  */
+  const collapse = useRef(() => {});
+  useEffect(() => {
+    collapse.current = () => {
+      save();
+      onClose();
+    };
+  });
   useEffect(() => {
     if (!boxed) return;
     const onMouseDown = (event: MouseEvent) => {
@@ -295,12 +342,11 @@ export default function NoteSurface({
       // note, so closing here would fire a second navigation and race the one
       // the card is about to start.
       if (target.closest("[data-note-card], button, a")) return;
-      save();
-      onClose();
+      collapse.current();
     };
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
-  });
+  }, [boxed]);
 
   // Just the date. The landing page is not a "resume where you left off"
   // screen — it is the note itself, so the only context it needs is when the
@@ -315,11 +361,20 @@ export default function NoteSurface({
     <motion.div
       layout
       layoutId={noteLayoutId(note.id)}
+      /*
+        Measure for a layout animation only when the note is actually moving
+        between its two states. Left to itself Framer re-measures on every
+        render, so each keystroke in a note taller than the box started a fresh
+        550ms tween of the whole surface — caught mid-word at scaleY(0.18).
+        That squash and settle, on every character, is most of what made typing
+        here feel like it was struggling.
+      */
+      layoutDependency={`${mode}:${note.id}`}
       transition={{ layout: NOTE_LAYOUT_TRANSITION }}
       ref={rootRef}
       role={boxed ? "dialog" : undefined}
       aria-label={boxed ? `Edit note: ${note.title || "Untitled"}` : undefined}
-      onMouseDownCapture={handleMouseDownCapture}
+      onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       onBlur={save}
@@ -335,7 +390,9 @@ export default function NoteSurface({
           : "0px 25px 50px -12px rgb(56 56 90 / 0)",
         transition: CHROME_TRANSITION,
       }}
-      className="flex w-full flex-col"
+      // cursor-text because all of it now is: the handler above sends any click
+      // that missed a field into the note.
+      className="flex w-full cursor-text flex-col"
     >
       {/*
         The reading column is centred and vertically centred in *both* modes.
