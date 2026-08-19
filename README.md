@@ -51,12 +51,16 @@ See [Project status](#-project-status) for what does not work yet.
 ```
 restyle/
 ├── frontend/                  # Frontend (React Router v7 + Vite, SSR)
+│   ├── Dockerfile             # Multi-stage; the compose image runs react-router-serve
 │   └── app/
 │       ├── routes.ts          # Route config; the layout wrapper lives here
-│       ├── routes/            # workspace (layout), home, notes, analytics, menu,
+│       ├── routes/            # workspace (layout), home, notes, analytics,
+│       │                      #   menu.tsx (served at /settings),
 │       │                      #   api.word-ladder (resource route)
 │       ├── workspace/         # note-surface.tsx, word-roller.tsx
 │       ├── notes/             # notegrid.tsx — the library grid
+│       ├── components/ui/     # shadcn/ui primitives, unmodified
+│       ├── hooks/             # use-mobile.ts
 │       ├── lib/api.server.ts  # Server-only typed API client
 │       └── app.css            # Design tokens: paper/ink/rose, Playfair + EB Garamond
 ├── backend/                   # API + persistence (FastAPI + SQLAlchemy)
@@ -199,7 +203,12 @@ Configuration comes from `.env` at the repo root, which is gitignored. Copy the 
 cp .env.example .env      # then fill in POSTGRES_PASSWORD
 ```
 
-It sets `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` and `DATABASE_URL`.
+It sets `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` and `DATABASE_URL`,
+plus the three optional ranker switches (`HF_TOKEN`, `HF_MODEL`, `LADDER_RANKING`). Those three
+have to go in this file to reach the container: `docker-compose.yml` forwards exactly the
+variables it names into the backend's environment, and nothing else in `.env` crosses that
+boundary. Setting `HF_TOKEN` only in your shell does nothing under compose.
+
 Inside the compose network the frontend reaches the API at `http://backend:8000` and the backend
 reaches the database at host `db`, since containers don't share the host's loopback — so
 `DATABASE_URL` uses `db` under compose and `localhost` outside it.
@@ -236,7 +245,12 @@ docker compose exec backend python -m pytest tests/ -q
 ```
 
 The suite runs against SQLite, so it needs neither Postgres nor a Hugging Face token: the ranker
-is mocked. That is also why it is fast.
+is mocked. That is also why it is fast. For the same reason it runs fine outside Docker, from any
+virtualenv with `requirements.txt` installed:
+
+```bash
+cd backend && .venv/bin/python -m pytest tests/ -q
+```
 
 ### Running outside Docker
 
