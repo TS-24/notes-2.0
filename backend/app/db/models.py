@@ -35,9 +35,26 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Argon2 digests are around 100 characters; 255 leaves room to raise the
+    # parameters later without a migration.
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     notes: Mapped[List["Note"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
     )
+    # Deleting an account has to take its known words with it. The foreign key
+    # alone does not do that: it would leave rows pointing at a missing user,
+    # which Postgres rejects and SQLite quietly keeps.
+    known_words: Mapped[List["KnownWord"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    # Not a cascade. An invite is a record that a code was spent, which stays
+    # true after the account it made is gone; only the pointer to that account
+    # is released. Without the relationship at all, the leftover foreign key
+    # makes deleting any account that registered through the front door a 500.
+    invites_used: Mapped[List["InviteCode"]] = relationship(back_populates="used_by")
 
 
 class Note(Base):
@@ -139,7 +156,61 @@ class KnownWord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    user: Mapped["User"] = relationship(back_populates="known_words")
     word: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class InviteCode(Base):
+    """
+    A single-use code that permits one registration.
+
+    Registration is invite-only, and these are issued by hand from the CLI:
+    there is no self-service. Redemption is the act of stamping `used_at`, so
+    the column doubles as the record of when the code was spent and as the
+    thing that stops it being spent twice.
+    """
+
+    __tablename__ = "invite_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    used_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    used_by: Mapped[Optional["User"]] = relationship(back_populates="invites_used")
+
+
+class RevokedToken(Base):
+    """
+    A token that has been signed out and must no longer be accepted.
+
+    Keyed on the token's own `jti` rather than on the user, so signing out of
+    one browser leaves the others alone. Without that distinction the only
+    revocation available is "every session this account has", which is not what
+    pressing sign out means.
+
+    Rows are disposable: once a token is past its own expiry the signature
+    check refuses it regardless, so the record buys nothing and the table would
+    grow forever. `expires_at` is kept for exactly that reason — see
+    `crud/revoked_token.py::prune_expired`.
+
+    No foreign key to users on purpose. Deleting an account already invalidates
+    its tokens, because get_current_user looks the row up, and a cascade here
+    would delete the evidence at the moment it stops mattering while adding a
+    constraint that can fail.
+    """
+
+    __tablename__ = "revoked_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    jti: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -59,8 +59,21 @@ function useAutoHeight() {
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el || el.clientWidth === 0) return;
+    /*
+      Collapsing to `auto` is the only way to let the field shrink, but once a
+      note is taller than the window that collapse also shortens the document,
+      and the browser clamps the scroll position to the shorter page before the
+      real height goes back on. The height is restored a statement later and the
+      scroll position is not — so every keystroke past the first screenful threw
+      the reader back to the top of the note.
+
+      Both writes and the correction happen inside one synchronous block, before
+      the browser paints, so the collapse is never seen.
+    */
+    const scrolled = window.scrollY;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    if (window.scrollY !== scrolled) window.scrollTo(0, scrolled);
   }, []);
 
   /**
@@ -248,10 +261,25 @@ export default function NoteSurface({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    // Matches the rest of the app: Enter commits, Shift+Enter is a new line.
-    if (event.key !== "Escape" && !(event.key === "Enter" && !event.shiftKey)) {
+    if (event.key === "Escape") {
+      commitAndLeave(event);
       return;
     }
+
+    if (event.key !== "Enter" || event.shiftKey) return;
+
+    // Enter commits everywhere else in the app, but the body is the one place
+    // that rule cannot hold: it is a multi-line writing surface, and a plain
+    // Enter there is a paragraph break, not a request to stop writing. Sending
+    // it away blurred the field mid-sentence — with onBlur saving and the
+    // landing page having nothing to close, the note simply became untypable.
+    if (event.target === bodyField.ref.current) return;
+
+    commitAndLeave(event);
+  };
+
+  /** Save and step out of the field, which is what Enter means in a title. */
+  const commitAndLeave = (event: React.KeyboardEvent) => {
     event.preventDefault();
     (event.target as HTMLElement).blur();
     if (boxed) onClose();
@@ -404,7 +432,7 @@ export default function NoteSurface({
         style={{ opacity: boxed ? 1 : 0, pointerEvents: boxed ? "auto" : "none" }}
       >
         <span className="text-sm italic text-ink/40">
-          Enter or Esc to save · Shift+Enter for a new line
+          Esc to save · Enter for a new line
         </span>
         <button
           type="button"

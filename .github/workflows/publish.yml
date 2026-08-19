@@ -1,0 +1,75 @@
+name: Publish images
+
+# Only after the work has landed on dev, which is where this project actually
+# integrates: every PR so far has targeted it and master is well behind.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-dev
+  # Not cancel-in-progress: a half-pushed image is worse than a redundant one.
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  ci:
+    # Publishing an image nobody tested is worse than publishing nothing, so
+    # the whole of CI has to pass first rather than running alongside.
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Build and push
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One failing image should not cancel the other; knowing both results is
+      # more useful than failing fast here.
+      fail-fast: false
+      matrix:
+        include:
+          - service: backend
+            context: ./backend
+          - service: frontend
+            context: ./frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Provided by Actions; no secret to create or rotate.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-${{ matrix.service }}
+          # The sha tag is the one worth pulling: `dev` moves under you, and an
+          # image you cannot name exactly is an image you cannot roll back to.
+          tags: |
+            type=raw,value=dev
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the registry, so a rebuild that only changes app code
+          # does not reinstall dependencies or re-download WordNet.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

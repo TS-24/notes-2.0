@@ -7,8 +7,10 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/workspace";
+import AccountBubble from "~/notes/account-bubble";
 import NoteSurface from "~/workspace/note-surface";
 import { api } from "~/lib/api.server";
+import { requireToken } from "~/lib/session.server";
 
 /**
  * The workspace shell.
@@ -18,14 +20,42 @@ import { api } from "~/lib/api.server";
  * between the landing page and the grid. Nothing about the note is torn down
  * and rebuilt — only the child below it comes and goes.
  */
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  // requireToken redirects to /login when there is no session, so everything
+  // under this layout is behind authentication by virtue of being under it.
+  const token = await requireToken(request);
   // Loaded once here and read by both children, so there is a single list and
   // a single revalidation after any mutation.
-  return { notes: await api.listNotes() };
+  // The user comes back with the notes rather than from a loader of its own.
+  // Only /notes draws the account bubble, but a loader on that child would
+  // refetch the account after every note edit, and this one is already running
+  // and already revalidating.
+  const [notes, user] = await Promise.all([
+    api.listNotes(token),
+    api.getCurrentUser(token),
+  ]);
+
+  // An account with no notes has nothing for the surface below to render, and
+  // this page is the whole interface — no nav bar, no sidebar — so it would be
+  // a genuinely blank screen with no way out. A new account gets an empty note
+  // instead, which is also the truthful answer to "what were you last writing".
+  //
+  // A write in a loader is not free: two parallel requests against a brand-new
+  // account could both see zero and create one each. It happens once per
+  // account at most, the surplus is an empty untitled note, and the reader can
+  // delete it. That is a better failure than the blank page it replaces.
+  if (notes.length === 0) {
+    return {
+      notes: [await api.createNote(token, { title: "Untitled", content: "" })],
+      user,
+    };
+  }
+
+  return { notes, user };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
-  const { notes } = loaderData;
+  const { notes, user } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -64,6 +94,21 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
           : "flex flex-col justify-start py-12 space-y-16"
       }`}
     >
+      {/*
+        The library gets a way to the account; the landing page does not. While
+        you are in the note, the note is the only thing on screen — DESIGN.md
+        §9 rule 8. Rendered here rather than by the notes route because only the
+        layout can place it above the note surface, and it has to sit above
+        everything to reserve space rather than float over it. No negative
+        margin to close the gap below: that pulls the grid back up underneath
+        it, which is the overlap this arrangement exists to avoid.
+      */}
+      {!onLanding && (
+        <div className="flex justify-end">
+          <AccountBubble user={user} />
+        </div>
+      )}
+
       {/*
         No exit link: double clicking the note toggles between its own page and
         the library, in both directions, so the gesture is the navigation.

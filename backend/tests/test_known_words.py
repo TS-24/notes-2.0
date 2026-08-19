@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import KnownWord
-from app.db.seed import ensure_dev_user
 
 
 def known_words(db: Session) -> list[str]:
@@ -45,12 +44,11 @@ class TestMarking:
 
         assert known_words(db) == ["arduous"]
 
-    def test_words_are_owned_by_the_current_user(self, client, db):
+    def test_words_are_owned_by_the_current_user(self, client, db, user):
         client.post("/api/words/known", json={"words": ["arduous"]})
 
-        dev_user = ensure_dev_user(db)
         entry = db.scalars(select(KnownWord)).one()
-        assert entry.user_id == dev_user.id
+        assert entry.user_id == user.id
 
     def test_an_empty_list_does_nothing(self, client, db):
         response = client.post("/api/words/known", json={"words": []})

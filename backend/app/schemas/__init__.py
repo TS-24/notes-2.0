@@ -1,5 +1,6 @@
+from .auth import LoginRequest, RegisterRequest, TokenResponse
 from .note import NoteCreate, NoteRead, NoteUpdate
-from .user import UserCreate, UserRead, UserUpdate
+from .user import UserRead, UserUpdate
 from .word_definition import (
     WordDefinitionCreate,
     WordDefinitionRead,
@@ -8,10 +9,12 @@ from .word_definition import (
 from .word_ladder import WordLadderRead
 
 __all__ = [
+    "LoginRequest",
     "NoteCreate",
     "NoteRead",
     "NoteUpdate",
-    "UserCreate",
+    "RegisterRequest",
+    "TokenResponse",
     "UserRead",
     "UserUpdate",
     "WordDefinitionCreate",

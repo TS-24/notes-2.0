@@ -10,8 +10,9 @@ Companion documents:
   what is applied and what is still outstanding.
 - [README.md](README.md) — what the app is, the API, and setup.
 
-Last updated: 2026-08-03 · branch `dev` (`prod` and `master` are still at
-`fce0475`, two sessions behind — nothing here has been promoted)
+Last updated: 2026-08-19 · branch `dev`. `master` is at the merge of #21;
+`prod` is still at `fce0475`, several sessions behind. Nothing here has been
+promoted to `prod`, and checking that branch out is dangerous — see the traps.
 
 ---
 
@@ -98,8 +99,12 @@ values. That approach was built, tried, and deleted — see
 | `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
 | `app/routes/api.word-ladder.tsx` | Loader-only resource route feeding the roller. Outside the layout on purpose — a lookup inside it would revalidate the note list on every chevron click |
-| `backend/app/services/vocab.py` | The ladder: unit detection, WordNet candidates, frequency ordering. Pure apart from calling the ranker. The only backend logic with tests (36) |
-| `backend/app/services/ranker.py` | The judge: scores a candidate in its sentence with a masked LM. Loads torch lazily, and returns `None` rather than raising when the model is missing |
+| `backend/app/services/vocab.py` | The ladder: unit detection, WordNet candidates, frequency ordering. Pure apart from calling the ranker |
+| `backend/app/services/ranker.py` | The judge: embeds the sentence with and without each candidate through a hosted model and keeps the closest. Returns `None` rather than raising when there are no credentials, so a token-less install still gets dictionary-ordered ladders |
+| `backend/app/api/deps.py` | Resolves the requesting user from a bearer token or the cookie. Every failure is the same 401 |
+| `backend/app/core/security.py` | argon2 hashing and HS256 tokens. Both halves fail closed |
+| `backend/app/cli.py` | `python -m app.cli` — invites, account creation, adopting the old dev user's notes |
+| `frontend/app/lib/session.server.ts` | The HttpOnly cookie holding the token. Set by this server, not by FastAPI — different origins |
 | `backend/app/crud/word_ladder.py` | Cache. Resolves the unit **before** the key is computed — see the trap |
 
 ### Data flow
@@ -107,7 +112,7 @@ values. That approach was built, tried, and deleted — see
 - One loader (the layout's) fetches the note list. Children read it with
   `useRouteLoaderData("routes/workspace")`.
 - All mutations post to `/notes`'s action with an `intent`:
-  `create` · `update` · `togglePin` · `touch` · `delete`.
+  `create` · `update` · `togglePin` · `touch` · `delete` · `markKnown`.
 - After any action React Router revalidates the layout loader, so the UI follows
   the database with no manual refetching.
 
@@ -136,7 +141,7 @@ Two environment switches, both defaulting on/standard:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word, no torch loaded |
+| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word |
 | `MLM_MODEL` | `distilbert-base-uncased` | Baked into the image at build time |
 
 Cached in `word_ladders`, keyed `(word, context_hash)`. The hash is empty when
@@ -279,13 +284,61 @@ Each of these cost real time. They are all commented at the site too.
 23. **Docker Desktop on macOS has no GPU passthrough.** Anything model-shaped in
     this container is CPU-only whatever you install, so pin the CPU torch wheel
     (`--extra-index-url https://download.pytorch.org/whl/cpu`) or pip drags in
-    gigabytes of unusable CUDA.
+    gigabytes of unusable CUDA. (Moot since the ranker became a hosted call,
+    kept because it will be true again the moment anything runs locally.)
+
+24. **`git checkout` silently overwrites gitignored files.** `.env` was tracked
+    until `bf9d899`. Checking out any branch older than that restores the old
+    tracked copy over yours without a word, and the next `pull` deletes it.
+    This destroyed a live `.env` once. It was recoverable only because the
+    containers were still running and hold every value in their environment:
+    `docker exec restyle-db-1 printenv POSTGRES_PASSWORD`. Had they been down,
+    the database password existed nowhere else — it is written down in exactly
+    one place.
+
+    Mostly defused: `prod` was fast-forwarded to `dev` and every merged branch
+    deleted. **Two branches still carry it**, both unmerged and both kept on
+    purpose: `feature/contextual-ladder` and `feature/restyle-reframe`. Copy
+    `.env` somewhere before checking out either.
+
+25. **The test suite never runs a migration.** `conftest.py` builds the schema
+    with `Base.metadata.create_all`, so a broken migration passes all 138
+    tests. CI's `migrations` job is the only thing that would catch it, and it
+    round-trips upgrade → downgrade → upgrade against Postgres, because a
+    downgrade nobody runs is a stub with a docstring.
+
+26. **`render_as_batch` in `env.py` is autogenerate-only.** A hand-written
+    migration must open `op.batch_alter_table` itself; a bare `op.alter_column`
+    still dies on SQLite. See `e4a17c8b3f92`.
+
+27. **A fixed-position badge cannot be fixed with a background colour.** The
+    account bubble overlapped the note; giving it the page ground hid the
+    collision rather than preventing it. It had to leave the float and take a
+    band of its own. A negative margin to close the resulting gap puts the
+    overlap straight back — measure with `getBoundingClientRect`, do not judge
+    by eye.
+
+28. **Ownership belongs in the crud signature, not the route.** `crud/note.py`
+    takes `user_id` as a required argument so a forgotten one is a `TypeError`
+    at import. As an optional filter it silently meant "any user". Related:
+    check ownership *before* the write — `update_note` and `touch_note` used to
+    mutate and then discover the row was missing, so a check bolted on after
+    the call would have edited someone else's note before refusing.
+
+29. **Fixtures that build users directly miss what registration does.**
+    `DELETE /api/users/me` was a 500 for every account created through the
+    front door, because `invite_codes.used_by_user_id` had no relationship to
+    release it. Every test passed: none of them redeemed a code.
 
 ---
 
 ## 5. Conventions
 
-- **Enter commits, Shift+Enter is a newline.** Everywhere.
+- **Enter commits, Shift+Enter is a newline** — in every single-line field.
+  **Not in a note's body**, where Enter is a paragraph break like anywhere
+  else. "Everywhere" is what this line used to say, and taking it literally is
+  what made the note untypable: the handler sits on the container, so it caught
+  the body too, and Enter blurred the field mid-sentence.
 - Escape also saves and closes; nothing discards.
 - Saves only submit when the text actually changed.
 - Animation: tweens, never springs (springs wobble even at `bounce: 0`).
@@ -388,6 +441,21 @@ frequency normalisation.
 
 Ordered by how likely they are to bite.
 
+**Authentication landed (#22, #23).** Invite-only registration, a JWT in an
+HttpOnly cookie set by the React Router server, a single seven-day token, and
+every route scoped to its owner. What it does *not* have: a password reset, and
+any way to revoke a token before it expires. Rotating `JWT_SECRET` invalidates
+every session at once and is the only lever. Accounts come from
+`python -m app.cli issue-invite` or `create-user`.
+
+**Before this faces the internet.** `docker-compose.prod.yml` now covers most
+of it: only Caddy is published, it terminates TLS and gets its own certificate,
+`ENVIRONMENT=production` turns off `/docs` and marks the cookie `Secure`, and
+neither Postgres nor either service is reachable except through the proxy. It
+needs `DOMAIN` set to a name that resolves to the host. What is still missing
+is anything that actually runs it: CI publishes images to GHCR and nothing
+deploys them, and there is no password reset.
+
 0. **Acronyms and jargon have no ladder at all, and ranking cannot give them
    one.** `ML` resolves to *millilitre*; `API` and `GPU` have no WordNet entry
    whatsoever. This is a *lexicon* problem, not a ranking problem — the
@@ -408,11 +476,11 @@ Ordered by how likely they are to bite.
    dividing out word frequency, was tried and made things worse (trap 20). Try
    scoring senses by their gloss instead of by their members.
 
-2. **The ranker costs 400–800ms on a cache miss** and ~1GB of image for torch
-   and the weights. Both are per-deployment rather than per-keystroke — a unit
-   is cached after its first look — but the first press on a new sentence is
-   visibly slower than the 460ms roll. `LADDER_RANKING=off` reverts to
-   dictionary-only if that trade stops being worth it.
+2. **The ranker costs a network round trip on a cache miss.** It is a hosted
+   call now, not a local model, so the image is small but an offline install
+   has no ranking at all and a miss is as slow as the network. A unit is cached
+   after its first look, so this is a first-press cost per sentence, not per
+   keystroke. `LADDER_RANKING=off` reverts to dictionary-only.
 
 3. **The ghost `+` writes an empty `Untitled` note on click**, before anything
    is typed. Abandon it and it lingers — and because it is then the

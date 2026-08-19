@@ -131,9 +131,13 @@ them, never the row on the other side.
 
 All routes are prefixed with `/api`. Interactive docs are served at `/docs` once running.
 
-There is **no authentication yet**. Every route that needs an owner resolves it through
-`get_current_user` in `app/api/deps.py`, which always returns the seeded development user. When
-real auth arrives only that function changes.
+Every route requires a signed-in account. Send `Authorization: Bearer <token>` from a script, or
+let the cookie the API sets carry it in a browser. Registration is invite-only, so the way in is
+a code issued from the CLI — see [Your first account](#your-first-account).
+
+Anything owned by a user answers **404 rather than 403** when it belongs to someone else. 403
+would be more precise and worse: it confirms the row exists, which turns the id space into a
+directory of other people's writing.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -141,10 +145,11 @@ real auth arrives only that function changes.
 | `GET` | `/api/vocab/ladder` | **The ladder.** Takes `sentence` and `caret`; returns the rungs plus the `start`/`end` of the unit it resolved to |
 | `POST` | `/api/analyze/vocabulary` | The words worth learning in a body of text, with definitions. Takes `title` and `content` (capped at 1,000,000 characters, since the analytics page sends every note joined together). Words the user has marked known are left out |
 | `POST` | `/api/words/known` | Mark words as already known, up to 500 per request. Returns 204 with no body — the caller has already removed the card and has nothing to do with a response |
-| `POST` | `/api/users` | Create a user (409 if the email is taken) |
-| `GET` | `/api/users` | List users (`skip`, `limit`) |
-| `GET` | `/api/users/me` | The seeded development user |
-| `GET`/`PATCH`/`DELETE` | `/api/users/{id}` | Read, partially update, or delete a user |
+| `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, 409 if the email is taken |
+| `POST` | `/api/auth/login` | Exchange an email and password for a token. One message for a wrong password and an unknown email alike, so the endpoint cannot be used to find out who has an account |
+| `POST` | `/api/auth/logout` | Clear the API's cookie. Tokens are stateless, so this stops this browser sending one rather than invalidating it |
+| `GET` | `/api/users/me` | The signed-in account |
+| `PATCH`/`DELETE` | `/api/users/me` | Update or delete your own account. Deleting takes your notes and known words with it |
 | `POST` | `/api/notes` | Create a note (404 if the owner doesn't exist) |
 | `GET` | `/api/notes` | List notes, newest-touched first, optionally filtered by `?user_id=` |
 | `GET`/`PATCH`/`DELETE` | `/api/notes/{id}` | Read, partially update, or delete a note |
@@ -159,7 +164,8 @@ real auth arrives only that function changes.
 ### The ladder endpoint
 
 ```bash
-curl -s "localhost:8000/api/vocab/ladder?sentence=She%20was%20running%20through%20the%20park.&caret=10"
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "localhost:8700/api/vocab/ladder?sentence=She%20was%20running%20through%20the%20park.&caret=10"
 ```
 ```json
 { "word": "running through", "pos": "v",
@@ -194,8 +200,11 @@ Environment switches:
 docker compose up -d --build
 ```
 
-Frontend on `http://localhost:3000`, API on `http://localhost:8000`, PostgreSQL on `5432`. The
-backend entrypoint runs `alembic upgrade head` before uvicorn, gated on the database healthcheck.
+Frontend on `http://localhost:3700`, API on `http://localhost:8700`, PostgreSQL on `5700`. Those
+host ports are a block chosen not to collide with anything else on the machine; each is overridable
+(`FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`) and only the host side moves, so the containers
+still listen on 3000, 8000 and 5432 internally. The backend entrypoint runs
+`alembic upgrade head` before uvicorn, gated on the database healthcheck.
 
 Configuration comes from `.env` at the repo root, which is gitignored. Copy the template first:
 
@@ -216,6 +225,57 @@ reaches the database at host `db`, since containers don't share the host's loopb
 > **Note:** the inline defaults in `docker-compose.yml` differ from the template — compose falls
 > back to user and password `postgres`. Since compose reads `.env`, the file wins; just don't rely
 > on the inline defaults.
+
+### Your first account
+
+Registration is invite-only and there is no admin UI, so the first code comes from the CLI:
+
+```bash
+docker compose exec backend python -m app.cli issue-invite     # prints a code
+```
+
+Then register at `/register` with that code, or skip the invite entirely and create the account
+from the same CLI, which is already the privileged path — it prompts for the password rather than
+taking it as a flag, so it stays out of your shell history:
+
+```bash
+docker compose exec backend python -m app.cli create-user --email you@example.com
+```
+
+Notes written before there were accounts belong to a seeded `dev@example.com`. Move them across
+once, then that user is gone:
+
+```bash
+docker compose exec backend python -m app.cli adopt-dev-data --email you@example.com
+```
+
+`list-invites` shows every code and whether it has been spent.
+
+### Deploying
+
+There is a production overlay. It is applied on top of the base file, never
+instead of it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+It publishes **only** Caddy, on 80 and 443. The base file exposes the database
+and both services on host ports, which is right on your own machine and wrong
+on a public one — Postgres in particular would otherwise be reachable from the
+internet with a password as the only thing in front of it. Caddy terminates TLS
+and obtains the certificate itself, which needs `DOMAIN` set to a name that
+resolves to the machine, and both ports reachable so the ACME challenge can be
+answered.
+
+`ENVIRONMENT=production` comes with it, which turns off `/docs` and marks the
+session cookie `Secure`. That flag is why the TLS is not optional: browsers
+silently drop a `Secure` cookie sent over plain http, so without https login
+appears to succeed and no session ever exists.
+
+Nothing deploys automatically. CI publishes images to
+`ghcr.io/ts-24/restyle-{backend,frontend}`, tagged `dev` and by commit sha; the
+sha tag is the one worth pulling, since `dev` moves.
 
 ### Working on the frontend without Node on the host
 
@@ -262,7 +322,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8700
 ```
 
 ```bash
@@ -270,7 +330,7 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
 Loaders and actions call the backend server-side through `app/lib/api.server.ts`, which reads
-`API_URL` and falls back to `http://localhost:8000` — so start the API first. Because the browser
+`API_URL` and falls back to `http://localhost:8700` — so start the API first. Because the browser
 never calls the backend directly, there is no CORS to configure for this path.
 
 ## 📌 Project status
@@ -278,14 +338,11 @@ never calls the backend directly, there is no CORS to configure for this path.
 The ladder, the note surface, persistence, and vocabulary analysis are wired end to end. What is
 not:
 
-- **The vocabulary pages fetch from the browser.** `/api/analyze/vocabulary` and
-  `/api/words/known` exist, but the three call sites that use them
-  (`frontend/app/notes/notegrid.tsx:93,134` and `frontend/app/routes/analytics.tsx:42`) hardcode
-  `http://127.0.0.1:8000` and fetch client-side instead of going through `api.server.ts`. They are
-  the last places that bypass the server-only client, and they break anywhere the API is not on
-  the viewer's own localhost — including under `docker compose`.
-- **There is no authentication.** Every request is the seeded development user, so known-words
-  lists and note ownership are effectively global. See `app/api/deps.py`.
+- **There is no password reset and no way to change a password.** Losing one means a new account
+  or an `UPDATE` by hand. Registration being invite-only is what makes that survivable for now.
+- **There is no refresh flow.** Signing out revokes the token it was given, and only that one, so
+  other sessions on the same account keep working — but a token nobody signs out stays valid for
+  its full seven days. Rotating `JWT_SECRET` still invalidates every session at once.
 - **Acronyms and jargon have no ladder.** `ML` resolves to *millilitre*; `API` and `GPU` have no
   WordNet entry at all. This is a lexicon gap, not a ranking one, so nothing downstream can fix
   it — it needs either a guard that declines on unknown tokens or an open-vocabulary fallback.

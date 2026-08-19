@@ -1,4 +1,5 @@
 import { api, ApiError } from "~/lib/api.server";
+import { requireToken } from "~/lib/session.server";
 import type { Route } from "./+types/api.word-ladder";
 
 /**
@@ -9,10 +10,11 @@ import type { Route } from "./+types/api.word-ladder";
  * revalidates the workspace loader on every submission and would therefore
  * refetch the entire note list every time a chevron is clicked.
  *
- * It also keeps the API client server-side, which is the rule everywhere except
- * the two direct-from-browser calls that are already logged as a bug.
+ * It also keeps the API client server-side, which is now the rule without
+ * exception: the browser never contacts the backend directly.
  */
 export async function loader({ request }: Route.LoaderArgs) {
+  const token = await requireToken(request);
   const params = new URL(request.url).searchParams;
   const sentence = params.get("sentence") ?? "";
   const caret = Number(params.get("caret") ?? -1);
@@ -21,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   try {
-    return { ladder: await api.getWordLadder(sentence, caret) };
+    return { ladder: await api.getWordLadder(token, sentence, caret) };
   } catch (error) {
     // A word with no ladder is an ordinary outcome, not a failure — the roller
     // just has nowhere to climb. Never break the editor over a synonym lookup.

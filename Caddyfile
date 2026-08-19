@@ -1,0 +1,20 @@
+# Caddy obtains and renews the certificate itself; there is nothing to run and
+# no cron to forget. It needs {$DOMAIN} to resolve to this machine and ports 80
+# and 443 reachable, because that is how the ACME challenge is answered.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Everything goes to the React Router server. The API is deliberately not
+	# proxied: the browser never calls it, loaders reach it over the compose
+	# network, and publishing it here would undo that.
+	reverse_proxy frontend:3000
+
+	header {
+		# The browser refuses plain http for this host from now on, which also
+		# removes the http->https redirect as a place to intercept.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
