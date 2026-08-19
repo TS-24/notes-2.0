@@ -38,7 +38,7 @@ def list_users(
 # Declared before /{user_id} so "me" is not parsed as a user id.
 @router.get("/me", response_model=UserRead)
 def get_current_user_route(current_user: User = Depends(get_current_user)) -> UserRead:
-    """The signed-in user. Currently always the seeded development user."""
+    """The signed-in user."""
     return current_user
 
 
