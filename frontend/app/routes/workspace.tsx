@@ -7,6 +7,7 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/workspace";
+import AccountBubble from "~/notes/account-bubble";
 import NoteSurface from "~/workspace/note-surface";
 import { api } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
@@ -54,7 +55,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
-  const { notes } = loaderData;
+  const { notes, user } = loaderData;
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -93,6 +94,21 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
           : "flex flex-col justify-start py-12 space-y-16"
       }`}
     >
+      {/*
+        The library gets a way to the account; the landing page does not. While
+        you are in the note, the note is the only thing on screen — DESIGN.md
+        §9 rule 8. Rendered here rather than by the notes route because only the
+        layout can place it above the note surface, and it has to sit above
+        everything to reserve space rather than float over it. No negative
+        margin to close the gap below: that pulls the grid back up underneath
+        it, which is the overlap this arrangement exists to avoid.
+      */}
+      {!onLanding && (
+        <div className="flex justify-end">
+          <AccountBubble user={user} />
+        </div>
+      )}
+
       {/*
         No exit link: double clicking the note toggles between its own page and
         the library, in both directions, so the gesture is the navigation.

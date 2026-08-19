@@ -15,9 +15,10 @@ import type { User } from "~/lib/types";
  * the house style for an exit is one serif line at Meta size. It is a hairline
  * and an initial, dimmed until hover.
  *
- * It carries the page ground rather than being transparent: the grid reaches
- * the top of the viewport when no note is open, so without it the initial
- * would sit on top of whichever card happened to be in that corner.
+ * It sits in the page flow rather than floating. A fixed-position badge covers
+ * whatever is beneath it — the first card, or the open note — and an opaque
+ * background only hides that collision instead of preventing it. In flow it
+ * reserves its own band at the top of the column, so nothing can pass under.
  */
 export default function AccountBubble({ user }: { user: User }) {
   const initial = (user.username || user.email).trim().charAt(0).toUpperCase();
@@ -27,7 +28,7 @@ export default function AccountBubble({ user }: { user: User }) {
       to="/settings"
       aria-label={`Account: ${user.username}`}
       title={user.email}
-      className="fixed right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full
+      className="flex h-9 w-9 items-center justify-center rounded-full
                  border border-ink/15 bg-paper text-sm text-ink/60 opacity-80 transition
                  hover:border-ink/30 hover:text-ink hover:opacity-100
                  focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink/30
