@@ -90,7 +90,7 @@ function NoteCard({
   const fetchVocabulary = async () => {
     setLoading(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/analyze/vocabulary", {
+      const response = await fetch("http://127.0.0.1:8700/api/analyze/vocabulary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -131,7 +131,7 @@ function NoteCard({
     }
 
     try {
-      await fetch("http://127.0.0.1:8000/api/words/known", {
+      await fetch("http://127.0.0.1:8700/api/words/known", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ words: [word] })

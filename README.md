@@ -159,7 +159,7 @@ real auth arrives only that function changes.
 ### The ladder endpoint
 
 ```bash
-curl -s "localhost:8000/api/vocab/ladder?sentence=She%20was%20running%20through%20the%20park.&caret=10"
+curl -s "localhost:8700/api/vocab/ladder?sentence=She%20was%20running%20through%20the%20park.&caret=10"
 ```
 ```json
 { "word": "running through", "pos": "v",
@@ -194,8 +194,11 @@ Environment switches:
 docker compose up -d --build
 ```
 
-Frontend on `http://localhost:3000`, API on `http://localhost:8000`, PostgreSQL on `5432`. The
-backend entrypoint runs `alembic upgrade head` before uvicorn, gated on the database healthcheck.
+Frontend on `http://localhost:3700`, API on `http://localhost:8700`, PostgreSQL on `5700`. Those
+host ports are a block chosen not to collide with anything else on the machine; each is overridable
+(`FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`) and only the host side moves, so the containers
+still listen on 3000, 8000 and 5432 internally. The backend entrypoint runs
+`alembic upgrade head` before uvicorn, gated on the database healthcheck.
 
 Configuration comes from `.env` at the repo root, which is gitignored. Copy the template first:
 
@@ -262,7 +265,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8700
 ```
 
 ```bash
@@ -270,7 +273,7 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
 Loaders and actions call the backend server-side through `app/lib/api.server.ts`, which reads
-`API_URL` and falls back to `http://localhost:8000` — so start the API first. Because the browser
+`API_URL` and falls back to `http://localhost:8700` — so start the API first. Because the browser
 never calls the backend directly, there is no CORS to configure for this path.
 
 ## 📌 Project status
@@ -281,7 +284,7 @@ not:
 - **The vocabulary pages fetch from the browser.** `/api/analyze/vocabulary` and
   `/api/words/known` exist, but the three call sites that use them
   (`frontend/app/notes/notegrid.tsx:93,134` and `frontend/app/routes/analytics.tsx:42`) hardcode
-  `http://127.0.0.1:8000` and fetch client-side instead of going through `api.server.ts`. They are
+  `http://127.0.0.1:8700` and fetch client-side instead of going through `api.server.ts`. They are
   the last places that bypass the server-only client, and they break anywhere the API is not on
   the viewer's own localhost — including under `docker compose`.
 - **There is no authentication.** Every request is the seeded development user, so known-words

@@ -39,7 +39,7 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
 
         const combinedText = notes.map((n) => n.content ?? "").join("\n\n");
 
-        const response = await fetch("http://127.0.0.1:8000/api/analyze/vocabulary", {
+        const response = await fetch("http://127.0.0.1:8700/api/analyze/vocabulary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: "All Notes", content: combinedText }),

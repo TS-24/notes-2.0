@@ -9,7 +9,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow the React Router frontend (served on :3000 by docker compose) to call us.
+# Allow the React Router frontend (published on the host at :3700 by docker
+# compose, :3000 inside the network) to call us.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, restrict this to the frontend URL

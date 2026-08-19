@@ -4,7 +4,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      # Host ports are parameterised and default to a block unique to this
+      # project, so a neighbour on 3000 or 5432 costs nothing. Only the host
+      # side moves: inside the network these still listen on 3000 and 8000.
+      - "${FRONTEND_PORT:-3700}:3000"
     environment:
       NODE_ENV: production
       # Loaders and actions run inside this container and reach the backend by
@@ -20,7 +23,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8700}:8000"
     environment:
       # "db" is the compose DNS name for the Postgres service below. Using
       # localhost here would resolve to the backend container itself.
@@ -40,7 +43,7 @@ services:
   db:
     image: postgres:15-alpine
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5700}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

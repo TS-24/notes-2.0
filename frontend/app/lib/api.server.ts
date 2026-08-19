@@ -9,7 +9,7 @@
 
 import type { Note, User, WordDefinition, WordLadder } from "./types";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+const API_URL = process.env.API_URL ?? "http://localhost:8700";
 
 export class ApiError extends Error {
   constructor(
