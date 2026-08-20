@@ -438,7 +438,7 @@ export default function NoteSurface({
         }`}
       >
         <p
-          className="font-sans text-sm italic text-rose-ink transition-opacity duration-500"
+          className="font-sans text-sm italic text-accent-ink transition-opacity duration-500"
           style={{ opacity: boxed ? 0 : 1 }}
         >
           {lastTouched}
@@ -458,7 +458,7 @@ export default function NoteSurface({
             // text-center on the field itself: form controls do not inherit
             // text-align from an ancestor.
             style={{ fontSize: type.title, transition: CHROME_TRANSITION }}
-            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-display font-medium leading-[1.2] tracking-tight text-ink caret-rose-ink outline-none placeholder:text-ink/25"
+            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-display font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
           />
           <WordRoller
             fieldRef={titleField.ref}
@@ -487,7 +487,7 @@ export default function NoteSurface({
             placeholder="Start writing…"
             aria-label="Note text"
             style={{ fontSize: type.body, transition: CHROME_TRANSITION }}
-            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-sans leading-relaxed text-ink/85 caret-rose-ink outline-none placeholder:text-ink/25"
+            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
           />
           <WordRoller
             fieldRef={bodyField.ref}
@@ -521,7 +521,7 @@ export default function NoteSurface({
           onClick={onClose}
           aria-hidden={!boxed}
           tabIndex={boxed ? 0 : -1}
-          className="flex items-center gap-2 rounded-xl bg-accent-rose px-5 py-2 text-base text-on-rose transition-opacity hover:opacity-90 cursor-pointer"
+          className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2 text-base text-on-accent transition-opacity hover:opacity-90 cursor-pointer"
         >
           <Minimize2 className="size-4" />
           Done

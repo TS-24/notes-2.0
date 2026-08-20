@@ -177,7 +177,7 @@ export default function ChatSurface({
         </div>
 
         {error && (
-          <p role="alert" className="mt-6 text-base text-rose-ink">
+          <p role="alert" className="mt-6 text-base text-accent-ink">
             {error}
           </p>
         )}
@@ -198,7 +198,7 @@ export default function ChatSurface({
               disabled={pending}
               placeholder="Ask something…"
               aria-label="Your message"
-              className="block w-full resize-none rounded-2xl border border-ink/10 bg-paper px-5 py-3 pr-14 font-sans text-lg leading-relaxed text-ink caret-rose-ink outline-none transition-colors placeholder:text-ink/30 focus:border-ink/25 disabled:opacity-60"
+              className="block w-full resize-none rounded-2xl border border-ink/10 bg-paper px-5 py-3 pr-14 font-sans text-lg leading-relaxed text-ink caret-accent-ink outline-none transition-colors placeholder:text-ink/30 focus:border-ink/25 disabled:opacity-60"
             />
             <button
               type="button"
@@ -232,7 +232,7 @@ export default function ChatSurface({
                 ? "Say something first"
                 : "Finish and summarise this conversation"
             }
-            className="flex items-center gap-2 rounded-xl bg-accent-rose px-5 py-2 text-base text-on-rose transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+            className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2 text-base text-on-accent transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer disabled:cursor-default"
           >
             <Sparkles className="size-4" />
             {finishing ? "Summarising…" : "Finish & summarise"}
@@ -262,7 +262,7 @@ function Summary({ summary }: { summary: NonNullable<Chat["summary"]> }) {
       {summary.topics.length > 0 && (
         <ul className="mb-6 flex flex-wrap gap-x-4 gap-y-1">
           {summary.topics.map(topic => (
-            <li key={topic} className="text-sm italic text-rose-ink">
+            <li key={topic} className="text-sm italic text-accent-ink">
               {topic}
             </li>
           ))}

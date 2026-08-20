@@ -463,7 +463,7 @@ export default function WordRoller({
       {!roll && current ? (
         <div
           aria-hidden
-          className="pointer-events-none absolute bg-rose-ink/10"
+          className="pointer-events-none absolute bg-accent-ink/10"
           style={{
             left: active.left,
             top: active.top + active.height - 2,
@@ -530,7 +530,7 @@ export default function WordRoller({
           className={`absolute flex items-center justify-center transition-colors ${
             exhausted
               ? "cursor-default text-ink/10"
-              : "text-ink/35 hover:text-rose-ink"
+              : "text-ink/35 hover:text-accent-ink"
           }`}
           // The box is a hit target, not the mark — it is much larger than the
           // chevron drawn in it, centred on where that chevron already sat, so

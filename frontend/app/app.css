@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./themes.css";
 /* DESIGN.md §3 — serif everywhere. Playfair sets headers, Garamond sets text. */
 @import "@fontsource-variable/playfair-display";
 @import "@fontsource-variable/eb-garamond";
@@ -8,17 +9,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  /* Type does not vary by theme — DESIGN.md §3 is the brief, not a preference. */
   --font-sans: "EB Garamond Variable", ui-serif, Georgia, serif;
   --font-display: "Playfair Display Variable", ui-serif, Georgia, serif;
-
-  /* DESIGN.md §4 — warm paper, indigo ink, one rose accent. */
-  --color-paper: #fdf7f1;
-  --color-paper-raised: #f3eae5;
-  --color-ink: #38385a;
-  --color-hairline: #e3c9c4;
-  --color-accent-rose: #ce8380;
-  --color-rose-ink: #b26a76;
-  --color-on-rose: #fff9f5;
 }
 
 html {
@@ -98,9 +91,6 @@ html {
 html,
 body {
   @apply bg-paper text-ink;
-
-  /* The paper ramp has no dark variant yet — see DESIGN.md §4. */
-  color-scheme: light;
 }
 
 @theme inline {
@@ -122,8 +112,6 @@ body {
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -146,73 +134,50 @@ body {
 }
 
 :root {
-  --background: var(--color-paper);
-  --foreground: var(--color-ink);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /*
+    shadcn's semantic names, mapped onto the ramp in themes.css. Without this a
+    dialog or a button keeps its stock neutral grey and ignores the theme
+    entirely — DESIGN.md §12 item 3.
+
+    Note `--accent` here is shadcn's meaning of the word (a quiet hover surface),
+    not the app's (the rose block). It maps to raised paper, and the app's accent
+    is `--accent-surface`.
+  */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper-raised);
+  --card-foreground: var(--ink);
+  --popover: var(--paper-raised);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: var(--paper-raised);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper-raised);
+  --muted-foreground: color-mix(in oklab, var(--ink) 60%, transparent);
+  --accent: var(--paper-raised);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--accent-ink);
+  --chart-1: var(--accent-surface);
+  --chart-2: var(--accent-ink);
+  --chart-3: var(--success);
+  --chart-4: var(--danger);
+  --chart-5: var(--hairline);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--paper-raised);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--accent-surface);
+  --sidebar-primary-foreground: var(--on-accent);
+  --sidebar-accent: var(--paper);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--accent-ink);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
+
 
 @layer base {
   * {
@@ -241,4 +206,4 @@ body {
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   @apply bg-zinc-400 dark:bg-zinc-600;
-}
+}

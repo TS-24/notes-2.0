@@ -155,7 +155,7 @@ function NoteCard({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={(e) => e.stopPropagation()}
-                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer ${isPinned ? "opacity-100 text-rose-ink" : "text-ink/35 hover:text-ink"
+                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer ${isPinned ? "opacity-100 text-accent-ink" : "text-ink/35 hover:text-ink"
                   }`}
               >
                 <Pin className="size-3.5 fill-current" />
@@ -190,7 +190,7 @@ function NoteCard({
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="p-1.5 rounded-lg text-ink/35 hover:text-red-600 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-ink/35 hover:text-danger transition-colors cursor-pointer"
                   title="Delete note"
                 >
                   <Trash2 className="size-3.5" />
@@ -210,7 +210,7 @@ function NoteCard({
             
             <button
               onClick={handleQuizClick}
-              className="px-4 py-1.5 text-sm rounded-lg bg-accent-rose text-on-rose hover:opacity-90 transition-opacity cursor-pointer"
+              className="px-4 py-1.5 text-sm rounded-lg bg-accent text-on-accent hover:opacity-90 transition-opacity cursor-pointer"
             >
               Review Words
             </button>
@@ -230,40 +230,40 @@ function NoteCard({
           </DialogHeader>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 mt-2">
             {loading ? (
-              <p className="text-sm text-zinc-500">Analyzing vocabulary...</p>
+              <p className="text-sm text-ink/60">Analyzing vocabulary...</p>
             ) : vocabData ? (
               words.length > 0 ? (
                 isQuizMode ? (
-                  <div className="flex flex-col items-center justify-center min-h-[250px] p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm relative">
+                  <div className="flex flex-col items-center justify-center min-h-[250px] p-6 bg-paper-raised border border-hairline rounded-xl shadow-sm relative">
                     <button 
                       onClick={() => setIsQuizMode(false)}
-                      className="absolute top-4 left-4 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                      className="absolute top-4 left-4 text-xs font-medium text-ink/60 hover:text-ink cursor-pointer"
                     >
                       &larr; Back to List
                     </button>
                     
                     <div className="flex flex-col items-center justify-center w-full mt-6">
-                      <h2 className="text-3xl font-bold capitalize text-blue-600 dark:text-blue-400 mb-2">
+                      <h2 className="text-3xl font-bold capitalize text-accent-ink mb-2">
                         {currentWord}
                       </h2>
-                      <p className="text-base text-center font-medium text-zinc-700 dark:text-zinc-300 mb-6">
+                      <p className="text-base text-center font-medium text-ink/85 mb-6">
                         {vocabData.definitions[currentWord]}
                       </p>
                       
                       <div className="w-full text-center space-y-4">
-                        <p className="text-sm text-zinc-500">Keep this word in your difficult words list?</p>
+                        <p className="text-sm text-ink/60">Keep this word in your difficult words list?</p>
                         <div className="flex items-center justify-center gap-3">
                           {words.length > 1 && (
                             <button
                               onClick={handleNext}
-                              className="px-4 py-2 text-sm font-medium bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 rounded-lg transition-colors cursor-pointer"
+                              className="px-4 py-2 text-sm font-medium border border-ink/15 text-ink hover:bg-paper rounded-lg transition-colors cursor-pointer"
                             >
                               Keep
                             </button>
                           )}
                           <button
                             onClick={() => markAsKnown(currentWord)}
-                            className="px-4 py-2 text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 rounded-lg transition-colors cursor-pointer"
+                            className="px-4 py-2 text-sm font-medium bg-danger/10 text-danger hover:bg-danger/20 rounded-lg transition-colors cursor-pointer"
                           >
                             Remove
                           </button>
@@ -271,33 +271,33 @@ function NoteCard({
                       </div>
                     </div>
                     
-                    <div className="absolute bottom-4 text-xs text-zinc-400 font-medium">
+                    <div className="absolute bottom-4 text-xs text-ink/45 font-medium">
                       Word {currentWordIndex + 1} of {words.length}
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4 pr-2">
                     {Object.entries(vocabData.definitions).map(([word, def]) => (
-                      <div key={word} className="border-b border-zinc-100 dark:border-zinc-800 pb-2 last:border-0">
-                        <h4 className="font-semibold capitalize text-blue-600 dark:text-blue-400">{word}</h4>
-                        <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">{def}</p>
+                      <div key={word} className="border-b border-hairline pb-2 last:border-0">
+                        <h4 className="font-semibold capitalize text-accent-ink">{word}</h4>
+                        <p className="text-sm text-ink/70 mt-1">{def}</p>
                       </div>
                     ))}
                   </div>
                 )
               ) : (
                 <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
-                  <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-full text-green-500">
+                  <div className="p-3 bg-success/10 rounded-full text-success">
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">You know all the words here!</p>
-                  <p className="text-xs text-zinc-500">No complex vocabulary remaining in this note.</p>
+                  <p className="text-sm font-medium text-ink/85">You know all the words here!</p>
+                  <p className="text-xs text-ink/60">No complex vocabulary remaining in this note.</p>
                 </div>
               )
             ) : (
-              <p className="text-sm text-red-500">Failed to load vocabulary analysis.</p>
+              <p className="text-sm text-danger">Failed to load vocabulary analysis.</p>
             )}
           </div>
         </DialogContent>
@@ -395,7 +395,7 @@ export default function Notegrid({
     <>
       <div className="mb-6 break-inside-avoid">
         <GhostCard
-          tone="rose"
+          tone="accent"
           label="New note"
           icon={<Plus className="size-7" strokeWidth={1.5} />}
           layoutId={noteLayoutId(GHOST_ID)}

@@ -13,16 +13,16 @@ import { NOTE_LAYOUT_TRANSITION } from "~/workspace/note-surface";
  * the only axis that varies.
  */
 
-export type GhostTone = "rose" | "ink";
+export type GhostTone = "accent" | "ink";
 
 /**
- * Both tones are existing palette tokens (DESIGN.md §4) — rose is the app's
+ * Both tones are existing palette tokens (DESIGN.md §4) — the accent is the app's
  * accent, ink is its type colour. No third hue is introduced: a new one would
  * need a place in the ramp and a dark-mode counterpart, and the two the theme
  * already has are as distinguishable as anything invented would be.
  */
 const TONE: Record<GhostTone, string> = {
-  rose: "border-hairline text-rose-ink hover:border-rose-ink/60 hover:bg-paper-raised/60",
+  accent: "border-hairline text-accent-ink hover:border-accent-ink/60 hover:bg-paper-raised/60",
   ink: "border-ink/25 text-ink/70 hover:border-ink/50 hover:bg-paper-raised/60",
 };
 
