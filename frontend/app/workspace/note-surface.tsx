@@ -14,9 +14,11 @@ import type { Note } from "~/lib/types";
 /**
  * The one note surface in the app.
  *
- * It is mounted by the workspace layout and never unmounts across a route
- * change, so opening a note is not a page swap — the same title and body
+ * It is mounted by the workspace layout and stays mounted for as long as the
+ * note does, so opening one is not a page swap — the same title and body
  * elements stay put while a box wraps in around them and the type resizes.
+ * Opening a *different* note is the one thing that remounts it, and has to:
+ * `layoutId` is an identity Framer will not let an element change in place.
  * Everything that differs between the landing page and the editor is a
  * property of this one element, which is what keeps the words from jumping.
  */
@@ -235,14 +237,6 @@ export default function NoteSurface({
     // The hooks return a fresh object each render; the callbacks themselves are
     // stable, so depend on those or this runs on every keystroke.
   }, [boxed, titleField.track, bodyField.track]);
-
-  // Adopt server values when the focused note changes underneath us.
-  const shownId = useRef(note.id);
-  if (shownId.current !== note.id) {
-    shownId.current = note.id;
-    setTitle(note.title);
-    setContent(note.content ?? "");
-  }
 
   const saved = useRef({ title: note.title, content: note.content ?? "" });
   const save = () => {

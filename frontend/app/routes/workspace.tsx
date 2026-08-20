@@ -17,8 +17,8 @@ import { requireToken } from "~/lib/session.server";
  *
  * This is a layout route, which is the whole point: React Router keeps a parent
  * mounted while its children change, so the note surface survives navigation
- * between the landing page and the grid. Nothing about the note is torn down
- * and rebuilt — only the child below it comes and goes.
+ * between the landing page and the grid. The note you are in is not torn down
+ * and rebuilt on that trip — only the child below it comes and goes.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   // requireToken redirects to /login when there is no session, so everything
@@ -119,6 +119,21 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
       */}
       {focused && (
         <NoteSurface
+          /*
+            Keyed by the note, so switching notes mounts a fresh surface rather
+            than re-pointing this one. `layoutId` is an identity to Framer, and
+            moving one from a live element to another element in the same commit
+            makes this element the departing half of that crossfade: it was
+            faded to nothing and projected into the card reappearing in the
+            grid, and — never having unmounted — it stayed there. The page went
+            blank with the note still in it.
+
+            It does not cost the continuity this layout exists for. The trip
+            between the landing page and the library keeps the same note, so the
+            key holds and the surface is the same element throughout; only a
+            change of note, which is a change of subject, remounts.
+          */
+          key={focused.id}
           note={focused}
           mode={onLanding ? "page" : "boxed"}
           onOpen={() => navigate(`/notes?open=${focused.id}`)}
