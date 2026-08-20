@@ -49,11 +49,6 @@ services:
       # frontend, but the wildcard has to go before this is public.
       FRONTEND_ORIGIN: https://${DOMAIN}
 
-  db:
-    # The one that matters most. Published, Postgres is reachable from the
-    # internet with only a password in front of it.
-    ports: !reset []
-
 volumes:
   caddy_data:
   caddy_config:
