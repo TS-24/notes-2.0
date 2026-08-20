@@ -51,6 +51,28 @@ class TestRegistry:
 
         assert built["model"] == llm.PROVIDERS["anthropic"].default_model
 
+    def test_the_call_is_given_a_timeout(self, monkeypatch):
+        """
+        Every chat route is a sync `def`, so it runs in FastAPI's threadpool. A
+        provider that accepts the connection and then stalls holds that slot for
+        as long as the SDK's own default allows, and enough of those stop the
+        app serving anything at all.
+        """
+        built = {}
+
+        def fake(provider):
+            def cls(**kwargs):
+                built.update(kwargs)
+                return object()
+
+            return cls
+
+        monkeypatch.setattr(llm, "provider_class", fake)
+        llm.chat_model("anthropic", "secret-key", None)
+
+        assert built["timeout"] == llm.TIMEOUT_SECONDS
+        assert built["max_retries"] == llm.MAX_RETRIES
+
     def test_an_explicit_model_overrides_the_default(self, monkeypatch):
         built = {}
 

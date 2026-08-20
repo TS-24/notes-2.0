@@ -40,6 +40,18 @@ SYSTEM_PROMPT = (
 )
 
 
+# A stalled provider is worse here than a slow one. The chat routes are sync
+# `def`, so each in-flight call holds a FastAPI threadpool slot, and the slot is
+# shared with every other route in the app. Generous enough for a long
+# summarisation, short enough that a hung provider cannot take the app down.
+TIMEOUT_SECONDS = 60.0
+
+# One retry past the first attempt. The SDK defaults retry more than this, which
+# multiplies the worst case by the timeout above; a reader watching a spinner
+# would rather be told it failed.
+MAX_RETRIES = 1
+
+
 class UnknownProvider(ValueError):
     """A provider name that is not in the registry."""
 
@@ -58,10 +70,11 @@ class Provider:
     default_model: str
 
 
-# Both classes take `api_key` and `model` — verified against langchain-anthropic
-# and langchain-openai 1.6.0, where each is an alias on the real field
-# (`anthropic_api_key`, `model_name`). That is what lets `chat_model` below be
-# one code path rather than a per-provider keyword mapping.
+# Both classes take `api_key`, `model`, `timeout` and `max_retries` — verified
+# against langchain-anthropic and langchain-openai 1.6.0, where several are
+# aliases on the real field (`anthropic_api_key`, `model_name`, and on Anthropic
+# `default_request_timeout`). That is what lets `chat_model` below be one code
+# path rather than a per-provider keyword mapping.
 PROVIDERS: dict[str, Provider] = {
     "anthropic": Provider(
         label="Anthropic",
@@ -96,6 +109,8 @@ def chat_model(provider: str, api_key: str, model: str | None):
     return provider_class(provider)(
         model=model or PROVIDERS[provider].default_model,
         api_key=api_key,
+        timeout=TIMEOUT_SECONDS,
+        max_retries=MAX_RETRIES,
     )
 
 
