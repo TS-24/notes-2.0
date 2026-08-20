@@ -29,44 +29,70 @@ html {
 }
 
 /*
-  The window onto a note.
+  A page arriving.
 
-  The note surface is a fixed height now (note-surface.tsx), so a note longer
-  than the box scrolls in here instead of growing the page. The words dissolve
-  into the paper as they reach the top and bottom of the window: a hard edge
-  would say "cut off", and this says "there is more, keep going" — DESIGN.md §7
-  rule 1, one continuous surface, nothing ever cuts.
+  For the views that sit outside the workspace layout — a conversation, mainly.
+  The workspace re-composes itself around a note that never unmounts, so it gets
+  continuity for free; a chat is a whole screen replacing a whole screen, and
+  swapping one for the other in a single frame is the tear DESIGN.md §7 rule 1
+  rules out.
 
-  The padding is the same length as the fade, so the ramp covers empty space
-  either side of the text and the first and last lines are never the faded ones
-  — only the lines on their way past. `safe` centring is what lets a short note
-  sit in the middle of the box while a long one still starts at its first line:
-  plain centring puts the overflow above the scroll origin, out of reach.
+  A CSS animation rather than the motion library, deliberately. `initial` on a
+  motion element is rendered into the server's HTML, so an entrance that starts
+  at `opacity: 0` ships a page that is blank until a script arrives to reveal
+  it — and stays blank if one never does. This runs off the stylesheet, so the
+  markup is visible on its own terms and the animation is decoration on top.
+
+  `backwards` and not `both`: the from-state applies before the run and nothing
+  is held after it, which leaves the element's own styles in charge again — the
+  departure animates the same properties, and a forwards fill would outrank it.
 */
-.note-scroll {
-  --fade: 2.5rem;
-
-  overflow-y: auto;
-  justify-content: safe center;
-  padding-block: var(--fade);
-  /* So the browser leaves the caret clear of the fade when it scrolls a line
-     into view, rather than parking it against the faded edge. */
-  scroll-padding-block: var(--fade);
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 var(--fade),
-    #000 calc(100% - var(--fade)),
-    transparent 100%
-  );
-
-  /* The fade is the affordance; a track drawn down the side of the paper is
-     not. Wheel, trackpad, and keyboard scrolling are all untouched. */
-  scrollbar-width: none;
+.page-enter {
+  animation: page-enter 280ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
-.note-scroll::-webkit-scrollbar {
-  display: none;
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* §12 — the cross-fade stays, the travel goes. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/*
+  A note's text on a grid card, compacted.
+
+  A card is a glance at a note, not the note — you open it to read it — but the
+  text was rendered whole, so a long note became a card thousands of pixels tall
+  and the three columns lost any relation to one another. This caps it.
+
+  It ends in a fade rather than a hard edge or an ellipsis: a cut says "that is
+  all there is" and an ellipsis says "…" in the middle of someone's prose, while
+  the text thinning into the paper says there is more of it, which is true.
+  DESIGN.md §7 rule 1 — nothing ever cuts.
+
+  `mask-size` is what keeps the fade honest. Sized to the cap rather than to the
+  element, the gradient is always the same length from the top, so a card whose
+  text stops short of the cap only ever shows the opaque part of it and no fade
+  is drawn over a paragraph that had already finished.
+*/
+.note-preview {
+  --cap: 11rem;
+  --fade: 2.5rem;
+
+  max-height: var(--cap);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
+  mask-size: 100% var(--cap);
+  mask-repeat: no-repeat;
 }
 
 html,

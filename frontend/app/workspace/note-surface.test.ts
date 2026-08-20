@@ -1,29 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { SURFACE_HEIGHT, fitToText } from "~/workspace/note-surface";
+import { fitToText } from "~/workspace/note-surface";
 
 /*
-  The two rules that keep a long note usable.
+  Measuring a field must never move what the reader is looking at.
 
-  A note is now a window onto its text rather than a column that grows without
-  end, so the surface has a fixed height budget and the words scroll inside it.
-  Both halves of that have already gone wrong once: the box grew until the page
-  was 4218px tall, and measuring a field by collapsing it threw the reader back
-  to the top on every keystroke. Neither is reproducible in jsdom — there is no
-  layout there, so `scrollHeight` is always 0 — so what is pinned here is the
-  arithmetic and the ordering, and the rest is checked in a browser.
+  Sizing a textarea to its text means collapsing it to `auto` first, and the
+  collapse shortens the document under it — so the browser clamps the scroll
+  position before the real height goes back on, and the reader is thrown to the
+  top on every keystroke past the first screenful. It has regressed twice: once
+  on the page, once on a scroller inside the note. jsdom cannot reproduce either
+  (no layout, so `scrollHeight` is always 0), so what is pinned here is the
+  ordering, which is the part that was wrong both times.
 */
-
-describe("the surface's height budget", () => {
-  it("keeps the note under two thirds of the window in both modes", () => {
-    expect(SURFACE_HEIGHT.page).toBeLessThan(200 / 3);
-    expect(SURFACE_HEIGHT.boxed).toBeLessThan(200 / 3);
-  });
-
-  it("gives the note its own page more room than the note in the library", () => {
-    // The library has a grid under the note; its own page has nothing else.
-    expect(SURFACE_HEIGHT.page).toBeGreaterThan(SURFACE_HEIGHT.boxed);
-  });
-});
 
 /**
  * A field that reports a fixed text height, and tells the scrollers when it has

@@ -68,7 +68,9 @@ export default function ChatCard({
 
         {summary ? (
           <>
-            <p className="mt-3 text-base leading-relaxed text-ink/85">
+            {/* Capped like a note card's text, and for the same reason: the
+                card is what the conversation was about, not the whole of it. */}
+            <p className="note-preview mt-3 text-base leading-relaxed text-ink/85">
               {summary.general}
             </p>
             {summary.topics.length > 0 && (

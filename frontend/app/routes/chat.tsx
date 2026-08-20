@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useFetcher, useNavigate } from "react-router";
+import { motion, useReducedMotion } from "framer-motion";
 
 import type { Route } from "./+types/chat";
 import ChatSurface from "~/chat/chat-surface";
@@ -14,7 +16,21 @@ import type { Chat } from "~/lib/types";
  * that surface for whichever *note* is focused. A chat is not a note, so
  * nesting this inside it would mean a note surface on screen underneath a
  * conversation.
+ *
+ * Being outside it also costs this page the one thing the workspace gets for
+ * free: a conversation arrives and leaves as a whole screen rather than as a
+ * re-composition of one, and a hard swap is exactly the tear DESIGN.md §7 rule
+ * 1 rules out. It cannot be fixed the way the note surface fixes it — an
+ * AnimatePresence at the route level would remount the workspace layout on
+ * every navigation and take the persistent note surface down with it — so the
+ * page carries its own arrival and departure instead.
  */
+
+/**
+ * Long enough to read as a movement, short enough not to sit between clicks.
+ * Matches `.page-enter`, which is the same movement in the other direction.
+ */
+const PAGE_TRANSITION = { duration: 0.28, ease: [0.4, 0, 0.2, 1] } as const;
 
 export function meta({ data }: Route.MetaArgs) {
   return [{ title: `${data?.chat.title ?? "Conversation"} — Restyle` }];
@@ -106,18 +122,51 @@ export default function ChatRoute({ loaderData }: Route.ComponentProps) {
         }
       : chat;
 
+  // The page is on its way out. The departure has to start before the
+  // navigation or there is nothing left to animate — leaving unmounts this —
+  // but the navigation must not be *hostage* to the animation finishing: a
+  // backgrounded tab does not run animation frames, and hanging "go back" off
+  // one meant the button did nothing at all there. A timer of the same length
+  // owes nothing to the frame loop, so the fade is decoration over a departure
+  // that happens either way.
+  const [leaving, setLeaving] = useState(false);
+  const leave = () => setLeaving(true);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => navigate("/notes"), PAGE_TRANSITION.duration * 1000);
+    return () => clearTimeout(timer);
+  }, [leaving, navigate]);
+  // §12: reduced motion keeps the cross-fade and drops the travel.
+  const rise = useReducedMotion() ? 0 : 12;
+
   const error =
     (sender.data && !sender.data.ok ? sender.data.error : null) ??
     (finisher.data && !finisher.data.ok ? finisher.data.error : null);
 
   return (
-    <main className="min-h-screen bg-paper px-8 py-12 text-ink md:px-16">
+    /*
+      Arrival is `.page-enter` in app.css and owes nothing to this component;
+      only the departure needs state, because it has to finish before the
+      navigation starts — leaving unmounts this, and there is nothing left to
+      animate once it has. So the button sets the flag and the navigation waits
+      on the animation rather than the other way round.
+
+      `initial={false}` is what keeps the page visible without a script: the
+      motion element renders its resting values into the server's HTML instead
+      of an `opacity: 0` that only hydration can undo.
+    */
+    <motion.main
+      initial={false}
+      animate={leaving ? { opacity: 0, y: rise } : { opacity: 1, y: 0 }}
+      transition={PAGE_TRANSITION}
+      className="page-enter min-h-screen bg-paper px-8 py-12 text-ink md:px-16"
+    >
       {/* The house form for leaving a view — one serif line at Meta size,
           DESIGN.md §11. The library is where the summary ends up, so that is
           where this goes back to. */}
       <button
         type="button"
-        onClick={() => navigate("/notes")}
+        onClick={leave}
         className="mb-8 block text-sm tracking-wide text-ink/50 transition-colors hover:text-ink cursor-pointer"
       >
         ← Your library
@@ -132,8 +181,8 @@ export default function ChatRoute({ loaderData }: Route.ComponentProps) {
           sender.submit({ intent: "send", content }, { method: "post" })
         }
         onFinish={() => finisher.submit({ intent: "finish" }, { method: "post" })}
-        onLeave={() => navigate("/notes")}
+        onLeave={leave}
       />
-    </main>
+    </motion.main>
   );
 }
