@@ -33,12 +33,77 @@ export const NOTE_LAYOUT_TRANSITION = {
 } as const;
 
 const CHROME_TRANSITION =
-  "font-size 550ms cubic-bezier(0.4,0,0.2,1), padding 550ms cubic-bezier(0.4,0,0.2,1), background-color 550ms cubic-bezier(0.4,0,0.2,1), box-shadow 550ms cubic-bezier(0.4,0,0.2,1), min-height 550ms cubic-bezier(0.4,0,0.2,1)";
+  "font-size 550ms cubic-bezier(0.4,0,0.2,1), padding 550ms cubic-bezier(0.4,0,0.2,1), background-color 550ms cubic-bezier(0.4,0,0.2,1), box-shadow 550ms cubic-bezier(0.4,0,0.2,1), min-height 550ms cubic-bezier(0.4,0,0.2,1), max-height 550ms cubic-bezier(0.4,0,0.2,1)";
 
 const TYPE = {
   page: { title: "3.25rem", body: "1.25rem" },
   boxed: { title: "1.875rem", body: "1.125rem" },
 };
+
+/**
+ * How tall the surface is, in vh, in each mode.
+ *
+ * A note used to be a column that grew with its text, so past a screenful the
+ * page grew under it: a long note ran to several thousand pixels with its
+ * heading somewhere far above, and the reader scrolled the document rather than
+ * the note. The surface is a window onto the text now, and both numbers are
+ * under two thirds of the window on purpose — a note should never be the only
+ * thing the screen can hold. Its own page gets more than the library does,
+ * which has a grid underneath it.
+ *
+ * Fixed rather than a ceiling to grow up to: a box that resized to fit would
+ * change height as you type, which is a layout animation per keystroke.
+ */
+export const SURFACE_HEIGHT = { page: 64, boxed: 60 } as const;
+
+/** A scroll position a measurement could disturb. */
+export type Scroller = { at: () => number; to: (position: number) => void };
+
+/**
+ * Size a field to its text without moving what the reader is looking at.
+ *
+ * Collapsing to `auto` is the only way to let a field shrink, but the collapse
+ * also shortens whatever the field is scrolling inside — the page, or the
+ * note's own column — and the browser clamps that scroller to the shorter
+ * content before the real height goes back on. The height is restored a
+ * statement later and the scroll position is not, so every keystroke past the
+ * first screenful threw the reader back to the top.
+ *
+ * Every write happens in one synchronous block, before the browser paints, so
+ * the collapse is never seen.
+ */
+export function fitToText(
+  field: HTMLTextAreaElement,
+  scrollers: readonly Scroller[],
+) {
+  const before = scrollers.map(scroller => scroller.at());
+  field.style.height = "auto";
+  field.style.height = `${field.scrollHeight}px`;
+  scrollers.forEach((scroller, i) => {
+    // Only when it actually moved: assigning a scroll position is not free, it
+    // cancels a smooth scroll in progress and fires a scroll event.
+    if (scroller.at() !== before[i]) scroller.to(before[i]);
+  });
+}
+
+/** The page, and the note's own column when the field is scrolling inside it. */
+function scrollersAround(field: HTMLElement): Scroller[] {
+  const page: Scroller = {
+    at: () => window.scrollY,
+    to: position => window.scrollTo(0, position),
+  };
+  const column = field.closest<HTMLElement>("[data-note-scroll]");
+  if (!column) return [page];
+  return [
+    page,
+    {
+      at: () => column.scrollTop,
+      to: position => {
+        column.scrollTop = position;
+      },
+    },
+  ];
+}
 
 // useLayoutEffect warns during SSR, where there is nothing to measure.
 const useMeasureEffect =
@@ -59,21 +124,7 @@ function useAutoHeight() {
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el || el.clientWidth === 0) return;
-    /*
-      Collapsing to `auto` is the only way to let the field shrink, but once a
-      note is taller than the window that collapse also shortens the document,
-      and the browser clamps the scroll position to the shorter page before the
-      real height goes back on. The height is restored a statement later and the
-      scroll position is not — so every keystroke past the first screenful threw
-      the reader back to the top of the note.
-
-      Both writes and the correction happen inside one synchronous block, before
-      the browser paints, so the collapse is never seen.
-    */
-    const scrolled = window.scrollY;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-    if (window.scrollY !== scrolled) window.scrollTo(0, scrolled);
+    fitToText(el, scrollersAround(el));
   }, []);
 
   /**
@@ -382,7 +433,10 @@ export default function NoteSurface({
       // so the change is an animation rather than a swap.
       style={{
         borderRadius: 24,
-        minHeight: boxed ? "68vh" : "78vh",
+        // Both, and equal: a minimum alone lets a long note push the box past
+        // the window, and a maximum alone would be overruled by the minimum.
+        minHeight: `${SURFACE_HEIGHT[mode]}vh`,
+        maxHeight: `${SURFACE_HEIGHT[mode]}vh`,
         padding: boxed ? "2.25rem 2.5rem" : "0rem",
         backgroundColor: boxed ? "var(--color-paper-raised)" : "transparent",
         boxShadow: boxed
@@ -395,20 +449,23 @@ export default function NoteSurface({
       className="flex w-full cursor-text flex-col"
     >
       {/*
-        The reading column is centred and vertically centred in *both* modes.
-        Centring only on the landing page would make the text jump the moment
-        the box appears, which is the one thing this whole structure exists to
-        avoid — so the box moves around the text, and the text stays put.
-      */}
-      {/*
-        Centred in both modes, deliberately. text-align cannot be tweened, so
-        alignment that differs between the two states snaps the words sideways
-        the instant the box arrives — the one visible discontinuity in an
-        otherwise continuous transition. Everything else here animates, so the
-        alignment has to be constant.
+        The reading column, centred both ways in *both* modes, deliberately.
+        text-align cannot be tweened, so alignment that differed between the two
+        states would snap the words sideways the instant the box arrives — the
+        one visible discontinuity in an otherwise continuous transition. The box
+        moves around the text; the text stays put.
+
+        It is also a window onto the note rather than the whole of it. The
+        surface has a fixed height, so past a screenful the words scroll here
+        instead of the page growing underneath them, and they dissolve into the
+        paper at the edges of the window rather than meeting a hard cut. The
+        fade, the clear band it leaves at each end, and the safe centring that
+        keeps the first line of a long note reachable are all `.note-scroll` in
+        app.css, which is one idea and reads better in one place.
       */}
       <div
-        className={`mx-auto flex w-full flex-1 flex-col justify-center text-center ${
+        data-note-scroll
+        className={`note-scroll mx-auto flex min-h-0 w-full flex-1 flex-col text-center ${
           boxed ? "max-w-4xl" : "max-w-3xl"
         }`}
       >
