@@ -27,7 +27,7 @@ where nobody ever chats never pays for them.
 
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Sequence
+from typing import Literal, Sequence
 
 # What the assistant is, in the app it lives in. Deliberately short: a long
 # persona would be a prompt to maintain, and this one exists only so the model
@@ -68,6 +68,19 @@ class Provider:
     module: str
     class_name: str
     default_model: str
+    # Which company's HTTP API this speaks, which is a different question from
+    # whose service it is. It decides the SDK used to list models below, and it
+    # is why a gateway costs one row here rather than a client of its own.
+    api_style: Literal["openai", "anthropic"]
+    # Only the gateways set this. Anthropic's and OpenAI's own SDKs already know
+    # where they live, and repeating the address here would be a second place
+    # for it to be wrong.
+    base_url: str | None = None
+    # Whether this provider hands out its model list to anybody who asks.
+    # Checked by hand against the live endpoints: both gateways do, and both
+    # first-party APIs answer 401. It decides whether listing models proves a
+    # key works, or whether `check_key` has to spend a request finding out.
+    lists_publicly: bool = False
 
 
 # Both classes take `api_key`, `model`, `timeout` and `max_retries` — verified
@@ -81,15 +94,36 @@ PROVIDERS: dict[str, Provider] = {
         module="langchain_anthropic",
         class_name="ChatAnthropic",
         default_model="claude-opus-5",
+        api_style="anthropic",
     ),
     "openai": Provider(
         label="OpenAI",
         module="langchain_openai",
         class_name="ChatOpenAI",
-        # Editable on /settings on purpose. Model names move faster than this
-        # file does, and a stale default should cost one field rather than the
-        # whole feature.
         default_model="gpt-5.1",
+        api_style="openai",
+    ),
+    # The two gateways. Both speak OpenAI's API, so both reuse ChatOpenAI and
+    # differ only by where the call is addressed — which is the one thing that
+    # must not be forgotten, since the OpenAI client will otherwise take an
+    # OpenRouter key and post it to OpenAI.
+    "openrouter": Provider(
+        label="OpenRouter",
+        module="langchain_openai",
+        class_name="ChatOpenAI",
+        default_model="openai/gpt-5.1",
+        api_style="openai",
+        base_url="https://openrouter.ai/api/v1",
+        lists_publicly=True,
+    ),
+    "opencode-zen": Provider(
+        label="OpenCode Zen",
+        module="langchain_openai",
+        class_name="ChatOpenAI",
+        default_model="claude-sonnet-4-5",
+        api_style="openai",
+        base_url="https://opencode.ai/zen/v1",
+        lists_publicly=True,
     ),
 }
 
@@ -106,12 +140,140 @@ def chat_model(provider: str, api_key: str, model: str | None):
     """A configured chat model. The reader's key, never the environment's."""
     if provider not in PROVIDERS:
         raise UnknownProvider(f"Unknown provider: {provider}")
+    known = PROVIDERS[provider]
+    # Passed only when the registry sets one: ChatAnthropic and ChatOpenAI both
+    # treat an explicit `base_url=None` differently from an absent argument in
+    # at least one version, and the absent one is what the first-party
+    # providers want.
+    address = {"base_url": known.base_url} if known.base_url else {}
     return provider_class(provider)(
-        model=model or PROVIDERS[provider].default_model,
+        model=model or known.default_model,
         api_key=api_key,
         timeout=TIMEOUT_SECONDS,
         max_retries=MAX_RETRIES,
+        **address,
     )
+
+
+def _models_client(known: Provider, api_key: str):
+    """
+    The provider's own SDK client, for the one call LangChain does not cover.
+
+    LangChain models chat; it has no "what can this key reach". Both SDKs are
+    already installed — they are what langchain-anthropic and langchain-openai
+    are built on — so this is a lazy import rather than a new dependency, and
+    `api_style` rather than the provider id is what picks between them, which is
+    what lets a new gateway be one row of the registry.
+    """
+    if known.api_style == "anthropic":
+        from anthropic import Anthropic
+
+        return Anthropic(api_key=api_key, timeout=TIMEOUT_SECONDS, max_retries=MAX_RETRIES)
+
+    from openai import OpenAI
+
+    return OpenAI(
+        api_key=api_key,
+        base_url=known.base_url,
+        timeout=TIMEOUT_SECONDS,
+        max_retries=MAX_RETRIES,
+    )
+
+
+def list_models(provider: str, api_key: str) -> list[str]:
+    """
+    Every model id this key can reach, and — by asking — whether it can reach.
+
+    Called when a key is saved, which makes it two things at once: the catalogue
+    the picker is built from, and the proof that the credential works. A key
+    that cannot list models cannot chat either, so failing here is failing
+    early, on the dialog that just asked for it, rather than on someone's first
+    question.
+
+    Bounded by the same timeout as `reply`, and for the same reason: this runs
+    inside a request on a sync route, holding a threadpool slot while it waits.
+    """
+    known = PROVIDERS.get(provider)
+    if known is None:
+        raise UnknownProvider(f"Unknown provider: {provider}")
+
+    try:
+        listed = _models_client(known, api_key).models.list()
+        # A set first: OpenRouter has named the same model twice, and two
+        # identical rows in the picker read as two different models.
+        ids = sorted({str(model.id) for model in listed})
+    except Exception as error:  # every SDK's own failure type, flattened
+        raise ProviderError(str(error)) from error
+
+    if not ids:
+        # Authenticated and yet able to reach nothing. Storing this would leave
+        # the picker with an empty list and no explanation for it.
+        raise ProviderError("The provider listed no models for this key.")
+    return ids
+
+
+def _probe(known: Provider, api_key: str, model: str) -> None:
+    """
+    The smallest real request this key can make. Raises if it is not accepted.
+
+    One token, because the answer is thrown away — what is being read is the
+    status, not the reply. Only the gateways need this, and only because their
+    model lists are public; the cost is a fraction of a request the reader was
+    about to make anyway.
+    """
+    _models_client(known, api_key).chat.completions.create(
+        model=model,
+        max_tokens=1,
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+
+def check_key(provider: str, api_key: str) -> list[str]:
+    """
+    Prove this key works, and come back with everything it can reach.
+
+    Called when a key is saved, and the reason that save is a dialog rather than
+    a field: the reader waits here, and if the provider will not have the key
+    they are told so at the moment they pasted it rather than at their first
+    question.
+
+    Two calls or one, depending on the provider. Listing models is proof enough
+    where the list is behind the key — Anthropic and OpenAI both answer 401
+    without one. The gateways serve their catalogues to anybody, so a listing
+    there says nothing about the credential and a real request has to be made.
+    """
+    known = PROVIDERS.get(provider)
+    if known is None:
+        raise UnknownProvider(f"Unknown provider: {provider}")
+
+    models = list_models(provider, api_key)
+    if not known.lists_publicly:
+        return models
+
+    try:
+        # The registry's default may be months stale, so the probe goes to
+        # something the provider has just said it has.
+        _probe(known, api_key, _preferred_of(known, models))
+    except Exception as error:  # every SDK's own failure type, flattened
+        raise ProviderError(str(error)) from error
+    return models
+
+
+def _preferred_of(known: Provider, models: list[str]) -> str:
+    """The registry's default if it is still offered, else the first real one."""
+    return known.default_model if known.default_model in models else models[0]
+
+
+def scrub(message: str, api_key: str) -> str:
+    """
+    A provider's error with the credential taken back out of it.
+
+    Providers do quote the offending key in an authentication error, and that
+    message is on its way to the screen and into any log that records a
+    response. Everything else around this works to keep the key out of
+    responses; it would be a poor place to hand it back.
+    """
+    return message.replace(api_key, "····") if api_key else message
 
 
 def to_messages(turns: Sequence[tuple[str, str]]):

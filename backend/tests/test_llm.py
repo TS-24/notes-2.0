@@ -15,11 +15,14 @@ from app.services import llm
 TURNS = [("user", "what is a gerund?"), ("assistant", "a verb acting as a noun")]
 
 
-class TestRegistry:
-    def test_both_providers_are_offered(self):
-        assert set(llm.PROVIDERS) == {"anthropic", "openai"}
+PROVIDER_IDS = ["anthropic", "openai", "openrouter", "opencode-zen"]
 
-    @pytest.mark.parametrize("provider", ["anthropic", "openai"])
+
+class TestRegistry:
+    def test_every_provider_is_offered(self):
+        assert set(llm.PROVIDERS) == set(PROVIDER_IDS)
+
+    @pytest.mark.parametrize("provider", PROVIDER_IDS)
     def test_every_provider_names_an_importable_class(self, provider):
         """
         The registry is a table of import paths, so a typo in it is invisible
@@ -28,9 +31,76 @@ class TestRegistry:
         """
         assert llm.provider_class(provider) is not None
 
-    @pytest.mark.parametrize("provider", ["anthropic", "openai"])
+    @pytest.mark.parametrize("provider", PROVIDER_IDS)
     def test_every_provider_has_a_default_model(self, provider):
         assert llm.PROVIDERS[provider].default_model
+
+    @pytest.mark.parametrize("provider", ["openrouter", "opencode-zen"])
+    def test_the_gateways_list_their_models_to_anybody(self, provider):
+        """
+        Both gateways answer /v1/models with no credential at all — checked by
+        hand against the live endpoints, which returned 418 and 64 models for a
+        key made of nonsense. So listing cannot be the proof that a key works
+        there, and `check_key` sends a real one-token request instead.
+        """
+        assert llm.PROVIDERS[provider].lists_publicly is True
+
+    @pytest.mark.parametrize("provider", ["anthropic", "openai"])
+    def test_the_first_party_providers_do_not(self, provider):
+        # Their model lists are 401s without a key, so listing is the check.
+        assert llm.PROVIDERS[provider].lists_publicly is False
+
+    @pytest.mark.parametrize("provider", ["openrouter", "opencode-zen"])
+    def test_the_gateways_reuse_the_openai_client(self, provider):
+        """
+        OpenRouter and OpenCode Zen both speak OpenAI's API. That is the whole
+        reason they cost one registry row each rather than a client of their
+        own, so it is worth a test: the day one of them stops being
+        OpenAI-shaped, this says so instead of the first chat saying it.
+        """
+        assert llm.PROVIDERS[provider].api_style == "openai"
+        assert llm.PROVIDERS[provider].base_url
+
+    @pytest.mark.parametrize("provider", ["anthropic", "openai"])
+    def test_the_first_party_providers_need_no_base_url(self, provider):
+        # Their SDKs already know where they live; setting one here would be a
+        # second place for the address to be wrong.
+        assert llm.PROVIDERS[provider].base_url is None
+
+    def test_a_gateway_is_told_where_to_send_the_call(self, monkeypatch):
+        """
+        Without this the OpenAI client happily accepts an OpenRouter key and
+        sends it to OpenAI, which is both a wrong answer and a credential
+        posted to the wrong company.
+        """
+        built = {}
+
+        def fake(provider):
+            def cls(**kwargs):
+                built.update(kwargs)
+                return object()
+
+            return cls
+
+        monkeypatch.setattr(llm, "provider_class", fake)
+        llm.chat_model("openrouter", "secret-key", None)
+
+        assert built["base_url"] == llm.PROVIDERS["openrouter"].base_url
+
+    def test_a_first_party_provider_is_not_given_a_base_url(self, monkeypatch):
+        built = {}
+
+        def fake(provider):
+            def cls(**kwargs):
+                built.update(kwargs)
+                return object()
+
+            return cls
+
+        monkeypatch.setattr(llm, "provider_class", fake)
+        llm.chat_model("anthropic", "secret-key", None)
+
+        assert "base_url" not in built
 
     def test_an_unknown_provider_is_refused(self):
         with pytest.raises(llm.UnknownProvider):
@@ -160,6 +230,126 @@ class TestReply:
 
         with pytest.raises(llm.ProviderError):
             llm.reply("anthropic", "k", None, TURNS)
+
+
+class TestListingModels:
+    """
+    The model list is fetched the moment a key is saved, which makes it the
+    connectivity test as well: a key that cannot list models cannot chat, and
+    finding that out on the settings dialog is the whole point of the change.
+    """
+
+    def test_it_returns_the_ids_the_provider_names(self, monkeypatch):
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("b", "a"))
+
+        assert llm.list_models("openai", "k") == ["a", "b"]
+
+    def test_duplicates_are_dropped(self, monkeypatch):
+        # OpenRouter has listed the same id twice under different routes. The
+        # picker would show it twice, and the second one would look like a
+        # different model.
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("a", "a"))
+
+        assert llm.list_models("openrouter", "k") == ["a"]
+
+    def test_a_refusal_becomes_one_exception(self, monkeypatch):
+        def explode(*_):
+            raise RuntimeError("401 Incorrect API key provided")
+
+        monkeypatch.setattr(llm, "_models_client", explode)
+
+        with pytest.raises(llm.ProviderError) as caught:
+            llm.list_models("openai", "k")
+
+        # The provider's own words: they are what tells a wrong key apart from
+        # a network that is down, and the dialog shows them.
+        assert "Incorrect API key" in str(caught.value)
+
+    def test_an_empty_catalogue_is_refused(self, monkeypatch):
+        # A key that authenticates but can reach nothing is not a working key,
+        # and storing it would leave the picker with nothing to offer.
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue())
+
+        with pytest.raises(llm.ProviderError):
+            llm.list_models("openai", "k")
+
+    def test_an_unknown_provider_is_refused(self):
+        with pytest.raises(llm.UnknownProvider):
+            llm.list_models("hal9000", "k")
+
+
+class TestCheckingAKey:
+    """
+    What the settings dialog waits for. The catalogue and the proof arrive
+    together, and which call is the proof depends on the provider — see
+    `lists_publicly`.
+    """
+
+    def test_a_first_party_key_is_proved_by_the_listing(self, monkeypatch):
+        probed = []
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("a"))
+        monkeypatch.setattr(llm, "_probe", lambda *a: probed.append(a))
+
+        llm.check_key("openai", "k")
+
+        # A second call would be a request the reader pays for, to learn
+        # something the first call already established.
+        assert probed == []
+
+    def test_a_gateway_key_is_proved_by_a_real_request(self, monkeypatch):
+        probed = []
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("a"))
+        monkeypatch.setattr(llm, "_probe", lambda *a: probed.append(a))
+
+        llm.check_key("openrouter", "k")
+
+        assert len(probed) == 1
+
+    def test_the_probe_uses_a_model_the_gateway_actually_offers(self, monkeypatch):
+        # The registry's default can be months stale, and a probe against a
+        # retired model fails as loudly as a bad key while meaning nothing.
+        probed = []
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("some-model"))
+        monkeypatch.setattr(llm, "_probe", lambda known, key, model: probed.append(model))
+
+        llm.check_key("openrouter", "k")
+
+        assert probed == ["some-model"]
+
+    def test_a_gateway_key_the_probe_rejects_is_refused(self, monkeypatch):
+        """
+        The case that makes this worth the extra call: the listing succeeded,
+        so without the probe a nonsense key would have been stored as working.
+        """
+
+        def explode(*_):
+            raise RuntimeError("401 Invalid API key.")
+
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("a"))
+        monkeypatch.setattr(llm, "_probe", explode)
+
+        with pytest.raises(llm.ProviderError) as caught:
+            llm.check_key("openrouter", "k")
+
+        assert "Invalid API key" in str(caught.value)
+
+    def test_it_returns_the_catalogue(self, monkeypatch):
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("b", "a"))
+
+        assert llm.check_key("openai", "k") == ["a", "b"]
+
+
+def _catalogue(*ids: str):
+    """A provider SDK client whose `models.list()` names `ids`."""
+
+    class Client:
+        models = type(
+            "Models",
+            (),
+            {"list": staticmethod(lambda: [type("M", (), {"id": i})() for i in ids])},
+        )
+
+    return Client()
 
 
 def _stub(content: object = "", raises=None):

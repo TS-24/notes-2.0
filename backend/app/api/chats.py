@@ -50,24 +50,16 @@ def _owned_chat(db: Session, chat_id: int, user: User) -> Chat:
     return chat
 
 
-def _credential(db: Session, user: User) -> tuple[str, str, str | None]:
-    """The reader's provider credential, or the refusal that says where to get one."""
-    usable = crud_credential.get_key(db, user.id)
+def _credential(db: Session, user: User) -> tuple[str, str, str]:
+    """
+    The provider and model this account chats with, or the refusal that says
+    where to get one. Which credential that is lives on the user — see
+    crud/provider_credential.py's `active`.
+    """
+    usable = crud_credential.active(db, user)
     if usable is None:
         raise NO_CREDENTIAL
     return usable
-
-
-def _without_key(message: str, api_key: str) -> str:
-    """
-    A provider's error with the credential taken back out of it.
-
-    Providers do quote the offending key in an authentication error, and that
-    message is on its way to the screen and into any log that records a
-    response. Everything else here works to keep the key out of responses; it
-    would be a poor place to hand it back.
-    """
-    return message.replace(api_key, "····") if api_key else message
 
 
 def _read(chat: Chat) -> ChatRead:
@@ -169,7 +161,7 @@ def send_message(
         # error repr is not a sentence, and it is what the reader sees first.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"{PROVIDER_REFUSED} {_without_key(str(error), api_key)}",
+            detail=f"{PROVIDER_REFUSED} {llm.scrub(str(error), api_key)}",
         )
     except llm.UnknownProvider:
         # A provider that was in the registry when the key was saved and is not
