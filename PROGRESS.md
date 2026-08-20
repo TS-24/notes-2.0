@@ -10,9 +10,16 @@ Companion documents:
   what is applied and what is still outstanding.
 - [README.md](README.md) — what the app is, the API, and setup.
 
-Last updated: 2026-08-19 · branch `dev`. `master` is at the merge of #21;
-`prod` is still at `fce0475`, several sessions behind. Nothing here has been
-promoted to `prod`, and checking that branch out is dangerous — see the traps.
+Last updated: 2026-08-19 · branch `feature/ai-chats` (PR #34, into `dev`).
+`dev` is at the merge of #31; `master` is 34 behind it and stale; `prod` is at
+the merge of #26, 9 behind `dev`. Checking out an older branch is dangerous —
+see traps 22 and 24.
+
+**This repo is worked on by more than one session at a time.** During this
+session another one committed into the shared working tree, and its commits
+briefly landed on this branch. Check `git branch --show-current` and
+`git status` immediately before staging, and stage files by name rather than
+with `git add -A`.
 
 ---
 
@@ -27,6 +34,12 @@ A notes app with a vocabulary-study angle. Two surfaces, one object:
 
 Double clicking the note toggles between the two, in both directions. That
 gesture is the only navigation — there is no sidebar, nav bar, or exit link.
+
+Since #34 there is a **second object**: an AI chat, started from a twin of the
+`+` ghost card and opened at `/chats/:id`. It runs on a provider API key the
+reader supplies on `/settings`, and finishing one writes a three-part summary
+that becomes what its card in the library shows. It is *not* a note and does
+not share the note surface — see §3.
 
 ---
 
@@ -46,11 +59,24 @@ docker compose up -d --build
 Frontend on `:3000`, API on `:8000`. The backend entrypoint runs
 `alembic upgrade head` before uvicorn, gated on the db healthcheck.
 
-**There is no Node on the host.** Typecheck and build through Docker:
+**There is no Node on the host.** Typecheck through Docker — but *not* by
+mounting the host's `node_modules`, which holds macOS-only rolldown bindings
+(trap 34). Install linux deps in the container, as CI does:
 
 ```bash
-docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
+docker run --rm -v "$PWD/frontend":/src -w /work node:20-alpine sh -c '
+  cp /src/package.json /src/package-lock.json /src/tsconfig.json \
+     /src/react-router.config.ts /src/vite.config.ts /work/
+  npm ci --no-audit --no-fund >/dev/null 2>&1
+  cp -r /src/app /work/app
+  node_modules/.bin/react-router typegen && node_modules/.bin/tsc
+'
 ```
+
+Copying `app/` rather than mounting it keeps the generated `.react-router/types`
+and the linux `node_modules` out of the host tree. Takes a couple of minutes.
+Confirm it really checked your files with `tsc --listFiles | grep app/`: a
+typegen that silently did nothing still exits 0.
 
 To add a dependency without touching the host's `node_modules`:
 
@@ -75,7 +101,15 @@ two pages. This is the single most important structural fact in the app.
 layout("routes/workspace.tsx")   ← owns the note surface; never unmounts
 ├── index  "routes/home.tsx"     ← landing mode (renders null)
 └── route  "notes"               ← library mode (renders the grid)
+
+route("chats")                   ← action only: create / delete a chat
+route("chats/:chatId")           ← one conversation, its own page
 ```
+
+The two chat routes are **outside** the layout on purpose, like `/analytics`
+and `/settings`. The layout exists to keep one note surface mounted across a
+navigation and it renders that surface for whichever *note* is focused; nesting
+a conversation inside it would put a note on screen underneath the chat.
 
 Because the title and body are literally the same DOM nodes on both pages,
 opening a note is not a page swap — a box animates in around text that stays
@@ -94,7 +128,13 @@ values. That approach was built, tried, and deleted — see
 | `app/routes/workspace.tsx` | Layout route. Loads the note list once, picks the focused note, touches it on open, renders the surface + `<Outlet/>` |
 | `app/workspace/note-surface.tsx` | **The** note. Modes `page` / `boxed`. Auto-height fields, save-on-blur, double-click toggle |
 | `app/workspace/word-roller.tsx` | Chevrons above/below the caret's **unit** + slot-machine roll. Holds the climb, and the widened unit span, across re-locates |
-| `app/notes/notegrid.tsx` | The library grid (CSS columns), note cards, ghost `+` card, vocabulary dialog |
+| `app/notes/notegrid.tsx` | The library grid (CSS columns), note cards, the twin ghost row, vocabulary dialog |
+| `app/notes/ghost-card.tsx` | **One** component for both ghost cards. `tone` is the only axis that varies — see trap 30 |
+| `app/notes/chat-card.tsx` | A conversation in the grid. Shows the summary, or how many turns are still unsummarised |
+| `app/chat/chat-surface.tsx` | The conversation, in the boxed note's chrome. Transcript, composer, the three-part summary when finished |
+| `app/routes/chat.tsx` | One chat: loader + `send` / `finish` actions. Two fetchers, so "Thinking…" and "Summarising…" are distinguishable |
+| `app/routes/chats.tsx` | Action-only resource route: create and delete, the things you do to a chat from outside one |
+| `app/lib/local-time.tsx` | Timestamps without a hydration mismatch — see trap 31 |
 | `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
 | `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
@@ -106,15 +146,26 @@ values. That approach was built, tried, and deleted — see
 | `backend/app/cli.py` | `python -m app.cli` — invites, account creation, adopting the old dev user's notes |
 | `frontend/app/lib/session.server.ts` | The HttpOnly cookie holding the token. Set by this server, not by FastAPI — different origins |
 | `backend/app/crud/word_ladder.py` | Cache. Resolves the unit **before** the key is computed — see the trap |
+| `backend/app/services/llm.py` | The LangChain layer. A **registry** of providers, not `init_chat_model` — see trap 32. One `ProviderError` out |
+| `backend/app/services/conversation_summary.py` | The three parts, via `with_structured_output`. Returns `None` on any failure, like `ranker.py` |
+| `backend/app/core/secrets.py` | Fernet encryption for the reader's API key, HKDF-derived from `JWT_SECRET`. `decrypt` fails closed to `None` |
+| `backend/app/api/chats.py` | Chats. Three distinct refusals (409 no key, 409 finished, 502 provider), and it scrubs the key out of provider errors — trap 33 |
+| `backend/app/api/settings.py` | The provider credential. `GET` returns the last four characters of the key and nothing more |
 
 ### Data flow
 
-- One loader (the layout's) fetches the note list. Children read it with
-  `useRouteLoaderData("routes/workspace")`.
-- All mutations post to `/notes`'s action with an `intent`:
+- One loader (the layout's) fetches the note list **and the chat list**, so the
+  library has one fetch and one revalidation for everything it shows. Children
+  read it with `useRouteLoaderData("routes/workspace")`.
+- All note mutations post to `/notes`'s action with an `intent`:
   `create` · `update` · `togglePin` · `touch` · `delete` · `markKnown`.
+  Chats have their own: `/chats` takes `create` · `delete`, and
+  `/chats/:chatId` takes `send` · `finish`.
 - After any action React Router revalidates the layout loader, so the UI follows
   the database with no manual refetching.
+- The grid interleaves notes and chats by `updated_at` rather than grouping them
+  by kind. `"messages" in item` is the discriminator, and keys are prefixed
+  (`note-7` / `chat-7`) because ids restart per table.
 
 ### Backend
 
@@ -122,7 +173,35 @@ values. That approach was built, tried, and deleted — see
   landing note". `list_notes` orders by `updated_at DESC, id DESC`.
 - `POST /api/notes/{id}/touch` bumps it. **Needed** because an empty PATCH
   changes no attributes, so SQLAlchemy's `onupdate` never fires — opening a
-  note has to touch it explicitly.
+  note has to touch it explicitly. `crud/chat.py::add_exchange` sets
+  `chat.updated_at` by hand for the same reason: appending to a relationship
+  does not dirty the parent's own columns.
+- Migration `f2b6c48e0d19` adds `provider_credentials`, `chats` and
+  `chat_messages`. One credential row **per user**, not per provider: picking a
+  different provider is a change of mind, not a second credential, and a set of
+  stored keys would need an "active" flag to keep in step with.
+- `chats.summarized_at` is the *only* test for "finished". A separate status
+  column would be a second fact to keep in step, and the two would disagree.
+  The four summary columns are written together by `store_summary` or not at
+  all, and read together through the nested `summary` object.
+
+### The chat, and the reader's key
+
+The word ladder's ranker calls a hosted model with the **deployment's** token.
+A chat calls a provider with the **reader's**, which is a different problem:
+
+```
+/settings ─▶ provider_credentials   Fernet ciphertext, key derived from
+                                    JWT_SECRET by HKDF (core/secrets.py)
+          ─▶ services/llm.py        registry → ChatAnthropic / ChatOpenAI
+          ─▶ conversation_summary   with_structured_output → three parts
+```
+
+No new environment variable was introduced; deriving from `JWT_SECRET` avoids a
+second secret to set and lose. The cost is stated in `secrets.py`: rotating
+`JWT_SECRET` (the documented "sign everyone out" lever) also orphans every
+stored key. That reads as "no key on file" rather than a 500, because pasting
+the key again is the only remedy either way.
 
 ### The word ladder
 
@@ -330,6 +409,50 @@ Each of these cost real time. They are all commented at the site too.
     front door, because `invite_codes.used_by_user_id` had no relationship to
     release it. Every test passed: none of them redeemed a code.
 
+30. **CSS columns have no "top right" index.** Putting the second ghost card at
+    the right of the grid's first row cannot be done by ordering the items:
+    `columns-[280px]` fills top-to-bottom then left-to-right, and the column
+    count changes with the window, so no index reliably lands there. Both
+    ghosts were lifted **out** of the columns into one `flex justify-between`
+    row above the grid. Measured: 280×200 each, 64px from either edge, holding
+    from 1200px down to 600px and wrapping below that.
+
+31. **SSR renders dates in the container's timezone and the browser in the
+    reader's.** `Intl.DateTimeFormat(...).format(new Date(iso))` in a card gave
+    "Aug 20, 2026, 2:41 AM" on the server and "Aug 19, 2026, 10:41 PM" in the
+    browser, which React calls a text mismatch: **error #418 on every visit to
+    `/notes`**, minified to a stack of one-letter frames that names nothing.
+    This was pre-existing on note cards and easy to reproduce by diffing the
+    SSR HTML (`fetch('/notes')`) against the live DOM. Fix in
+    `app/lib/local-time.tsx`: format in `UTC` for the server render *and* the
+    hydration pass, so the two strings agree, then switch to the local zone in
+    an effect. Rendering nothing server-side also silences it and makes every
+    card jump as the dates arrive.
+
+32. **`init_chat_model` is the wrong shape for a user-supplied provider.** A
+    string-resolved model fails at the first request with a real key, which is
+    the one moment there is no test coverage. `services/llm.py` keeps a table
+    of import paths instead, so a renamed class is caught by a test with no
+    credentials at all. Verified against langchain-anthropic / langchain-openai
+    1.6.0: both accept `api_key` and `model` as aliases (`anthropic_api_key`,
+    `model_name`), which is what lets `chat_model` be one code path. Re-check
+    that if either package is upgraded.
+
+33. **Providers quote the offending key back in authentication errors.** The
+    502 detail passes the provider's own words through, because they are the
+    only thing separating a bad key from a rate limit from a dead model name —
+    and that string goes to the screen and into any log that records a
+    response. `api/chats.py::_without_key` scrubs the credential out first.
+    A test pins it; it was written failing, and it failed.
+
+34. **The documented Docker typecheck command no longer works.** §2's
+    `docker run … node:20-alpine sh -c "react-router typegen && tsc"` dies on
+    `Cannot find module './rolldown-binding.linux-arm64-musl.node'`: vite 8
+    pulls rolldown, and the host's `node_modules` holds only
+    `@rolldown/binding-darwin-arm64`. The `restyle-frontend` image cannot
+    stand in — it is a production install with `tsc` but no `react-router` dev
+    CLI. Do what CI does and `npm ci` inside the container; §2 has the command.
+
 ---
 
 ## 5. Conventions
@@ -435,11 +558,50 @@ Three approaches were tried and rejected on the way, all recorded as traps
 19–21: per-word fluency filtering, taking only the single winning sense, and PMI
 frequency normalisation.
 
+**AI chats (#34).** A second object in the library, and the first credential the
+app holds on a *user's* behalf rather than the deployment's. LangChain talks to
+whichever of two providers the reader configured on `/settings`; the key is
+Fernet-encrypted at rest and never leaves through the API. Finishing a chat asks
+the same provider for a summary in three parts — what it was about and its
+topics, what the reader kept asking, what the answers concentrated on — which is
+what the chat's card shows in the library from then on, because nobody rereads a
+transcript. Parts two and three only work because the transcript labels its
+speakers; an unlabelled block cannot separate the asking from the answering.
+
+Hugging Face was the original plan for the summary and was **dropped before any
+of it was written**: `summarization` against `bart-large-cnn` cannot follow an
+instruction, so "the main focus of the questions" and "topics" were not
+expressible, and it would have meant a second credential for a call the reader's
+own key already covers. Nothing HF-shaped was added; `ranker.py` and `HF_TOKEN`
+are untouched.
+
 ---
 
 ## 7. Open items
 
 Ordered by how likely they are to bite.
+
+**A chat has never spoken to a real model.** There is no provider key on this
+machine, so everything up to the provider boundary is verified and nothing past
+it is: a real reply, and a real three-part summary, have **not** been seen. What
+*was* seen is a genuine 401 from Anthropic with a deliberately invalid key, so
+decryption, client construction, the network call and the error path do work.
+The first thing to do with a real key is send one message and finish one chat.
+
+**`gpt-5.1` is a guess.** The OpenAI default in `services/llm.py` could not be
+checked against anything — no key, and the id postdates what was verifiable
+here. Anthropic's `claude-opus-5` was confirmed. The settings form exposes an
+editable model field precisely so a wrong default costs one field rather than
+the feature, but the default itself should be checked by whoever has a key.
+
+**`alembic check` is red on `dev`, and was before #34.** `invite_codes` and
+`revoked_tokens` were migrated with a unique *constraint* plus a plain index,
+while their models declare `unique=True, index=True`, which SQLAlchemy renders
+as a unique *index*. Functionally identical, so nothing is broken and the
+round-trip test passes; it just means `alembic check` cannot currently be used
+as a drift gate. The three tables added by `f2b6c48e0d19` are clean, because
+that migration writes `create_index(..., unique=True)` to match. Fixing the two
+old tables is a small migration nobody has needed yet.
 
 **Authentication landed (#22, #23).** Invite-only registration, a JWT in an
 HttpOnly cookie set by the React Router server, a single seven-day token, and
@@ -482,10 +644,13 @@ deploys them, and there is no password reset.
    after its first look, so this is a first-press cost per sentence, not per
    keystroke. `LADDER_RANKING=off` reverts to dictionary-only.
 
-3. **The ghost `+` writes an empty `Untitled` note on click**, before anything
-   is typed. Abandon it and it lingers — and because it is then the
-   most-recently-updated note, it *takes over the landing page*. Fix: delete the
-   note on close when it is still empty.
+3. **Both ghost cards write a row on click**, before anything is typed. The
+   `+` note ghost leaves an empty `Untitled` note, and because it is then the
+   most-recently-updated note it *takes over the landing page*. The new AI chat
+   ghost has the same shape of problem and is milder: an abandoned chat is a
+   card reading "Nothing said yet." that never leaves the grid, but it cannot
+   hijack the landing page, which only ever shows a note. Fix for both: delete
+   the row on close when it is still empty.
 
 4. **Closing a note leaves a dead end.** Done / Escape / click-away drop you on
    the bare library with no note to double-click and no exit link, so the only
@@ -506,8 +671,21 @@ deploys them, and there is no password reset.
 8. **`components/ui/*` is unmigrated** — still shadcn defaults, off the design
    tokens.
 
-9. **`/analytics` and `/settings` are outside the workspace layout** and
-   un-migrated. `/settings` is a placeholder.
+9. **`/analytics` and `/settings` are outside the workspace layout.**
+   `/settings` is no longer a placeholder — it carries the AI provider section
+   now, in the house style — but neither page has been through the DESIGN.md
+   migration, and `/analytics` is still un-migrated in full.
+
+9b. **A finished chat cannot be reopened, extended, or branched.** Summarising
+   closes it: `POST /messages` answers 409 once `summarized_at` is set. Deciding
+   otherwise means deciding what happens to a summary that no longer describes
+   the conversation — re-summarise on every turn, or mark it stale. Left alone
+   deliberately rather than overlooked.
+
+9c. **Chat replies are one request, not a stream.** A long answer is a long
+   wait behind "Thinking…" with nothing arriving. LangChain's `.stream()` would
+   fix it, but React Router actions return once, so it needs a resource route
+   returning a stream and a reader on the client — a real change, not a flag.
 
 9a. **`backend/venv` cannot run the app — rebuild it when off a metered
    connection.** The interpreter is fine (3.12.13) but only 16 packages are
@@ -516,9 +694,12 @@ deploys them, and there is no password reset.
    `ModuleNotFoundError: No module named 'fastapi'`. It is the scratch env for
    `app/services/run_once.py` (the only importer of `wn` and `defusedxml`,
    neither of which belongs in `requirements.txt`), not a stale backend env.
-   Fix is `venv/bin/pip install -r requirements.txt`, which
-   pulls torch and transformers, so it is a large download — deferred on
-   purpose, not forgotten. The `psycopg2-binary` pin against the venv's
+   Fix is `venv/bin/pip install -r requirements.txt`. That used to pull torch
+   and transformers and was deferred as a large download; it no longer does
+   (the ranker became a hosted call), so this is now a small install and the
+   reason for deferring it is gone. **There is already a working test env at
+   `backend/.venv-test`** — gitignored, built with `uv`, and what the 243 tests
+   were last run from. The `psycopg2-binary` pin against the venv's
    `psycopg` 3 is *not* a conflict: SQLAlchemy resolves the bare `postgresql://`
    URL in `app/db/database.py:12` to psycopg2, and `run_once.py` uses psycopg 3
    on its own. See SAFETY-UPDATES.md.

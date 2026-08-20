@@ -41,6 +41,15 @@ model ranks.**
 - **Vocabulary analysis** — the words in a note (or in every note at once) that are worth
   learning, with definitions. Dismissing one records it as known, per reader, so the list shrinks
   as you work through it instead of showing you the same words forever.
+- **AI chats** — a second card sits at the right of the library, the twin of the `+` that starts a
+  note, and it opens a conversation in the same box an open note sits in. Finishing one asks the
+  model to summarise it in three parts: what it was about and its topics, what you kept asking,
+  and what the answers concentrated on. That summary becomes what the chat's card shows in the
+  library, because nobody rereads a transcript.
+
+  **This needs your own API key.** Add a provider (Anthropic or OpenAI) and a key on `/settings`;
+  it is encrypted at rest and never sent back to the browser. Without one, chats refuse politely
+  and tell you where to go. There is no shared or built-in key.
 - **Persistence** — notes, pinning, and word definitions are stored in PostgreSQL through a
   FastAPI backend, with the whole ladder computation cached so a repeat lookup costs no model time.
 
@@ -113,7 +122,7 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 
 ### Data model
 
-Five tables. A user owns many notes; notes and word definitions are linked many-to-many through a
+A user owns many notes; notes and word definitions are linked many-to-many through a
 `note_word` association table, so one definition is shared across every note that uses the word.
 `word_ladders` is a standalone cache, keyed on the surface form and a hash of the sentence.
 `known_words` is per user rather than global, because "difficult" is a fact about a reader and not
@@ -121,11 +130,21 @@ about a word.
 
 ```
 User ──< Note >──note_word──< WordDefinition          WordLadder
- └──< KnownWord
+ ├──< KnownWord
+ ├──< Chat ──< ChatMessage
+ └──1 ProviderCredential
 ```
 
-Deleting a user cascades to their notes. Deleting a note or a word only removes the link between
-them, never the row on the other side.
+Plus `invite_codes` and `revoked_tokens`, which belong to registration and sign-out rather than to
+the reading path.
+
+Deleting a user cascades to their notes, known words, chats and stored credential. Deleting a note
+or a word only removes the link between them, never the row on the other side.
+
+A chat holds its own summary in four columns written together, with `summarized_at` as the single
+test for "finished" — a separate status column would be a second fact to keep in step, and the two
+would eventually disagree. `ProviderCredential` is **one row per user**, not one per provider:
+picking a different provider is a change of mind, not a second credential.
 
 ## 🔌 API
 
@@ -151,15 +170,32 @@ directory of other people's writing.
 | `GET` | `/api/users/me` | The signed-in account |
 | `PATCH`/`DELETE` | `/api/users/me` | Update or delete your own account. Deleting takes your notes and known words with it |
 | `POST` | `/api/notes` | Create a note (404 if the owner doesn't exist) |
-| `GET` | `/api/notes` | List notes, newest-touched first, optionally filtered by `?user_id=` |
+| `GET` | `/api/notes` | List notes, newest-touched first. `?search=` matches the title; `?skip=` / `?limit=` page. Scope is always the signed-in account, never a parameter |
 | `GET`/`PATCH`/`DELETE` | `/api/notes/{id}` | Read, partially update, or delete a note |
 | `POST` | `/api/notes/{id}/touch` | Bump `updated_at`. Needed because an empty `PATCH` changes no attributes, so SQLAlchemy's `onupdate` never fires — opening a note has to touch it explicitly |
 | `POST`/`DELETE` | `/api/notes/{id}/words/{word_id}` | Link or unlink a word and a note |
 | `POST` | `/api/words` | Create a word definition |
 | `GET` | `/api/words` | List definitions, or look one up with `?word=` |
 | `GET`/`PATCH`/`DELETE` | `/api/words/{id}` | Read, partially update, or delete a definition |
+| `GET`/`PUT`/`DELETE` | `/api/settings/provider` | The AI provider credential. `GET` never returns the key — only `key_hint`, its last four characters, plus the providers you could pick. `PUT` replaces whatever was there; `DELETE` forgets it and is not an error when there is nothing to forget |
+| `POST` | `/api/chats` | Start an empty conversation. Deliberately does **not** require a key: the refusal belongs on the first message, not on the button that opens the page you are being told to configure |
+| `GET` | `/api/chats` | List conversations, newest-touched first |
+| `GET`/`DELETE` | `/api/chats/{id}` | Read one conversation with its turns and summary, or delete it and its turns |
+| `POST` | `/api/chats/{id}/messages` | Say something and get the reply. Returns the whole chat, so there is one shape for "here is the conversation now" rather than a delta to splice. **409** if no usable key is on file or the chat is already finished; **502** if the provider would not answer |
+| `POST` | `/api/chats/{id}/summarize` | Finish the conversation and write the three-part summary. **400** if nothing has been said. Running it again re-summarises, which is the retry path when the first attempt was poor |
 
 `PATCH` bodies only need the fields being changed; omitted fields are left untouched.
+
+### Chats and your API key
+
+Chats run on a provider account you own. The key is stored encrypted with Fernet, under a key
+derived from `JWT_SECRET` by HKDF — so there is no extra environment variable to set, and one
+consequence worth knowing: **rotating `JWT_SECRET` makes every stored key undecryptable.** That is
+already the documented way to sign everyone out. An unreadable key reads as "no key on file"
+rather than an error, so the remedy is the same either way: paste it again.
+
+Nothing sends the key back down. `GET /api/settings/provider` returns four characters of it, and a
+provider error that quotes the key back has it scrubbed out before the 502 leaves the backend.
 
 ### The ladder endpoint
 
@@ -300,17 +336,21 @@ docker compose exec backend python -m pytest tests/ -q
 ```
 
 ```
-................................................................         [100%]
-64 passed in 2.88s
+........................................................................ [100%]
+243 passed in 10.62s
 ```
 
-The suite runs against SQLite, so it needs neither Postgres nor a Hugging Face token: the ranker
-is mocked. That is also why it is fast. For the same reason it runs fine outside Docker, from any
-virtualenv with `requirements.txt` installed:
+The suite runs against SQLite, so it needs neither Postgres nor any API key: the ranker is mocked,
+and so is every provider call the chat feature makes. That is also why it is fast. For the same
+reason it runs fine outside Docker, from any virtualenv with `requirements.txt` installed:
 
 ```bash
 cd backend && .venv/bin/python -m pytest tests/ -q
 ```
+
+Because `conftest.py` builds the schema with `Base.metadata.create_all`, the suite never runs a
+migration and a broken one would pass every test. CI's `migrations` job is the only thing that
+catches that, and it round-trips upgrade → downgrade → upgrade against real Postgres.
 
 ### Running outside Docker
 
@@ -338,6 +378,17 @@ never calls the backend directly, there is no CORS to configure for this path.
 The ladder, the note surface, persistence, and vocabulary analysis are wired end to end. What is
 not:
 
+- **No chat has spoken to a real model yet.** The plumbing is verified to the provider boundary
+  and no further: with a deliberately invalid key it reaches Anthropic and returns a real 401, so
+  decryption, client construction, the request and the error path all work — but an actual reply
+  and an actual three-part summary have not been observed, because there was no key to observe
+  them with. The OpenAI default model id is likewise unverified; the settings form lets you
+  correct it in one field.
+- **Chat replies arrive whole, not streamed.** A long answer is a long wait with nothing on screen
+  but "Thinking…".
+- **A finished chat is closed.** Summarising it refuses further turns, because a summary that no
+  longer describes its conversation is worse than no summary.
+
 - **There is no password reset and no way to change a password.** Losing one means a new account
   or an `UPDATE` by hand. Registration being invite-only is what makes that survivable for now.
 - **There is no refresh flow.** Signing out revokes the token it was given, and only that one, so
@@ -359,6 +410,5 @@ not:
   been rotated, and `DATABASE_URL` no longer has a hardcoded fallback, so the leaked value is dead.
   No history rewrite was done.
 
-`PROGRESS.md` carries the full open-items list and 23 documented traps that cost real time — read
-it before touching the UI. Note that it still describes the local `torch` ranker that was replaced
-by the hosted one; the README above is current, `PROGRESS.md` is not.
+`PROGRESS.md` carries the full open-items list and 34 documented traps that cost real time — read
+it before touching the UI. It is current as of PR #34.

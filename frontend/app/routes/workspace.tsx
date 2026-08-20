@@ -17,8 +17,8 @@ import { requireToken } from "~/lib/session.server";
  *
  * This is a layout route, which is the whole point: React Router keeps a parent
  * mounted while its children change, so the note surface survives navigation
- * between the landing page and the grid. Nothing about the note is torn down
- * and rebuilt — only the child below it comes and goes.
+ * between the landing page and the grid. The note you are in is not torn down
+ * and rebuilt on that trip — only the child below it comes and goes.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   // requireToken redirects to /login when there is no session, so everything
@@ -30,9 +30,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Only /notes draws the account bubble, but a loader on that child would
   // refetch the account after every note edit, and this one is already running
   // and already revalidating.
-  const [notes, user] = await Promise.all([
+  // Chats come from the same loader as the notes so the library has one fetch
+  // and one revalidation for everything it shows.
+  const [notes, user, chats] = await Promise.all([
     api.listNotes(token),
     api.getCurrentUser(token),
+    api.listChats(token),
   ]);
 
   // An account with no notes has nothing for the surface below to render, and
@@ -48,10 +51,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       notes: [await api.createNote(token, { title: "Untitled", content: "" })],
       user,
+      chats,
     };
   }
 
-  return { notes, user };
+  return { notes, user, chats };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
@@ -115,6 +119,21 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
       */}
       {focused && (
         <NoteSurface
+          /*
+            Keyed by the note, so switching notes mounts a fresh surface rather
+            than re-pointing this one. `layoutId` is an identity to Framer, and
+            moving one from a live element to another element in the same commit
+            makes this element the departing half of that crossfade: it was
+            faded to nothing and projected into the card reappearing in the
+            grid, and — never having unmounted — it stayed there. The page went
+            blank with the note still in it.
+
+            It does not cost the continuity this layout exists for. The trip
+            between the landing page and the library keeps the same note, so the
+            key holds and the surface is the same element throughout; only a
+            change of note, which is a change of subject, remounts.
+          */
+          key={focused.id}
           note={focused}
           mode={onLanding ? "page" : "boxed"}
           onOpen={() => navigate(`/notes?open=${focused.id}`)}

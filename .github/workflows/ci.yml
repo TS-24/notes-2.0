@@ -1,10 +1,21 @@
 name: CI
 
-# Every push and every PR. The suite is hermetic and takes seconds, so there is
-# no reason to be selective about when it runs.
+# Every PR, and pushes to master. Not pushes to dev: publish.yml runs on those
+# and calls this whole workflow before it pushes an image, so a dev push that
+# also triggered this directly started two runs of the same suite against the
+# same commit — and both landed in the concurrency group below, where the
+# second cancelled the first.
+#
+# That was not merely wasteful. The run it cancelled was often the one *inside*
+# publish.yml, which took the publish down with it: the images for the merge of
+# #33 were never pushed, because the CI run for the merge of #34 eighteen
+# seconds later shared this group and stopped it. publish.yml sets
+# `cancel-in-progress: false` precisely to prevent that, and this reached past
+# it. Dev still gets the full suite on every push — through publish.yml, which
+# will not publish anything the suite has not passed.
 on:
   push:
-    branches: [dev, master]
+    branches: [master]
   pull_request:
   workflow_dispatch:
   # Called by publish.yml, which will not run without this even though the
@@ -12,7 +23,9 @@ on:
   workflow_call:
 
 concurrency:
-  # A second push to the same branch makes the first run irrelevant.
+  # A second push to the same branch makes the first run irrelevant. Runs called
+  # by publish.yml share this group with each other, which is harmless: that
+  # workflow serialises itself, so two of its runs are never in flight at once.
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
@@ -95,7 +108,7 @@ jobs:
           alembic upgrade head
 
   frontend:
-    name: Frontend typecheck
+    name: Frontend checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -117,6 +130,10 @@ jobs:
         # typegen first: the route types every loader imports are generated,
         # and tsc cannot resolve them until they exist.
         run: npm run typecheck
+
+      - name: Test
+        working-directory: frontend
+        run: npm test
 
       - name: Build
         working-directory: frontend

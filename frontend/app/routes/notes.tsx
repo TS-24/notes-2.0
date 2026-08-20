@@ -3,7 +3,7 @@ import type { Route } from "./+types/notes";
 import Notegrid from "~/notes/notegrid";
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
-import type { Note } from "~/lib/types";
+import type { Chat, Note } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Notes" }, { name: "description", content: "Your notes" }];
@@ -80,6 +80,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Notes() {
   const workspace = useRouteLoaderData("routes/workspace") as {
     notes: Note[];
+    chats: Chat[];
   };
   const [searchParams] = useSearchParams();
   const open = Number(searchParams.get("open"));
@@ -87,6 +88,7 @@ export default function Notes() {
   return (
     <Notegrid
       notes={workspace.notes}
+      chats={workspace.chats}
       openNoteId={Number.isFinite(open) && open > 0 ? open : null}
     />
   );
