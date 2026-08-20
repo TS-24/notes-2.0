@@ -40,14 +40,15 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
     ];
     // font weights
     const weights = ["font-light", "font-normal", "font-medium", "font-semibold", "font-bold", "font-extrabold"];
-    // text colors (shadcn themed)
+    // Six steps of the one ink ramp. Spelled out as literals rather than built
+    // from a template, because Tailwind finds classes by scanning this source.
     const colors = [
-      "text-zinc-400 dark:text-zinc-500", 
-      "text-zinc-500 dark:text-zinc-400",
-      "text-zinc-600 dark:text-zinc-300",
-      "text-zinc-700 dark:text-zinc-200",
-      "text-zinc-800 dark:text-zinc-100",
-      "text-zinc-900 dark:text-zinc-50"
+      "text-ink/35",
+      "text-ink/45",
+      "text-ink/60",
+      "text-ink/70",
+      "text-ink/85",
+      "text-ink",
     ];
 
     return entries.map(([word, definition]) => {
@@ -62,26 +63,26 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
         word,
         definition,
         style: { margin },
-        className: `cursor-pointer transition-colors hover:text-blue-500 ${sizeClass} ${weightClass} ${colorClass}`
+        className: `cursor-pointer transition-colors hover:text-accent-ink ${sizeClass} ${weightClass} ${colorClass}`
       };
     });
   }, [analysis]);
 
   return (
-    <main className="flex-1 relative overflow-hidden bg-zinc-50 dark:bg-zinc-950 min-h-screen font-sans flex flex-col">
+    <main className="flex-1 relative overflow-hidden bg-paper min-h-screen font-sans flex flex-col">
       <div className="absolute top-8 left-8 z-10">
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Vocabulary Cloud</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+        <h1 className="text-3xl font-bold tracking-tight text-ink">Vocabulary Cloud</h1>
+        <p className="text-sm text-ink/60 mt-1">
           Click on any word to view its definition in a sidenote.
         </p>
         
         {/* The analysis arrives with the page now, so there is no loading
             state to show and no fetch of its own to fail. */}
         {analysis?.total_difficult_words === 0 && (
-          <p className="mt-4 text-sm text-zinc-500">No complex vocabulary found in your notes.</p>
+          <p className="mt-4 text-sm text-ink/60">No complex vocabulary found in your notes.</p>
         )}
         {analysis === null && (
-          <p className="mt-4 text-sm text-zinc-500">Write a note first.</p>
+          <p className="mt-4 text-sm text-ink/60">Write a note first.</p>
         )}
       </div>
 
@@ -95,10 +96,10 @@ export default function Analytics({ loaderData }: Route.ComponentProps) {
               </SheetTrigger>
               <SheetContent side="right">
                 <SheetHeader>
-                  <SheetTitle className="capitalize text-3xl mb-4 text-blue-600 dark:text-blue-400">
+                  <SheetTitle className="capitalize text-3xl mb-4 text-accent-ink">
                     {word}
                   </SheetTitle>
-                  <SheetDescription className="text-lg text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                  <SheetDescription className="text-lg text-ink/85 leading-relaxed">
                     {definition}
                   </SheetDescription>
                 </SheetHeader>

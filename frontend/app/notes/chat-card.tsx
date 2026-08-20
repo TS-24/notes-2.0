@@ -107,7 +107,7 @@ export default function ChatCard({
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={event => event.stopPropagation()}
-            className="p-1.5 rounded-lg text-ink/35 hover:text-red-600 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-ink/35 hover:text-danger transition-colors cursor-pointer"
             title="Delete conversation"
           >
             <Trash2 className="size-3.5" />

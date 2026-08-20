@@ -5,18 +5,35 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
 
 import type { Route } from "./+types/root";
 import "./app.css";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { getTheme } from "./lib/theme.server";
+import { themeAttributes } from "./lib/themes";
+
+/**
+ * The palette is resolved here and nowhere else, because `<html>` is rendered
+ * here and nowhere else. Reading it from the cookie on the server means the
+ * markup leaves with the right theme already on it — no inline script blocking
+ * the head, no first paint in the wrong colours.
+ */
+export async function loader({ request }: Route.LoaderArgs) {
+  return { theme: await getTheme(request) };
+}
 
 // Fonts are bundled from @fontsource-variable, so there is nothing to preconnect to.
 export const links: Route.LinksFunction = () => [];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // Not `useLoaderData`: this component also wraps the error boundary, and there
+  // the root loader never ran. `themeAttributes` takes the miss and defaults.
+  const data = useRouteLoaderData<typeof loader>("root");
+
   return (
-    <html lang="en">
+    <html lang="en" {...themeAttributes(data?.theme)}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

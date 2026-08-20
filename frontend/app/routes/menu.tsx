@@ -1,7 +1,9 @@
-import { Form, Link, useNavigation } from "react-router";
+import { Form, Link, redirect, useFetcher, useNavigation } from "react-router";
 
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
+import { commitTheme, getTheme } from "~/lib/theme.server";
+import { applyTheme, resolveTheme, THEMES, type Theme } from "~/lib/themes";
 import type { Route } from "./+types/menu";
 
 export function meta() {
@@ -14,7 +16,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     api.getCurrentUser(token),
     api.getProviderSettings(token),
   ]);
-  return { user, provider };
+  return { user, provider, theme: await getTheme(request) };
 }
 
 /**
@@ -28,6 +30,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const token = await requireToken(request);
   const formData = await request.formData();
+
+  /*
+    The theme is a cookie, not an account setting, so it never reaches the API.
+    Redirecting rather than returning data is the point: it makes the browser
+    re-request the page with the new cookie already set, which re-runs the root
+    loader and puts the palette on `<html>` the same way a cold load would.
+  */
+  if (formData.get("intent") === "theme") {
+    return redirect("/settings", {
+      headers: { "Set-Cookie": await commitTheme(String(formData.get("theme") ?? "")) },
+    });
+  }
 
   try {
     if (formData.get("intent") === "forget") {
@@ -60,10 +74,57 @@ const EYEBROW = "text-xs uppercase tracking-[0.14em] text-ink/45";
 const PANEL = "rounded-2xl bg-paper-raised p-7 sm:p-8";
 
 const FIELD =
-  "mt-1.5 w-full border-b border-ink/15 bg-transparent py-2 outline-none transition-colors focus:border-rose-ink";
+  "mt-1.5 w-full border-b border-ink/15 bg-transparent py-2 outline-none transition-colors focus:border-accent-ink";
+
+/**
+ * The palette picker.
+ *
+ * A plain `<select>` rather than a row of swatches: there are four of these and
+ * there will be more, and a native control is the one thing that stays usable at
+ * any length, on a phone, and by keyboard without any of it being written here.
+ *
+ * It submits on change, and `applyTheme` repaints immediately so the colours do
+ * not wait on the post. The submit button is the no-JS path — without script the
+ * change event still fires but nothing sends the form, so the button has to be
+ * real rather than wrapped in `<noscript>`.
+ */
+function ThemePicker({ current }: { current: Theme }) {
+  const fetcher = useFetcher();
+
+  return (
+    <fetcher.Form method="post" className="max-w-xs">
+      <input type="hidden" name="intent" value="theme" />
+      <label htmlFor="theme" className="text-sm text-ink/60">
+        Palette
+      </label>
+      <select
+        id="theme"
+        name="theme"
+        defaultValue={current.id}
+        className={`${FIELD} cursor-pointer`}
+        onChange={(event) => {
+          applyTheme(resolveTheme(event.target.value));
+          fetcher.submit(event.currentTarget.form);
+        }}
+      >
+        {THEMES.map((theme) => (
+          <option key={theme.id} value={theme.id}>
+            {theme.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        className="mt-4 rounded-xl border border-ink/15 px-4 py-1.5 text-sm text-ink transition-colors hover:bg-paper"
+      >
+        Save
+      </button>
+    </fetcher.Form>
+  );
+}
 
 export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
-  const { user, provider } = loaderData;
+  const { user, provider, theme } = loaderData;
   const navigation = useNavigation();
   const saving = navigation.formData?.get("intent") !== "forget" && navigation.state !== "idle";
   const initial = (user.username || user.email).trim().charAt(0).toUpperCase();
@@ -103,6 +164,21 @@ export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
           <p className="truncate font-display text-lg text-ink">{user.username}</p>
           <p className="truncate text-sm text-ink/60">{user.email}</p>
         </div>
+      </section>
+
+      {/* Appearance before the provider key: it is the section someone is far
+          more likely to have come here to change. */}
+      <section className={`${PANEL} space-y-6`}>
+        <div className="space-y-2">
+          <p className={EYEBROW}>Appearance</p>
+          <h2 className="font-display text-2xl tracking-tight">Theme</h2>
+          <p className="text-sm leading-relaxed text-ink/60">
+            Applies to this browser. Paper is the palette the app was drawn in;
+            the rest are ports of colour schemes you may already read code in.
+          </p>
+        </div>
+
+        <ThemePicker current={theme} />
       </section>
 
       <section className={`${PANEL} space-y-6`}>
@@ -195,7 +271,7 @@ export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
           {actionData ? (
             <p
               role="status"
-              className={`text-sm ${actionData.ok ? "text-ink/60" : "text-rose-700"}`}
+              className={`text-sm ${actionData.ok ? "text-ink/60" : "text-danger"}`}
             >
               {actionData.message}
             </p>
@@ -207,7 +283,7 @@ export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent-rose px-5 py-2 text-sm text-on-rose transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-xl bg-accent px-5 py-2 text-sm text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save key"}
             </button>

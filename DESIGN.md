@@ -3,8 +3,9 @@
 The visual brief for the app. Anything new in `frontend/app/` should be able to point at
 a rule in here.
 
-Status: §§3–5 (type, colour, hierarchy) are **applied**. §6 (ornament) and dark mode in §4 are
-**specified but unbuilt**. §12 tracks what remains.
+Status: §§3–5 (type, colour, hierarchy) are **applied**, and the colour ramp in §4 is now a set of
+role tokens that several palettes fill (`frontend/app/themes.css`). §6 (ornament) is **specified but
+unbuilt**. §12 tracks what remains.
 
 ---
 
@@ -384,24 +385,27 @@ If a screen trips three or more, fix it.
   what marks the change of speaker — no bubble outline, no avatar, no second accent.
 - **`/settings`** — no longer a placeholder. The AI provider section follows the house form for a
   form: hairline-underlined fields, Meta-size labels, one bordered button, the exit as a single
-  serif line at the head of the column.
+  serif line at the head of the column. The theme picker reuses that same form.
+- **Themes** (§4) — the ramp is ten role tokens (`paper`, `ink`, `accent-surface`, `danger`,
+  `scrim`, …) defined per palette in `frontend/app/themes.css` and selected by `data-theme` on
+  `<html>`, resolved from a cookie in the root loader. Paper is the palette above; Rosé Pine Moon,
+  Nord and Everforest are ports. Adding one is a CSS block plus an entry in `app/lib/themes.ts`.
+  This also finished the two things blocking it: `components/ui/*` now sit on the tokens, and no
+  component names a raw colour (a test enforces it).
 
 ### Remaining
 
 In dependency order:
 
-1. **Dark mode** (§4) — does not exist. `app.css` pins `color-scheme: light` and the paper ramp
-   has no inverted counterpart.
-2. **`app/components/ornament/`** (§6) — unbuilt, and the blocker is assets: it needs real SVG
+1. **`app/components/ornament/`** (§6) — unbuilt, and the blocker is assets: it needs real SVG
    line art, not code. Motif SVGs plus an `<Ornament />` layer mounted once in `app/root.tsx`
    above the route outlet so it survives navigation (§9, rule 2).
-3. **`app/components/ui/*`** — still shadcn defaults, off the design tokens above.
-4. **`/analytics` and `/settings`** — outside the workspace layout. `/settings` has been brought
-   onto the type and colour tokens (see Done above); `/analytics` has not, and neither has been
-   through §9's navigation rules.
-5. **Directional navigation** (§9, rules 4 and 9) — the layout route removed the tearing, but
+2. **`/analytics`** — brought onto the colour tokens with the themes, but never through the type
+   and layout pass: it is still a bold sans heading over a `flex-wrap` cloud, and neither it nor
+   `/settings` has been through §9's navigation rules.
+3. **Directional navigation** (§9, rules 4 and 9) — the layout route removed the tearing, but
    nothing yet encodes *direction*, and there is no pending-navigation hint.
-6. **Onward links** (§9, rule 5) — each of notes / vocabulary / sentences should propose the next
+4. **Onward links** (§9, rule 5) — each of notes / vocabulary / sentences should propose the next
    step in the reading path. This is a data question as much as a layout one: the API already
    relates notes to words (`Note.words`), which is the spine of that path. Blocked on the
    vocabulary endpoints, which do not currently exist — see `PROGRESS.md` §7.

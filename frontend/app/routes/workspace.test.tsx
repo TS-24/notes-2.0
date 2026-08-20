@@ -17,6 +17,7 @@ import { afterEach, beforeAll, expect, test } from "vitest";
 import Workspace from "~/routes/workspace";
 import type { Route } from "./+types/workspace";
 import type { Note, User } from "~/lib/types";
+import { DEFAULT_THEME } from "~/lib/themes";
 
 /**
  * Switching notes has to give the surface a new element, not a new prop.
@@ -69,6 +70,9 @@ const notes = [note(1, "First"), note(2, "Second")];
 
 const loaderData = { notes, user, chats: [] };
 
+/** Root now resolves the palette for `<html>`, so the match tree carries it. */
+const rootLoaderData = { theme: DEFAULT_THEME };
+
 /**
  * The route module's props, as the framework would hand them over. Only
  * `loaderData` is read — everything else the component needs comes from router
@@ -84,8 +88,8 @@ const props: Route.ComponentProps = {
       id: "root",
       params,
       pathname: "/",
-      data: undefined,
-      loaderData: undefined,
+      data: rootLoaderData,
+      loaderData: rootLoaderData,
       handle: undefined,
     },
     {

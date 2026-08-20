@@ -1,0 +1,113 @@
+/*
+  The palettes.
+
+  Kept out of `app.css` deliberately: that file is layout, motion and the rules
+  behind them, and four palettes' worth of hex would bury it. This file is data.
+
+  The indirection is what makes a palette swappable at all. A plain `@theme`
+  block compiles its values into the utilities as literals, so `bg-paper` would
+  be one fixed colour for the life of the build. `@theme inline` emits the
+  `var()` instead, which means a `[data-theme]` block further down can redefine
+  the variable and every utility that reads it follows. `app.css` already uses
+  this for the shadcn tokens; this is the same trick applied to the real ramp.
+
+  Adding a palette: one `[data-theme="id"]` block filling every role below, plus
+  an entry in `app/lib/themes.ts`. `themes.test.ts` fails if you do only one.
+*/
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-raised: var(--paper-raised);
+  --color-ink: var(--ink);
+  --color-hairline: var(--hairline);
+  --color-accent: var(--accent-surface);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-scrim: var(--scrim);
+}
+
+/*
+  Paper — the palette the app was designed in (DESIGN.md §4). Warm cream ground,
+  deep indigo ink, one dusty rose accent.
+
+  `:root` carries it as well as the attribute so that markup which never got the
+  attribute — the error boundary, a bare document in a test — still renders in a
+  real palette rather than in unstyled black on white.
+*/
+:root,
+[data-theme="paper"] {
+  color-scheme: light;
+
+  --paper: #fdf7f1;
+  --paper-raised: #f3eae5;
+  --ink: #38385a;
+  --hairline: #e3c9c4;
+  --accent-surface: #ce8380;
+  --accent-ink: #b26a76;
+  --on-accent: #fff9f5;
+  --danger: #a2434b;
+  --success: #5c7a52;
+  --scrim: #2b2338;
+}
+
+/*
+  Rosé Pine Moon — rosepinetheme.com, the `moon` variant of the official
+  palette.json. Its own `rose` carries the accent surface, which is the closest
+  thing any of these palettes has to the ramp the app was designed in.
+*/
+[data-theme="rose-pine-moon"] {
+  color-scheme: dark;
+
+  --paper: #232136;
+  --paper-raised: #2a273f;
+  --ink: #e0def4;
+  --hairline: #393552;
+  --accent-surface: #ea9a97;
+  --accent-ink: #c4a7e7;
+  --on-accent: #232136;
+  --danger: #eb6f92;
+  --success: #9ccfd8;
+  --scrim: #16141f;
+}
+
+/*
+  Nord — nordtheme.com, `src/nord.css`. Polar Night grounds it, Snow Storm is
+  the ink, and nord10 is the one Frost blue dark enough to hold light text, so
+  it takes the accent surface where the other palettes use a light tint.
+*/
+[data-theme="nord"] {
+  color-scheme: dark;
+
+  --paper: #2e3440;
+  --paper-raised: #3b4252;
+  --ink: #eceff4;
+  --hairline: #4c566a;
+  --accent-surface: #5e81ac;
+  --accent-ink: #88c0d0;
+  --on-accent: #eceff4;
+  --danger: #bf616a;
+  --success: #a3be8c;
+  --scrim: #21252e;
+}
+
+/*
+  Everforest — sainnhe/everforest, the dark medium background set. Green is the
+  palette's signature, so it takes the accent surface and doubles as the success
+  hue; nothing else in it reads as "correct" the way green does.
+*/
+[data-theme="everforest"] {
+  color-scheme: dark;
+
+  --paper: #2d353b;
+  --paper-raised: #343f44;
+  --ink: #d3c6aa;
+  --hairline: #475258;
+  --accent-surface: #a7c080;
+  --accent-ink: #83c092;
+  --on-accent: #2d353b;
+  --danger: #e67e80;
+  --success: #a7c080;
+  --scrim: #232a2e;
+}
