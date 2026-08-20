@@ -2,7 +2,7 @@
   The palettes.
 
   Kept out of `app.css` deliberately: that file is layout, motion and the rules
-  behind them, and four palettes' worth of hex would bury it. This file is data.
+  behind them, and seven palettes' worth of hex would bury it. This file is data.
 
   The indirection is what makes a palette swappable at all. A plain `@theme`
   block compiles its values into the utilities as literals, so `bg-paper` would
@@ -110,4 +110,69 @@
   --danger: #e67e80;
   --success: #a7c080;
   --scrim: #232a2e;
+}
+
+/*
+  Everforest Light — sainnhe/everforest, the light medium background set: the
+  same palette as the block above with the grounds and the ink swapped ends.
+
+  Its accents are tuned for syntax on cream, not for text on a button, so green
+  takes the accent surface and the *dark* variant's ground carries `on-accent`
+  rather than the cream: light cream on that green is under 3:1, dark on it is
+  over 4:1. `accent-ink` is aqua, the same second hue the dark set uses.
+*/
+[data-theme="everforest-light"] {
+  color-scheme: light;
+
+  --paper: #fdf6e3;
+  --paper-raised: #efebd4;
+  --ink: #5c6a72;
+  --hairline: #e0dcc7;
+  --accent-surface: #8da101;
+  --accent-ink: #35a77c;
+  --on-accent: #2d353b;
+  --danger: #f85552;
+  --success: #8da101;
+  --scrim: #2d353b;
+}
+
+/*
+  Tokyo Night — folke/tokyonight.nvim, the `night` variant. Blue is what the
+  palette is known for, so it takes the accent surface, and purple follows it as
+  the accent ink the way rose and iris pair in Rosé Pine.
+*/
+[data-theme="tokyo-night"] {
+  color-scheme: dark;
+
+  --paper: #1a1b26;
+  --paper-raised: #24283b;
+  --ink: #c0caf5;
+  --hairline: #414868;
+  --accent-surface: #7aa2f7;
+  --accent-ink: #bb9af7;
+  --on-accent: #1a1b26;
+  --danger: #f7768e;
+  --success: #9ece6a;
+  --scrim: #16161e;
+}
+
+/*
+  Catppuccin Mocha — catppuccin/catppuccin, the `mocha` flavour. Mauve is the
+  flavour's own default accent, lavender sits beside it, and the ramp already
+  names the two grounds and the line: base, surface0, surface1. Crust is the
+  darkest thing in it, which is what a scrim wants.
+*/
+[data-theme="catppuccin-mocha"] {
+  color-scheme: dark;
+
+  --paper: #1e1e2e;
+  --paper-raised: #313244;
+  --ink: #cdd6f4;
+  --hairline: #45475a;
+  --accent-surface: #cba6f7;
+  --accent-ink: #b4befe;
+  --on-accent: #1e1e2e;
+  --danger: #f38ba8;
+  --success: #a6e3a1;
+  --scrim: #11111b;
 }
