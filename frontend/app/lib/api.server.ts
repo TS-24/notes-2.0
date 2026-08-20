@@ -184,27 +184,42 @@ export const api = {
   summarizeChat: (token: string, id: number) =>
     request<Chat>(`/api/chats/${id}/summarize`, token, { method: "POST" }),
 
-  /** Which provider is configured, and which could be. Never the key itself. */
+  /** Which keys are on file, which could be added, and what is in use. */
   getProviderSettings: (token: string) =>
-    request<ProviderSettings>("/api/settings/provider", token),
+    request<ProviderSettings>("/api/settings/providers", token),
 
   /**
-   * Stores the reader's provider key.
+   * Stores one provider's key, after the backend has checked it works.
    *
    * The key travels from the browser to this server to the backend and is never
-   * sent back down. It must not be logged anywhere along that path.
+   * sent back down. It must not be logged anywhere along that path — including
+   * in the error from a rejected key, which the backend has already scrubbed.
+   *
+   * Slow on purpose: the backend calls the provider before answering. That call
+   * is the difference between a key that is stored and a key that is known to
+   * work.
    */
-  saveProviderSettings: (
-    token: string,
-    data: { provider: string; api_key: string; model?: string | null },
-  ) =>
-    request<ProviderSettings>("/api/settings/provider", token, {
+  saveProviderKey: (token: string, provider: string, api_key: string) =>
+    request<ProviderSettings>(`/api/settings/providers/${provider}`, token, {
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ api_key }),
     }),
 
-  forgetProviderSettings: (token: string) =>
-    request<void>("/api/settings/provider", token, { method: "DELETE" }),
+  /** Asks the stored key what it can reach now. */
+  refreshProviderModels: (token: string, provider: string) =>
+    request<ProviderSettings>(`/api/settings/providers/${provider}/refresh`, token, {
+      method: "POST",
+    }),
+
+  forgetProviderKey: (token: string, provider: string) =>
+    request<void>(`/api/settings/providers/${provider}`, token, { method: "DELETE" }),
+
+  /** What this account chats with from now on. Both halves, always together. */
+  setActiveModel: (token: string, provider: string, model: string) =>
+    request<ProviderSettings>("/api/settings/active-model", token, {
+      method: "PUT",
+      body: JSON.stringify({ provider, model }),
+    }),
 
   /** Exchanges credentials for a token. The only call with no token of its own. */
   login: (email: string, password: string) =>

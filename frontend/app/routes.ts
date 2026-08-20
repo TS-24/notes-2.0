@@ -30,4 +30,5 @@ export default [
     // workspace would drag the note list's revalidation along with it.
     route("api/word-ladder", "routes/api.word-ladder.tsx"),
     route("api/vocabulary", "routes/api.vocabulary.tsx"),
+    route("api/active-model", "routes/api.active-model.tsx"),
 ] satisfies RouteConfig;

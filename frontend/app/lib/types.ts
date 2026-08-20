@@ -106,16 +106,36 @@ export interface ProviderOption {
 }
 
 /**
- * Mirrors backend/app/schemas/provider.py::ProviderSettingsRead
+ * Mirrors backend/app/schemas/provider.py::ConfiguredProvider
  *
  * There is no field here for the API key and there must never be one: the
  * backend does not send it. `key_hint` is its last four characters, which is
  * enough to recognise which key is on file and not enough to be one.
  */
+export interface ConfiguredProvider {
+  provider: string;
+  label: string;
+  key_hint: string;
+  /** What the key could reach when it was last checked. The picker's contents. */
+  models: string[];
+  models_fetched_at: string | null;
+}
+
+/** Mirrors backend/app/schemas/provider.py::ActiveModel */
+export interface ActiveModel {
+  provider: string;
+  model: string;
+}
+
+/**
+ * Mirrors backend/app/schemas/provider.py::ProviderSettingsRead
+ *
+ * One account can hold a key for each provider, so `configured` is a list. Null
+ * `active` means there is no usable key at all, which is a different screen
+ * from a picker with nothing in it.
+ */
 export interface ProviderSettings {
-  configured: boolean;
-  provider: string | null;
-  model: string | null;
-  key_hint: string | null;
   available: ProviderOption[];
+  configured: ConfiguredProvider[];
+  active: ActiveModel | null;
 }
