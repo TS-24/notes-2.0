@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Pin, Trash2, Archive, Plus, MessagesSquare } from "lucide-react";
@@ -162,7 +162,9 @@ function NoteCard({
               </motion.button>
             </fetcher.Form>
           </div>
-          <p className="mt-2 text-base leading-relaxed text-ink/85 whitespace-pre-line">
+          {/* Capped and faded rather than whole — see `.note-preview` in
+              app.css. A card is a glance at the note; you open it to read it. */}
+          <p className="note-preview mt-2 text-base leading-relaxed text-ink/85 whitespace-pre-line">
             {content}
           </p>
           {data.created_at && (
@@ -374,14 +376,52 @@ export default function Notegrid({
     navigate(`/chats/${id}`);
   }, [chatFetcher.state, chatFetcher.data, navigate]);
 
+  /*
+    The two ways to start something, as the first two cards in the grid.
+
+    They used to be a flex row above it, pinned to either end, which at any real
+    window width left them floating in a band of their own with a metre of
+    nothing between them — and lifting them out cost the top right corner of the
+    library, which stayed empty while the cards began below. As items in the
+    flow they take the first two slots, the columns fill from the top across
+    their whole width, and the grid has one rhythm instead of a header and then
+    a rhythm.
+
+    At the head of the unpinned flow rather than the page: pinned notes are the
+    ones asked for at the top, and "New note" under a heading reading "Pinned"
+    would be claiming something that is not true.
+  */
+  const starters = (
+    <>
+      <div className="mb-6 break-inside-avoid">
+        <GhostCard
+          tone="rose"
+          label="New note"
+          icon={<Plus className="size-7" strokeWidth={1.5} />}
+          layoutId={noteLayoutId(GHOST_ID)}
+          onClick={handleCompose}
+        />
+      </div>
+      <div className="mb-6 break-inside-avoid">
+        <GhostCard
+          tone="ink"
+          label="New AI chat"
+          icon={<MessagesSquare className="size-7" strokeWidth={1.5} />}
+          onClick={handleNewChat}
+        />
+      </div>
+    </>
+  );
+
   /**
    * CSS columns rather than a masonry library. The browser balances the
    * columns, every card is a keyed child that updates instead of remounting,
    * and it server-renders — so opening a note animates the rest of the grid
    * into its new shape rather than tearing the grid down and rebuilding it.
    */
-  const columns = (items: GridItem[]) => (
+  const columns = (items: GridItem[], lead?: ReactNode) => (
     <div className="columns-[280px] gap-6">
+      {lead}
       {items.map(item => (
         <div key={gridKey(item)} className="mb-6 break-inside-avoid">
           {isChat(item) ? (
@@ -398,39 +438,6 @@ export default function Notegrid({
     // The surrounding page and the open note belong to the workspace layout;
     // this is only the grid that arrives beneath them.
     <div className="space-y-16">
-      {/*
-        The two ways to start something, at either end of one row.
-
-        Above the columns rather than inside them. CSS columns fill top-to-bottom
-        and then left-to-right, so the first item lands at the top left and there
-        is no index that reliably lands at the top *right* — the column count
-        changes with the window. Lifting both out is what makes "one on the left,
-        one on the right" true at every width instead of at one of them.
-
-        They wrap rather than shrink on a narrow window: two cards side by side
-        below about 640px would be too small to read as the same card the grid
-        is made of, which is the resemblance worth keeping.
-      */}
-      <div className="flex flex-wrap items-stretch justify-between gap-6">
-        <div className="w-full max-w-[280px]">
-          <GhostCard
-            tone="rose"
-            label="New note"
-            icon={<Plus className="size-7" strokeWidth={1.5} />}
-            layoutId={noteLayoutId(GHOST_ID)}
-            onClick={handleCompose}
-          />
-        </div>
-        <div className="w-full max-w-[280px]">
-          <GhostCard
-            tone="ink"
-            label="New AI chat"
-            icon={<MessagesSquare className="size-7" strokeWidth={1.5} />}
-            onClick={handleNewChat}
-          />
-        </div>
-      </div>
-
       {pinnedNotes.length > 0 && (
         <div className="space-y-4">
           <h2 className="font-display text-2xl font-medium tracking-tight text-ink">
@@ -440,16 +447,19 @@ export default function Notegrid({
         </div>
       )}
 
-      {rest.length > 0 && (
-        <div className="space-y-4">
-          {pinnedNotes.length > 0 && (
-            <h2 className="font-display text-2xl font-medium tracking-tight text-ink pt-4">
-              Others
-            </h2>
-          )}
-          {columns(rest)}
-        </div>
-      )}
+      {/*
+        Always rendered, even with nothing in `rest`: the two ways to start
+        something live at the head of this flow, and a library with no unpinned
+        notes still needs them.
+      */}
+      <div className="space-y-4">
+        {pinnedNotes.length > 0 && (
+          <h2 className="font-display text-2xl font-medium tracking-tight text-ink pt-4">
+            Others
+          </h2>
+        )}
+        {columns(rest, starters)}
+      </div>
     </div>
   );
 }
