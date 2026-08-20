@@ -49,15 +49,16 @@ not share the note surface — see §3.
 | --- | --- |
 | Frontend | React Router v7 (SSR), TypeScript, Tailwind v4, framer-motion |
 | Backend | FastAPI, SQLAlchemy, Alembic |
-| DB | Postgres 15 |
-| Orchestration | `docker compose` — `frontend`, `backend`, `db` |
+| DB | Neon (hosted Postgres) |
+| Orchestration | `docker compose` — `frontend`, `backend` |
 
 ```bash
 docker compose up -d --build
 ```
 
 Frontend on `:3000`, API on `:8000`. The backend entrypoint runs
-`alembic upgrade head` before uvicorn, gated on the db healthcheck.
+`alembic upgrade head` before uvicorn. The database is Neon, so there is no
+`db` service and no healthcheck gate.
 
 **There is no Node on the host.** Typecheck through Docker — but *not* by
 mounting the host's `node_modules`, which holds macOS-only rolldown bindings
