@@ -15,10 +15,20 @@ from app.services import conversation_summary as summary
 KEY = "not-a-real-key-for-the-suite"
 
 
+MODELS = ["some-small-model", "some-large-model"]
+
+
 @pytest.fixture
-def configured(client):
-    """An account with a provider key on file, which most of this needs."""
-    client.put("/api/settings/provider", json={"provider": "anthropic", "api_key": KEY})
+def configured(client, monkeypatch):
+    """
+    An account with a provider key on file, which most of this needs.
+
+    Saving a key now calls the provider to list its models, so that call is
+    faked here too — see tests/test_provider_credentials.py, where it is the
+    thing under test rather than a fixture.
+    """
+    monkeypatch.setattr("app.api.settings.llm.check_key", lambda *a: list(MODELS))
+    client.put("/api/settings/providers/anthropic", json={"api_key": KEY})
     return client
 
 
@@ -94,6 +104,19 @@ class TestTalking:
         # Four turns are on the table by the second call: it has to see the
         # first exchange or the model has no conversation to continue.
         assert [role for role, _ in answering[-1]["turns"]] == ["user", "assistant", "user"]
+
+    def test_the_chosen_model_is_what_gets_used(self, configured, answering):
+        """
+        The picker in the chat window writes one pair of columns on the account,
+        and this is the only place that pair means anything.
+        """
+        configured.put(
+            "/api/settings/active-model",
+            json={"provider": "anthropic", "model": MODELS[1]},
+        )
+        send(configured, new_chat(configured))
+
+        assert answering[0]["model"] == MODELS[1]
 
     def test_the_reader_s_own_key_is_what_gets_used(self, configured, answering):
         send(configured, new_chat(configured))
@@ -218,7 +241,7 @@ class TestFinishing:
     ):
         chat = new_chat(configured)
         send(configured, chat)
-        configured.delete("/api/settings/provider")
+        configured.delete("/api/settings/providers/anthropic")
 
         assert configured.post(f"/api/chats/{chat}/summarize").status_code == 409
 

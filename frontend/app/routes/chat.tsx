@@ -38,7 +38,14 @@ export function meta({ data }: Route.MetaArgs) {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const token = await requireToken(request);
-  return { chat: await api.getChat(token, Number(params.chatId)) };
+  // Both together: the picker above the composer is drawn from the same load as
+  // the transcript, so a conversation never renders without saying what it is
+  // running on.
+  const [chat, provider] = await Promise.all([
+    api.getChat(token, Number(params.chatId)),
+    api.getProviderSettings(token),
+  ]);
+  return { chat, provider };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -86,6 +93,16 @@ export default function ChatRoute({ loaderData }: Route.ComponentProps) {
   // on the button. A single fetcher could only say that something was busy.
   const sender = useFetcher<typeof action>();
   const finisher = useFetcher<typeof action>();
+  /*
+    A third, and to a resource route rather than to this page's action: which
+    model the account uses is not a property of this chat, and posting it here
+    would revalidate the transcript to change a dropdown.
+
+    It carries the choice optimistically — `chosen` below — because a select
+    that snaps back to its old value while the post is in flight reads as a
+    control that ignored you.
+  */
+  const chooser = useFetcher();
 
   /*
     The freshest version of this chat.
@@ -101,6 +118,11 @@ export default function ChatRoute({ loaderData }: Route.ComponentProps) {
 
   const pending = sender.state !== "idle";
   const finishing = finisher.state !== "idle";
+
+  const chosen = chooser.json as { provider: string; model: string } | undefined;
+  const provider = chosen
+    ? { ...loaderData.provider, active: chosen }
+    : loaderData.provider;
 
   // Optimistic: show the turn being sent, so the transcript reacts to the key
   // press rather than to the network. It carries a negative id, which no real
@@ -177,10 +199,17 @@ export default function ChatRoute({ loaderData }: Route.ComponentProps) {
         pending={pending}
         finishing={finishing}
         error={error}
+        provider={provider}
         onSend={content =>
           sender.submit({ intent: "send", content }, { method: "post" })
         }
         onFinish={() => finisher.submit({ intent: "finish" }, { method: "post" })}
+        onChoose={(provider, model) =>
+          chooser.submit(
+            { provider, model },
+            { method: "post", action: "/api/active-model", encType: "application/json" },
+          )
+        }
         onLeave={leave}
       />
     </motion.main>

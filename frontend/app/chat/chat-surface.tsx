@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CornerDownLeft, Sparkles } from "lucide-react";
 
+import ModelPicker from "~/chat/model-picker";
 import { NOTE_LAYOUT_TRANSITION } from "~/workspace/note-surface";
-import type { Chat } from "~/lib/types";
+import type { Chat, ProviderSettings } from "~/lib/types";
 
 /**
  * A conversation, in the box an open note sits in.
@@ -34,8 +35,10 @@ export default function ChatSurface({
   finishing,
   /** Set when the last attempt was refused — a missing key, a provider saying no. */
   error,
+  provider,
   onSend,
   onFinish,
+  onChoose,
   onLeave,
 }: {
   chat: Chat;
@@ -44,8 +47,11 @@ export default function ChatSurface({
   /** True while the summary is being written. */
   finishing: boolean;
   error?: string | null;
+  /** The keys on file and what is in use, for the picker above the composer. */
+  provider: ProviderSettings;
   onSend: (content: string) => void;
   onFinish: () => void;
+  onChoose: (provider: string, model: string) => void;
   onLeave: () => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -188,7 +194,16 @@ export default function ChatSurface({
             library.
           </p>
         ) : (
-          <div className="relative mt-8 w-full">
+          /*
+            The picker sits with the composer rather than in the header: it is
+            part of asking, and the moment anyone wants to change model is the
+            moment they are about to type something the current one is wrong
+            for. A finished conversation does not get one — there is nothing
+            left to send.
+          */
+          <div className="mt-8 w-full">
+            <ModelPicker provider={provider} onChoose={onChoose} />
+            <div className="relative w-full">
             <textarea
               value={draft}
               onChange={event => setDraft(event.target.value)}
@@ -210,6 +225,7 @@ export default function ChatSurface({
             >
               <CornerDownLeft className="size-5" />
             </button>
+            </div>
           </div>
         )}
       </div>

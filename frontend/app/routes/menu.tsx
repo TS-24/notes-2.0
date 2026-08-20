@@ -1,9 +1,18 @@
-import { Form, Link, redirect, useFetcher, useNavigation } from "react-router";
+import { useState } from "react";
+import { Form, Link, redirect, useFetcher } from "react-router";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
 import { commitTheme, getTheme } from "~/lib/theme.server";
 import { applyTheme, resolveTheme, THEMES, type Theme } from "~/lib/themes";
+import type { ConfiguredProvider, ProviderOption, ProviderSettings } from "~/lib/types";
 import type { Route } from "./+types/menu";
 
 export function meta() {
@@ -20,12 +29,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 /**
- * Saving and forgetting the reader's provider key.
+ * Adding, checking, refreshing and forgetting the reader's provider keys.
  *
  * The key arrives in a form post, goes straight to the API client, and is never
  * put anywhere else — not in the loader's response, not in a redirect, not in a
  * log line. The backend does not send it back either, so there is no path by
- * which it can reach the page again.
+ * which it can reach the page again, and it scrubs the key out of a provider's
+ * own error before that error gets here.
  */
 export async function action({ request }: Route.ActionArgs) {
   const token = await requireToken(request);
@@ -43,24 +53,42 @@ export async function action({ request }: Route.ActionArgs) {
     });
   }
 
-  try {
-    if (formData.get("intent") === "forget") {
-      await api.forgetProviderSettings(token);
-      return { ok: true as const, message: "Key forgotten." };
-    }
+  const provider = String(formData.get("provider") ?? "");
 
-    const model = String(formData.get("model") ?? "").trim();
-    await api.saveProviderSettings(token, {
-      provider: String(formData.get("provider") ?? ""),
-      api_key: String(formData.get("api_key") ?? ""),
-      // Blank means "the provider's own default", which the backend resolves.
-      model: model || null,
-    });
-    return { ok: true as const, message: "Key saved." };
+  try {
+    switch (formData.get("intent")) {
+      case "forget": {
+        await api.forgetProviderKey(token, provider);
+        return { ok: true as const, message: "Key forgotten." };
+      }
+      case "refresh": {
+        const settings = await api.refreshProviderModels(token, provider);
+        return { ok: true as const, message: countOf(settings, provider) };
+      }
+      default: {
+        // Slow on purpose: the backend calls the provider before it stores
+        // anything, and that wait is the check the dialog is asking the reader
+        // to stay for.
+        const settings = await api.saveProviderKey(
+          token,
+          provider,
+          String(formData.get("api_key") ?? ""),
+        );
+        return { ok: true as const, message: `Connected. ${countOf(settings, provider)}` };
+      }
+    }
   } catch (error) {
+    // The backend's own words, because they are the only thing that tells a
+    // mistyped key from a spent quota from a provider that is down.
     if (error instanceof ApiError) return { ok: false as const, message: error.detail };
     throw error;
   }
+}
+
+/** "N models available", for whichever provider was just checked. */
+function countOf(settings: ProviderSettings, provider: string) {
+  const found = settings.configured.find(c => c.provider === provider)?.models.length ?? 0;
+  return `${found} model${found === 1 ? "" : "s"} available.`;
 }
 
 /**
@@ -75,6 +103,160 @@ const PANEL = "rounded-2xl bg-paper-raised p-7 sm:p-8";
 
 const FIELD =
   "mt-1.5 w-full border-b border-ink/15 bg-transparent py-2 outline-none transition-colors focus:border-accent-ink";
+
+/**
+ * Adding a key, as a dialog rather than as three fields on the page.
+ *
+ * The form this replaces sat in the middle of the settings column between a
+ * palette picker and a sign-out button, which said that pasting a credential
+ * for somebody else's paid account was that kind of change. It is not. A dialog
+ * costs a deliberate click to open, takes the page away while it is up, and —
+ * the part that matters — can refuse: the key is sent to the provider before it
+ * is stored, and if the provider will not have it the dialog says so and stays
+ * where it is. There is nowhere to move on to until it works.
+ *
+ * The reward for waiting is the model list, which is what the same call comes
+ * back with, and what the picker in the chat is built from.
+ */
+function AddKeyDialog({
+  available,
+  open,
+  onOpenChange,
+}: {
+  available: ProviderOption[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const fetcher = useFetcher<{ ok: boolean; message: string }>();
+  const checking = fetcher.state !== "idle";
+  const done = fetcher.state === "idle" && fetcher.data?.ok === true;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl tracking-tight">
+            Add a provider key
+          </DialogTitle>
+          <DialogDescription className="leading-relaxed">
+            The key is sent to the provider once, to check it works and to ask
+            what it can reach. It is then stored encrypted and never shown again.
+            Chats you start will be billed to that account, and on gateways the
+            check itself costs a one-token request.
+          </DialogDescription>
+        </DialogHeader>
+
+        <fetcher.Form method="post" autoComplete="off" data-key-form className="space-y-5">
+          <input type="hidden" name="intent" value="save-key" />
+
+          {/*
+            Stacked in this order on purpose. Chrome reads "a text input
+            immediately above a password input" as a sign-in form and fills the
+            pair with the saved account credentials — which would have put the
+            reader's Restyle password in the box they then save as an API key. A
+            select is not a username, so the provider goes above the key.
+          */}
+          <label className="block">
+            <span className="text-sm text-ink/60">Provider</span>
+            <select name="provider" defaultValue={available[0]?.id} className={FIELD}>
+              {available.map(option => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-sm text-ink/60">API key</span>
+            <input
+              type="password"
+              name="api_key"
+              required
+              // Not a password the browser should remember or offer to fill: it
+              // belongs to a third party, not to this site's account.
+              autoComplete="new-password"
+              spellCheck={false}
+              className={FIELD}
+            />
+          </label>
+
+          {fetcher.data ? (
+            <p
+              data-key-status
+              role={fetcher.data.ok ? "status" : "alert"}
+              className={`text-sm ${fetcher.data.ok ? "text-ink/60" : "text-danger"}`}
+            >
+              {fetcher.data.message}
+            </p>
+          ) : null}
+
+          <div className="flex items-center gap-4 pt-1">
+            <button
+              type="submit"
+              disabled={checking}
+              className="rounded-xl bg-accent px-5 py-2 text-sm text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {checking ? "Checking…" : done ? "Save another" : "Check and save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="text-sm text-ink/50 transition-colors hover:text-ink"
+            >
+              {done ? "Done" : "Cancel"}
+            </button>
+          </div>
+        </fetcher.Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * One key on file: which provider, which key, and how much it can reach.
+ *
+ * Refresh is here rather than automatic because the list is a cache, and the
+ * only thing that goes stale about it is a model added or retired since the key
+ * was saved. One button is cheaper than a provider call on every page load, and
+ * far cheaper than a picker that is empty whenever the provider is having a bad
+ * morning.
+ */
+function ConfiguredRow({ credential }: { credential: ConfiguredProvider }) {
+  const fetcher = useFetcher();
+  const busy = fetcher.state !== "idle";
+
+  return (
+    <fetcher.Form method="post" className="flex items-center gap-3 py-2">
+      <input type="hidden" name="provider" value={credential.provider} />
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">
+        {credential.label}{" "}
+        <span className="text-ink/50">····{credential.key_hint}</span>
+      </span>
+      <span className="shrink-0 text-xs text-ink/45">
+        {credential.models.length} models
+      </span>
+      <button
+        type="submit"
+        name="intent"
+        value="refresh"
+        disabled={busy}
+        className="shrink-0 text-xs text-ink/50 transition-colors hover:text-ink disabled:opacity-50"
+      >
+        Refresh
+      </button>
+      <button
+        type="submit"
+        name="intent"
+        value="forget"
+        disabled={busy}
+        className="shrink-0 text-xs text-ink/50 transition-colors hover:text-danger disabled:opacity-50"
+      >
+        Forget
+      </button>
+    </fetcher.Form>
+  );
+}
 
 /**
  * The palette picker.
@@ -123,10 +305,9 @@ function ThemePicker({ current }: { current: Theme }) {
   );
 }
 
-export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
+export default function Menu({ loaderData }: Route.ComponentProps) {
   const { user, provider, theme } = loaderData;
-  const navigation = useNavigation();
-  const saving = navigation.formData?.get("intent") !== "forget" && navigation.state !== "idle";
+  const [adding, setAdding] = useState(false);
   const initial = (user.username || user.email).trim().charAt(0).toUpperCase();
 
   return (
@@ -184,125 +365,52 @@ export default function Menu({ loaderData, actionData }: Route.ComponentProps) {
       <section className={`${PANEL} space-y-6`}>
         <div className="space-y-2">
           <p className={EYEBROW}>Conversations</p>
-          <h2 className="font-display text-2xl tracking-tight">AI provider</h2>
+          <h2 className="font-display text-2xl tracking-tight">AI providers</h2>
           <p className="text-sm leading-relaxed text-ink/60">
-            Chats run on your own account with the provider you choose. The key
-            is stored encrypted and is never shown again after you save it.
+            Chats run on your own account with whichever provider you pick. Keys
+            are stored encrypted and are never shown again after you add them.
+            Which model a chat uses is chosen in the chat itself.
           </p>
         </div>
 
         {/* What is on file, set apart from the prose above it so the state of
             the account reads at a glance rather than in a sentence. */}
         <div className="rounded-xl bg-paper px-4 py-3">
-          {provider.configured ? (
-            <p className="text-sm text-ink/60">
-              Using <span className="text-ink">{provider.provider}</span> ·{" "}
-              <span className="text-ink">{provider.model}</span> · key ending{" "}
-              <span className="text-ink">····{provider.key_hint}</span>
-            </p>
+          {provider.configured.length ? (
+            <>
+              <div className="divide-y divide-ink/10">
+                {provider.configured.map(credential => (
+                  <ConfiguredRow key={credential.provider} credential={credential} />
+                ))}
+              </div>
+              {provider.active ? (
+                <p className="mt-3 text-xs text-ink/45">
+                  Chatting with <span className="text-ink/70">{provider.active.provider}</span>{" "}
+                  · <span className="text-ink/70">{provider.active.model}</span>
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="text-sm italic text-ink/60">
-              No key on file. Chats will ask you for one.
+              No keys on file. Chats will ask you for one.
             </p>
           )}
         </div>
 
-        {/*
-          A real Form and a route action rather than the fetcher pattern used
-          inside the workspace: this is a navigation, and — like login.tsx — it
-          has to work before the page has hydrated.
-        */}
-        <Form method="post" className="space-y-5" autoComplete="off">
-          {/*
-            Stacked, and in this order, on purpose. Chrome reads "a text input
-            immediately above a password input" as a sign-in form and fills the
-            pair with the saved account credentials — putting the model field
-            there filled it with the reader's email and the key field with their
-            Restyle password, which they would then have saved as an API key. A
-            select is not a username, so the provider goes above the key and the
-            model below it.
-          */}
-          <label className="block">
-            <span className="text-sm text-ink/60">Provider</span>
-            <select
-              name="provider"
-              defaultValue={provider.provider ?? provider.available[0]?.id}
-              className={FIELD}
-            >
-              {provider.available.map(option => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <button
+          type="button"
+          data-add-key
+          onClick={() => setAdding(true)}
+          className="rounded-xl bg-accent px-5 py-2 text-sm text-on-accent transition-opacity hover:opacity-90"
+        >
+          Add a key
+        </button>
 
-          <label className="block">
-            <span className="text-sm text-ink/60">API key</span>
-            <input
-              type="password"
-              name="api_key"
-              required
-              // Not a password the browser should remember or offer to fill: it
-              // belongs to a third party, not to this site's account.
-              autoComplete="new-password"
-              spellCheck={false}
-              placeholder={provider.configured ? "Enter a new key to replace it" : ""}
-              className={FIELD}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm text-ink/60">Model</span>
-            <input
-              type="text"
-              name="model"
-              defaultValue={provider.model ?? ""}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={provider.available[0]?.default_model}
-              className={FIELD}
-            />
-            <span className="mt-1.5 block text-xs italic text-ink/45">
-              Blank uses the provider's default.
-            </span>
-          </label>
-
-          {actionData ? (
-            <p
-              role="status"
-              className={`text-sm ${actionData.ok ? "text-ink/60" : "text-danger"}`}
-            >
-              {actionData.message}
-            </p>
-          ) : null}
-
-          <div className="flex items-center gap-4 pt-1">
-            {/* The rose pill the note editor's Done button already uses: this
-                is the one action the page is asking for. */}
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-xl bg-accent px-5 py-2 text-sm text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save key"}
-            </button>
-
-            {provider.configured && (
-              <button
-                type="submit"
-                name="intent"
-                value="forget"
-                // The key field is `required`, and forgetting must not be
-                // blocked by an empty one — it is the opposite request.
-                formNoValidate
-                className="text-sm text-ink/50 transition-colors hover:text-ink"
-              >
-                Forget it
-              </button>
-            )}
-          </div>
-        </Form>
+        <AddKeyDialog
+          available={provider.available}
+          open={adding}
+          onOpenChange={setAdding}
+        />
       </section>
 
       {/* A form rather than a link: signing out is a POST so that a prefetch

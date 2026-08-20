@@ -62,9 +62,15 @@ class User(Base):
     chats: Mapped[List["Chat"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
     )
-    provider_credential: Mapped[Optional["ProviderCredential"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan", uselist=False
+    provider_credentials: Mapped[List["ProviderCredential"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
+    # Which of those credentials is in use, and which of its models. Two columns
+    # rather than a flag on the credential or a table of its own: "what am I
+    # chatting with" is one fact about the account, and one fact stored once
+    # cannot disagree with itself. Null until the first key is saved.
+    active_provider: Mapped[Optional[str]] = mapped_column(String(32))
+    active_model: Mapped[Optional[str]] = mapped_column(String(128))
 
 
 class Note(Base):
@@ -236,19 +242,23 @@ class ProviderCredential(Base):
     (`core/secrets.py`), it never leaves through the API, and it is released
     when the account is.
 
-    One row per user rather than one per provider. "Which provider do you use"
-    is the question the settings page asks, and a set of stored keys with an
-    active flag would be a second thing to keep in step with the first for no
-    behaviour anyone asked for. Saving a different provider replaces the row.
+    One row per provider per user. A reader who holds keys for two services
+    should not have to paste one of them again to go back to it, and the model
+    picker in the chat is only worth having if the alternatives are already
+    reachable. Which of these rows is in use lives on the user, not here — see
+    `User.active_provider`.
     """
 
     __tablename__ = "provider_credentials"
+    # The pair, not the user alone: two rows for the same provider would be two
+    # answers to "what is my OpenAI key", and saving a key is an upsert on this.
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_credential_provider"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=False, unique=True, index=True
+        ForeignKey("users.id"), nullable=False, index=True
     )
-    user: Mapped["User"] = relationship(back_populates="provider_credential")
+    user: Mapped["User"] = relationship(back_populates="provider_credentials")
     # A key from the registry in services/llm.py. Not an enum: the set lives in
     # one place already, and a database type would have to be migrated to add a
     # provider that is otherwise one row of a dict.
@@ -256,10 +266,12 @@ class ProviderCredential(Base):
     # Fernet ciphertext, never the key. Text rather than String(n) because the
     # length follows the key's, and provider key formats are not ours to bound.
     api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    # An override for the provider's default model. Null means "whatever
-    # services/llm.py currently defaults to", which is what lets a stale default
-    # be fixed by editing that file rather than every row here.
-    model: Mapped[Optional[str]] = mapped_column(String(128))
+    # What this key could reach when it was last asked, which is both the
+    # picker's contents and the proof the key worked. Cached rather than fetched
+    # per page: a provider call on every chat load would be a spinner, and a
+    # provider outage would be an empty picker. Refreshed on demand.
+    models: Mapped[Optional[list]] = mapped_column(JSON)
+    models_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
