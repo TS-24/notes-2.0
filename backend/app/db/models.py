@@ -55,6 +55,16 @@ class User(Base):
     # is released. Without the relationship at all, the leftover foreign key
     # makes deleting any account that registered through the front door a 500.
     invites_used: Mapped[List["InviteCode"]] = relationship(back_populates="used_by")
+    # Both cascades for the same reason as known_words: a foreign key on its own
+    # leaves rows pointing at a missing user, which Postgres rejects and SQLite
+    # quietly keeps. Deleting an account has to take its conversations and its
+    # borrowed credential with it — especially the credential.
+    chats: Mapped[List["Chat"]] = relationship(
+        back_populates="author", cascade="all, delete-orphan"
+    )
+    provider_credential: Mapped[Optional["ProviderCredential"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class Note(Base):
@@ -212,5 +222,115 @@ class RevokedToken(Base):
     user_id: Mapped[int] = mapped_column(nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ProviderCredential(Base):
+    """
+    The API key a reader lent us, and which provider it is for.
+
+    The first credential this app holds on a *user's* behalf rather than the
+    deployment's — the word ladder's model runs on the deployment's own token,
+    this runs on somebody's paid account. So it is encrypted at rest
+    (`core/secrets.py`), it never leaves through the API, and it is released
+    when the account is.
+
+    One row per user rather than one per provider. "Which provider do you use"
+    is the question the settings page asks, and a set of stored keys with an
+    active flag would be a second thing to keep in step with the first for no
+    behaviour anyone asked for. Saving a different provider replaces the row.
+    """
+
+    __tablename__ = "provider_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, unique=True, index=True
+    )
+    user: Mapped["User"] = relationship(back_populates="provider_credential")
+    # A key from the registry in services/llm.py. Not an enum: the set lives in
+    # one place already, and a database type would have to be migrated to add a
+    # provider that is otherwise one row of a dict.
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Fernet ciphertext, never the key. Text rather than String(n) because the
+    # length follows the key's, and provider key formats are not ours to bound.
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    # An override for the provider's default model. Null means "whatever
+    # services/llm.py currently defaults to", which is what lets a stale default
+    # be fixed by editing that file rather than every row here.
+    model: Mapped[Optional[str]] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class Chat(Base):
+    """
+    One conversation with a model, and what was left of it afterwards.
+
+    A chat is a long thing nobody rereads, so what survives it is the summary:
+    three parts written when the conversation is finished, which is what the
+    chat's card in the library shows from then on.
+
+    `summarized_at` is what "finished" means. A separate status column would be
+    a second fact to keep in step with this one, and they would eventually
+    disagree.
+    """
+
+    __tablename__ = "chats"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    author: Mapped["User"] = relationship(back_populates="chats")
+    # Set from the first thing the reader says; "Untitled" until then, the same
+    # placeholder a new note gets.
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Ordering for the library, as with notes: most recently touched first.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    # The three parts. Null together, written together — see api/chats.py, which
+    # refuses a partial summary rather than storing a third of one.
+    summary_general: Mapped[Optional[str]] = mapped_column(Text)
+    summary_topics: Mapped[Optional[list]] = mapped_column(JSON)
+    summary_questions: Mapped[Optional[str]] = mapped_column(Text)
+    summary_answers: Mapped[Optional[str]] = mapped_column(Text)
+    summarized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Ordered by id rather than created_at: a question and its answer are
+    # written in the same transaction and can share a timestamp, and a
+    # transcript that shuffles those two is a different conversation.
+    messages: Mapped[List["ChatMessage"]] = relationship(
+        back_populates="chat",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.id",
+    )
+
+
+class ChatMessage(Base):
+    """One turn. `role` is "user" or "assistant" — see services/llm.py."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id"), nullable=False, index=True)
+    chat: Mapped["Chat"] = relationship(back_populates="messages")
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

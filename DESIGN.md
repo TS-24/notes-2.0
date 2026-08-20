@@ -370,6 +370,21 @@ If a screen trips three or more, fix it.
 - **Route transitions** (§9 rules 1–3) — solved structurally rather than with a wrapper. `/` and
   `/notes` are children of a layout route, so the note surface never unmounts and there is
   nothing to transition between. See `PROGRESS.md` §3.
+- **The two ghost cards** — `app/notes/ghost-card.tsx` is one component with a `tone`, used for
+  both the `+` that starts a note and the twin that starts an AI chat. Colour is the only
+  difference, and both tones are existing tokens (§4): rose for the note, ink for the chat. No
+  third hue was introduced — a new one would need a place in the ramp and a dark-mode
+  counterpart, and the two the theme already has are as distinguishable as anything invented.
+  One accent surface per view still holds: the rose here is a dashed hairline, not a block.
+- **The chat surface** (`app/chat/chat-surface.tsx`) — the boxed note's chrome reused verbatim:
+  radius, raised paper, shadow, reading column, and the footer with its single rose action.
+  It departs only where a dialogue departs from prose. The note is centred because
+  `text-align` cannot be tweened (`PROGRESS.md` trap 4); a chat has no such constraint and is
+  ranged left, with the reader's own turns indented onto the page's paper. That step of tone is
+  what marks the change of speaker — no bubble outline, no avatar, no second accent.
+- **`/settings`** — no longer a placeholder. The AI provider section follows the house form for a
+  form: hairline-underlined fields, Meta-size labels, one bordered button, the exit as a single
+  serif line at the head of the column.
 
 ### Remaining
 
@@ -381,8 +396,9 @@ In dependency order:
    line art, not code. Motif SVGs plus an `<Ornament />` layer mounted once in `app/root.tsx`
    above the route outlet so it survives navigation (§9, rule 2).
 3. **`app/components/ui/*`** — still shadcn defaults, off the design tokens above.
-4. **`/analytics` and `/settings`** — outside the workspace layout and unmigrated. `/settings` is
-   a placeholder.
+4. **`/analytics` and `/settings`** — outside the workspace layout. `/settings` has been brought
+   onto the type and colour tokens (see Done above); `/analytics` has not, and neither has been
+   through §9's navigation rules.
 5. **Directional navigation** (§9, rules 4 and 9) — the layout route removed the tearing, but
    nothing yet encodes *direction*, and there is no pending-navigation hint.
 6. **Onward links** (§9, rule 5) — each of notes / vocabulary / sentences should propose the next

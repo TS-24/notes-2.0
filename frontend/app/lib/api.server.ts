@@ -11,7 +11,9 @@ import { redirect } from "react-router";
 
 import { destroyToken } from "./session.server";
 import type {
+  Chat,
   Note,
+  ProviderSettings,
   User,
   VocabularyAnalysisResponse,
   WordDefinition,
@@ -152,6 +154,57 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ words }),
     }),
+
+  listChats: (token: string) => request<Chat[]>("/api/chats", token),
+
+  getChat: (token: string, id: number) => request<Chat>(`/api/chats/${id}`, token),
+
+  /** Starts an empty conversation. A key is not needed until the first message. */
+  createChat: (token: string) =>
+    request<Chat>("/api/chats", token, { method: "POST", body: "{}" }),
+
+  deleteChat: (token: string, id: number) =>
+    request<void>(`/api/chats/${id}`, token, { method: "DELETE" }),
+
+  /**
+   * Says something and waits for the reply.
+   *
+   * The whole chat comes back rather than the two new turns, so there is one
+   * shape for "here is the conversation now" instead of a delta to splice.
+   * This is the slowest call in the app — a model is thinking at the other end
+   * — so callers should show the pending turn rather than blocking on it.
+   */
+  sendChatMessage: (token: string, id: number, content: string) =>
+    request<Chat>(`/api/chats/${id}/messages`, token, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
+  /** Finishes a conversation and writes the three-part summary. */
+  summarizeChat: (token: string, id: number) =>
+    request<Chat>(`/api/chats/${id}/summarize`, token, { method: "POST" }),
+
+  /** Which provider is configured, and which could be. Never the key itself. */
+  getProviderSettings: (token: string) =>
+    request<ProviderSettings>("/api/settings/provider", token),
+
+  /**
+   * Stores the reader's provider key.
+   *
+   * The key travels from the browser to this server to the backend and is never
+   * sent back down. It must not be logged anywhere along that path.
+   */
+  saveProviderSettings: (
+    token: string,
+    data: { provider: string; api_key: string; model?: string | null },
+  ) =>
+    request<ProviderSettings>("/api/settings/provider", token, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  forgetProviderSettings: (token: string) =>
+    request<void>("/api/settings/provider", token, { method: "DELETE" }),
 
   /** Exchanges credentials for a token. The only call with no token of its own. */
   login: (email: string, password: string) =>

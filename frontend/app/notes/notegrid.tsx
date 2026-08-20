@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import { Pin, Trash2, Archive, Plus } from "lucide-react";
+import { Pin, Trash2, Archive, Plus, MessagesSquare } from "lucide-react";
 import {
   noteLayoutId,
   NOTE_LAYOUT_TRANSITION,
 } from "~/workspace/note-surface";
-import type { Note, VocabularyAnalysis } from "~/lib/types";
+import GhostCard from "~/notes/ghost-card";
+import LocalTime from "~/lib/local-time";
+import ChatCard from "~/notes/chat-card";
+import type { Chat, Note, VocabularyAnalysis } from "~/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -16,30 +19,17 @@ import {
 } from "~/components/ui/dialog";
 
 /**
- * The empty card that starts a new note. It sits in the grid rather than above
- * it. No real note has id 0.
+ * The id the new-note ghost morphs from. No real note has 0, and the surface
+ * claims the same layoutId on the other side of the navigation.
  */
 const GHOST_ID = 0;
-type GhostItem = { id: typeof GHOST_ID; ghost: true };
-type GridItem = Note | GhostItem;
-const GHOST: GhostItem = { id: GHOST_ID, ghost: true };
 
-function GhostNote({ onClick }: { onClick: () => void }) {
-  return (
-    <motion.button
-      type="button"
-      layoutId={noteLayoutId(GHOST_ID)}
-      onClick={onClick}
-      title="New note"
-      aria-label="New note"
-      style={{ borderRadius: 16 }}
-      transition={{ layout: NOTE_LAYOUT_TRANSITION }}
-      className="flex min-h-[200px] w-full items-center justify-center border-2 border-dashed border-hairline text-rose-ink cursor-pointer transition-colors hover:border-rose-ink/60 hover:bg-paper-raised/60"
-    >
-      <Plus className="size-7" strokeWidth={1.5} />
-    </motion.button>
-  );
-}
+/** Notes and chats share the grid; `messages` is what tells them apart. */
+type GridItem = Note | Chat;
+const isChat = (item: GridItem): item is Chat => "messages" in item;
+
+/** Ids restart per table, so a note and a chat can both be 7. */
+const gridKey = (item: GridItem) => `${isChat(item) ? "chat" : "note"}-${item.id}`;
 
 // 1. Separate Child Component declared OUTSIDE to fix unmounting & state-loss bug
 function NoteCard({
@@ -177,7 +167,7 @@ function NoteCard({
           </p>
           {data.created_at && (
             <div className="mt-6 text-sm italic text-ink/45">
-              {new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.created_at))}
+              <LocalTime value={data.created_at} />
             </div>
           )}
         </motion.div>
@@ -319,9 +309,12 @@ function NoteCard({
 // of its own — the database is the single source of truth.
 export default function Notegrid({
   notes,
+  chats = [],
   openNoteId = null,
 }: {
   notes: Note[];
+  /** Conversations, shown beside the notes. Same library, two kinds of thing. */
+  chats?: Chat[];
   /** Set when the landing hero handed a note over to be opened on arrival. */
   openNoteId?: number | null;
 }) {
@@ -330,16 +323,24 @@ export default function Notegrid({
   // so opening is a URL change rather than local state.
   const navigate = useNavigate();
   const createFetcher = useFetcher<{ ok: boolean; id?: number }>();
+  const chatFetcher = useFetcher<{ ok: boolean; id?: number }>();
 
   const gridNotes = notes.filter(n => n.id !== openNoteId);
   const pinnedNotes = gridNotes.filter(n => n.is_pinned);
-  const otherNotes: GridItem[] = [
-    GHOST,
-    ...gridNotes.filter(n => !n.is_pinned),
-  ];
+  // Interleaved by when they were last touched, not grouped by kind: the
+  // library is a record of what you were working on, and splitting it into a
+  // notes half and a chats half would make it two records instead.
+  const rest: GridItem[] = [...gridNotes.filter(n => !n.is_pinned), ...chats].sort(
+    (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+  );
 
   const handleExpand = useCallback(
     (note: Note) => navigate(`/notes?open=${note.id}`, { preventScrollReset: true }),
+    [navigate],
+  );
+
+  const handleOpenChat = useCallback(
+    (chat: Chat) => navigate(`/chats/${chat.id}`),
     [navigate],
   );
 
@@ -352,6 +353,11 @@ export default function Notegrid({
     );
   }, [createFetcher]);
 
+  // Same shape for a conversation: it has to exist before it has a page.
+  const handleNewChat = useCallback(() => {
+    chatFetcher.submit({ intent: "create" }, { method: "post", action: "/chats" });
+  }, [chatFetcher]);
+
   const openedNew = useRef(false);
   useEffect(() => {
     const id = createFetcher.data?.id;
@@ -359,6 +365,14 @@ export default function Notegrid({
     openedNew.current = true;
     navigate(`/notes?open=${id}`, { preventScrollReset: true });
   }, [createFetcher.state, createFetcher.data, navigate]);
+
+  const openedChat = useRef(false);
+  useEffect(() => {
+    const id = chatFetcher.data?.id;
+    if (chatFetcher.state !== "idle" || !id || openedChat.current) return;
+    openedChat.current = true;
+    navigate(`/chats/${id}`);
+  }, [chatFetcher.state, chatFetcher.data, navigate]);
 
   /**
    * CSS columns rather than a masonry library. The browser balances the
@@ -369,9 +383,9 @@ export default function Notegrid({
   const columns = (items: GridItem[]) => (
     <div className="columns-[280px] gap-6">
       {items.map(item => (
-        <div key={item.id} className="mb-6 break-inside-avoid">
-          {"ghost" in item ? (
-            <GhostNote onClick={handleCompose} />
+        <div key={gridKey(item)} className="mb-6 break-inside-avoid">
+          {isChat(item) ? (
+            <ChatCard data={item} onOpen={handleOpenChat} />
           ) : (
             <NoteCard data={item} onExpand={handleExpand} />
           )}
@@ -384,6 +398,39 @@ export default function Notegrid({
     // The surrounding page and the open note belong to the workspace layout;
     // this is only the grid that arrives beneath them.
     <div className="space-y-16">
+      {/*
+        The two ways to start something, at either end of one row.
+
+        Above the columns rather than inside them. CSS columns fill top-to-bottom
+        and then left-to-right, so the first item lands at the top left and there
+        is no index that reliably lands at the top *right* — the column count
+        changes with the window. Lifting both out is what makes "one on the left,
+        one on the right" true at every width instead of at one of them.
+
+        They wrap rather than shrink on a narrow window: two cards side by side
+        below about 640px would be too small to read as the same card the grid
+        is made of, which is the resemblance worth keeping.
+      */}
+      <div className="flex flex-wrap items-stretch justify-between gap-6">
+        <div className="w-full max-w-[280px]">
+          <GhostCard
+            tone="rose"
+            label="New note"
+            icon={<Plus className="size-7" strokeWidth={1.5} />}
+            layoutId={noteLayoutId(GHOST_ID)}
+            onClick={handleCompose}
+          />
+        </div>
+        <div className="w-full max-w-[280px]">
+          <GhostCard
+            tone="ink"
+            label="New AI chat"
+            icon={<MessagesSquare className="size-7" strokeWidth={1.5} />}
+            onClick={handleNewChat}
+          />
+        </div>
+      </div>
+
       {pinnedNotes.length > 0 && (
         <div className="space-y-4">
           <h2 className="font-display text-2xl font-medium tracking-tight text-ink">
@@ -393,14 +440,14 @@ export default function Notegrid({
         </div>
       )}
 
-      {otherNotes.length > 0 && (
+      {rest.length > 0 && (
         <div className="space-y-4">
           {pinnedNotes.length > 0 && (
             <h2 className="font-display text-2xl font-medium tracking-tight text-ink pt-4">
               Others
             </h2>
           )}
-          {columns(otherNotes)}
+          {columns(rest)}
         </div>
       )}
     </div>

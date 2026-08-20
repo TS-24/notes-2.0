@@ -30,9 +30,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Only /notes draws the account bubble, but a loader on that child would
   // refetch the account after every note edit, and this one is already running
   // and already revalidating.
-  const [notes, user] = await Promise.all([
+  // Chats come from the same loader as the notes so the library has one fetch
+  // and one revalidation for everything it shows.
+  const [notes, user, chats] = await Promise.all([
     api.listNotes(token),
     api.getCurrentUser(token),
+    api.listChats(token),
   ]);
 
   // An account with no notes has nothing for the surface below to render, and
@@ -48,10 +51,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       notes: [await api.createNote(token, { title: "Untitled", content: "" })],
       user,
+      chats,
     };
   }
 
-  return { notes, user };
+  return { notes, user, chats };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
