@@ -388,8 +388,9 @@ If a screen trips three or more, fix it.
   serif line at the head of the column. The theme picker reuses that same form.
 - **Themes** (§4) — the ramp is ten role tokens (`paper`, `ink`, `accent-surface`, `danger`,
   `scrim`, …) defined per palette in `frontend/app/themes.css` and selected by `data-theme` on
-  `<html>`, resolved from a cookie in the root loader. Paper is the palette above; Rosé Pine Moon,
-  Nord and Everforest are ports. Adding one is a CSS block plus an entry in `app/lib/themes.ts`.
+  `<html>`, resolved from a cookie in the root loader. Paper is the palette above; Everforest Light,
+  Rosé Pine Moon, Nord, Everforest Dark, Tokyo Night and Catppuccin Mocha are ports. Adding one is a
+  CSS block plus an entry in `app/lib/themes.ts`.
   This also finished the two things blocking it: `components/ui/*` now sit on the tokens, and no
   component names a raw colour (a test enforces it).
 

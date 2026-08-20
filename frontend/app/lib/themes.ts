@@ -17,9 +17,14 @@ export interface Theme {
 
 export const THEMES: Theme[] = [
   { id: "paper", label: "Paper", appearance: "light" },
+  { id: "everforest-light", label: "Everforest Light", appearance: "light" },
   { id: "rose-pine-moon", label: "Rosé Pine Moon", appearance: "dark" },
   { id: "nord", label: "Nord", appearance: "dark" },
-  { id: "everforest", label: "Everforest", appearance: "dark" },
+  // The id predates the light variant, and it is in readers' cookies; only the
+  // label changed, because "Everforest" alone no longer says which one it is.
+  { id: "everforest", label: "Everforest Dark", appearance: "dark" },
+  { id: "tokyo-night", label: "Tokyo Night", appearance: "dark" },
+  { id: "catppuccin-mocha", label: "Catppuccin Mocha", appearance: "dark" },
 ];
 
 /** The palette the app was designed in (DESIGN.md §4), and the fallback. */
