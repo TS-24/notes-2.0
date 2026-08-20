@@ -12,7 +12,7 @@ SQLALCHEMY_DATABASE_URL = os.environ["DATABASE_URL"]
 # Neon suspends idle compute, which kills pooled connections without telling
 # the pool. Without pre_ping the first request after a suspend is handed a dead
 # connection and fails; recycle keeps one from going stale in the first place.
-# Both are no-ops against the SQLite the tests and the desktop build use.
+# Both are no-ops against the SQLite the test suite runs on.
 engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
