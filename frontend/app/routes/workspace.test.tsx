@@ -1,4 +1,14 @@
-/** @vitest-environment jsdom */
+/**
+ * @vitest-environment jsdom
+ *
+ * Per file, so the suite's default node environment — and the surface's other
+ * test, which wants no DOM at all — is left alone.
+ *
+ * jsdom is held below 30 deliberately: 30 pulls undici 8, which calls
+ * `worker_threads.markAsUncloneable`, and that does not exist before Node
+ * 22.10. The Dockerfile and CI both pin node:20, so 30 installs without a
+ * murmur and then fails to start a worker on the runner.
+ */
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router";
