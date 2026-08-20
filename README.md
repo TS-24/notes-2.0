@@ -112,7 +112,7 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 
 **Backend (`backend/`)**
 - **Framework:** FastAPI (Python 3.12)
-- **Database:** PostgreSQL 15 via SQLAlchemy 2.0 ORM, migrations with Alembic. The migrations
+- **Database:** Neon (hosted PostgreSQL 18) via SQLAlchemy 2.0 ORM, migrations with Alembic. The migrations
   are also SQLite-safe (batch mode), which is what the test suite runs against
 - **Lexicon:** NLTK's WordNet (synonyms, senses, adjective satellites), `lemminflect`
   (lemmatisation and re-inflection), `wordfreq` (the difficulty axis)
@@ -236,31 +236,37 @@ Environment switches:
 docker compose up -d --build
 ```
 
-Frontend on `http://localhost:3700`, API on `http://localhost:8700`, PostgreSQL on `5700`. Those
-host ports are a block chosen not to collide with anything else on the machine; each is overridable
-(`FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`) and only the host side moves, so the containers
-still listen on 3000, 8000 and 5432 internally. The backend entrypoint runs
-`alembic upgrade head` before uvicorn, gated on the database healthcheck.
+Frontend on `http://localhost:3700`, API on `http://localhost:8700`. Those host ports are a block
+chosen not to collide with anything else on the machine; each is overridable (`FRONTEND_PORT`,
+`BACKEND_PORT`) and only the host side moves, so the containers still listen on 3000 and 8000
+internally. The backend entrypoint runs `alembic upgrade head` before uvicorn.
+
+The database is **Neon**, not a container, so compose runs two services rather than three and
+there is no local volume holding your data.
 
 Configuration comes from `.env` at the repo root, which is gitignored. Copy the template first:
 
 ```bash
-cp .env.example .env      # then fill in POSTGRES_PASSWORD
+cp .env.example .env      # then fill in DATABASE_URL
 ```
 
-It sets `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` and `DATABASE_URL`,
+It sets `DATABASE_URL`, the two host ports and the two secrets,
 plus the three optional ranker switches (`HF_TOKEN`, `HF_MODEL`, `LADDER_RANKING`). Those three
 have to go in this file to reach the container: `docker-compose.yml` forwards exactly the
 variables it names into the backend's environment, and nothing else in `.env` crosses that
 boundary. Setting `HF_TOKEN` only in your shell does nothing under compose.
 
-Inside the compose network the frontend reaches the API at `http://backend:8000` and the backend
-reaches the database at host `db`, since containers don't share the host's loopback — so
-`DATABASE_URL` uses `db` under compose and `localhost` outside it.
+Inside the compose network the frontend reaches the API at `http://backend:8000`. The database is
+reached over the internet at the Neon host in `DATABASE_URL`, so the same URL works inside and
+outside compose.
 
-> **Note:** the inline defaults in `docker-compose.yml` differ from the template — compose falls
-> back to user and password `postgres`. Since compose reads `.env`, the file wins; just don't rely
-> on the inline defaults.
+Use Neon's **direct** endpoint rather than the `-pooler` one. `entrypoint.sh` runs both
+`alembic upgrade head` and uvicorn from this single variable, and migrations don't survive
+PgBouncer's transaction pooling. Point dev and prod at different Neon **branches**.
+
+> **Note:** `docker-compose.yml` used to assemble `DATABASE_URL` itself from `POSTGRES_*`, which
+> silently overrode whatever `.env` said. It now passes `DATABASE_URL` straight through and fails
+> to start if it is unset, so there is no way to end up pointed somewhere you didn't choose.
 
 ### Your first account
 
@@ -296,10 +302,11 @@ instead of it:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-It publishes **only** Caddy, on 80 and 443. The base file exposes the database
-and both services on host ports, which is right on your own machine and wrong
-on a public one — Postgres in particular would otherwise be reachable from the
-internet with a password as the only thing in front of it. Caddy terminates TLS
+It publishes **only** Caddy, on 80 and 443. The base file exposes both
+services on host ports, which is right on your own machine and wrong on a
+public one. (The database is no longer among them: it lives on Neon, behind
+Neon's own TLS and access control, rather than in a published container.)
+Caddy terminates TLS
 and obtains the certificate itself, which needs `DOMAIN` set to a name that
 resolves to the machine, and both ports reachable so the ACME challenge can be
 answered.

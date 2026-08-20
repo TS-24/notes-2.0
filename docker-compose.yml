@@ -29,9 +29,12 @@ services:
     ports:
       - "${BACKEND_PORT:-8700}:8000"
     environment:
-      # "db" is the compose DNS name for the Postgres service below. Using
-      # localhost here would resolve to the backend container itself.
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notes_db}
+      # Passed straight through from .env rather than assembled here. This used
+      # to be built from POSTGRES_* against the compose "db" service, which
+      # silently won over .env: setting a new URL there left the stack talking
+      # to the old local container as if the change had taken. No default, so a
+      # missing value stops compose rather than quietly picking a wrong one.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       # Drives cookie Secure and whether /docs is served. Defaults to
       # development so a local run is unchanged; set it to production in the
       # deployed environment and both tighten together.
@@ -45,29 +48,4 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HF_MODEL: ${HF_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       LADDER_RANKING: ${LADDER_RANKING:-on}
-    depends_on:
-      db:
-        condition: service_healthy
     restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    ports:
-      - "${POSTGRES_PORT:-5700}:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-notes_db}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    # The backend runs migrations on startup, so it must not start until
-    # Postgres is actually accepting connections.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-notes_db}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
