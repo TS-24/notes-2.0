@@ -28,6 +28,47 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+  The window onto a note.
+
+  The note surface is a fixed height now (note-surface.tsx), so a note longer
+  than the box scrolls in here instead of growing the page. The words dissolve
+  into the paper as they reach the top and bottom of the window: a hard edge
+  would say "cut off", and this says "there is more, keep going" — DESIGN.md §7
+  rule 1, one continuous surface, nothing ever cuts.
+
+  The padding is the same length as the fade, so the ramp covers empty space
+  either side of the text and the first and last lines are never the faded ones
+  — only the lines on their way past. `safe` centring is what lets a short note
+  sit in the middle of the box while a long one still starts at its first line:
+  plain centring puts the overflow above the scroll origin, out of reach.
+*/
+.note-scroll {
+  --fade: 2.5rem;
+
+  overflow-y: auto;
+  justify-content: safe center;
+  padding-block: var(--fade);
+  /* So the browser leaves the caret clear of the fade when it scrolls a line
+     into view, rather than parking it against the faded edge. */
+  scroll-padding-block: var(--fade);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--fade),
+    #000 calc(100% - var(--fade)),
+    transparent 100%
+  );
+
+  /* The fade is the affordance; a track drawn down the side of the paper is
+     not. Wheel, trackpad, and keyboard scrolling are all untouched. */
+  scrollbar-width: none;
+}
+
+.note-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body {
   @apply bg-paper text-ink;
