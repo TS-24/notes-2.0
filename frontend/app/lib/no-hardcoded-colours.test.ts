@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { globSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -33,8 +32,21 @@ const root = fileURLToPath(new URL("../", import.meta.url));
  */
 const ALLOWED = new Set<string>(["components/ui/sidebar.tsx"]);
 
+/**
+ * Hand-rolled rather than `fs.globSync`, which needs Node 22. CI and the
+ * Dockerfile both pin Node 20, where that call does not exist at all — and the
+ * host runs 26, so the failure only ever shows up in CI.
+ */
+function tsxFilesUnder(dir: string, prefix = ""): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const rel = prefix + entry.name;
+    if (entry.isDirectory()) return tsxFilesUnder(`${dir}${entry.name}/`, `${rel}/`);
+    return entry.name.endsWith(".tsx") ? [rel] : [];
+  });
+}
+
 describe("no hardcoded colours", () => {
-  const files = globSync("**/*.tsx", { cwd: root }).filter((f) => !ALLOWED.has(f));
+  const files = tsxFilesUnder(root).filter((f) => !ALLOWED.has(f));
 
   it("finds files to check", () => {
     expect(files.length).toBeGreaterThan(10);
