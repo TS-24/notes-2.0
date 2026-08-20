@@ -40,6 +40,49 @@ const TYPE = {
   boxed: { title: "1.875rem", body: "1.125rem" },
 };
 
+/** A scroll position a measurement could disturb. */
+export type Scroller = { at: () => number; to: (position: number) => void };
+
+/**
+ * Size a field to its text without moving what the reader is looking at.
+ *
+ * Collapsing to `auto` is the only way to let a field shrink, but the collapse
+ * also shortens whatever the field is scrolling inside — the page, or the
+ * note's own column — and the browser clamps that scroller to the shorter
+ * content before the real height goes back on. The height is restored a
+ * statement later and the scroll position is not, so every keystroke past the
+ * first screenful threw the reader back to the top.
+ *
+ * Every write happens in one synchronous block, before the browser paints, so
+ * the collapse is never seen.
+ */
+export function fitToText(
+  field: HTMLTextAreaElement,
+  scrollers: readonly Scroller[],
+) {
+  const before = scrollers.map(scroller => scroller.at());
+  field.style.height = "auto";
+  field.style.height = `${field.scrollHeight}px`;
+  scrollers.forEach((scroller, i) => {
+    // Only when it actually moved: assigning a scroll position is not free, it
+    // cancels a smooth scroll in progress and fires a scroll event.
+    if (scroller.at() !== before[i]) scroller.to(before[i]);
+  });
+}
+
+/**
+ * What a measurement here can disturb: the page, and only the page.
+ *
+ * The surface deliberately has no scroller of its own — it grows with the note
+ * and the document grows with it — so this is a list of one. It stays a list
+ * because `fitToText` is what a second scroller would go through, and a
+ * signature that already takes them is one less thing to get wrong later.
+ */
+const PAGE_SCROLLER: Scroller = {
+  at: () => window.scrollY,
+  to: position => window.scrollTo(0, position),
+};
+
 // useLayoutEffect warns during SSR, where there is nothing to measure.
 const useMeasureEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -59,21 +102,7 @@ function useAutoHeight() {
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el || el.clientWidth === 0) return;
-    /*
-      Collapsing to `auto` is the only way to let the field shrink, but once a
-      note is taller than the window that collapse also shortens the document,
-      and the browser clamps the scroll position to the shorter page before the
-      real height goes back on. The height is restored a statement later and the
-      scroll position is not — so every keystroke past the first screenful threw
-      the reader back to the top of the note.
-
-      Both writes and the correction happen inside one synchronous block, before
-      the browser paints, so the collapse is never seen.
-    */
-    const scrolled = window.scrollY;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-    if (window.scrollY !== scrolled) window.scrollTo(0, scrolled);
+    fitToText(el, [PAGE_SCROLLER]);
   }, []);
 
   /**
@@ -382,6 +411,9 @@ export default function NoteSurface({
       // so the change is an animation rather than a swap.
       style={{
         borderRadius: 24,
+        // A floor, not a ceiling. Clipping the note you are writing is the
+        // one place a height cap does not belong; the grid cards are where a
+        // long note needs compacting, and that is where it happens.
         minHeight: boxed ? "68vh" : "78vh",
         padding: boxed ? "2.25rem 2.5rem" : "0rem",
         backgroundColor: boxed ? "var(--color-paper-raised)" : "transparent",
@@ -395,17 +427,16 @@ export default function NoteSurface({
       className="flex w-full cursor-text flex-col"
     >
       {/*
-        The reading column is centred and vertically centred in *both* modes.
-        Centring only on the landing page would make the text jump the moment
-        the box appears, which is the one thing this whole structure exists to
-        avoid — so the box moves around the text, and the text stays put.
-      */}
-      {/*
-        Centred in both modes, deliberately. text-align cannot be tweened, so
-        alignment that differs between the two states snaps the words sideways
-        the instant the box arrives — the one visible discontinuity in an
-        otherwise continuous transition. Everything else here animates, so the
-        alignment has to be constant.
+        The reading column, centred both ways in *both* modes, deliberately.
+        text-align cannot be tweened, so alignment that differed between the two
+        states would snap the words sideways the instant the box arrives — the
+        one visible discontinuity in an otherwise continuous transition. The box
+        moves around the text; the text stays put.
+
+        Nothing clips it and nothing scrolls inside it: the column is as tall
+        as the note, and the page grows to hold it. A writing surface that
+        hides the end of its own text is the wrong place to save space —
+        `.note-preview` on the grid cards is the right one.
       */}
       <div
         className={`mx-auto flex w-full flex-1 flex-col justify-center text-center ${
