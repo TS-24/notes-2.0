@@ -269,6 +269,17 @@ class TestRefreshing:
     def test_refreshing_a_provider_with_no_key_is_refused(self, client):
         assert client.post("/api/settings/providers/openai/refresh").status_code == 409
 
+    def test_refreshing_a_provider_that_has_left_the_registry_is_refused(self, client, monkeypatch):
+        """
+        A key stored under a provider this build no longer has. The row is real
+        and the reader can still see and forget it, so this is a refusal rather
+        than the 500 an unhandled UnknownProvider would be.
+        """
+        save(client)
+        monkeypatch.setattr("app.api.settings.llm.check_key", _vanished)
+
+        assert client.post("/api/settings/providers/anthropic/refresh").status_code == 409
+
     def test_a_refresh_that_drops_the_active_model_moves_it(self, client, monkeypatch):
         """
         A model can be retired between one visit and the next. Leaving the
@@ -408,6 +419,13 @@ class TestWhatTheDialogNeeds:
         body = settings(client)
 
         assert body["configured"] == [] and len(body["available"]) == 4
+
+
+def _vanished(provider, api_key):
+    """A provider that is no longer in the registry."""
+    from app.services.llm import UnknownProvider
+
+    raise UnknownProvider(f"Unknown provider: {provider}")
 
 
 def _refuses(provider, api_key, quoting=False):

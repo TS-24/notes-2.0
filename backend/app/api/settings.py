@@ -60,6 +60,10 @@ def _catalogue(provider: str, api_key: str) -> list[str]:
     """
     try:
         return llm.check_key(provider, api_key)
+    except llm.UnknownProvider:
+        # A key stored under a provider this build no longer offers. The remedy
+        # is the same as having no key: pick one that exists.
+        raise _no_key(provider)
     except llm.ProviderError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
