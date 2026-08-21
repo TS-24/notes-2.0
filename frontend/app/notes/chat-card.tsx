@@ -43,7 +43,10 @@ export default function ChatCard({
       layout
       layoutId={chatLayoutId(data.id)}
       data-note-card
-      onDoubleClick={event => {
+      // Single click, the same gesture a note card takes. Where they go differs
+      // — a conversation gets a page, a note opens in the library — but asking
+      // for one should not be a different act from asking for the other.
+      onClick={event => {
         if ((event.target as HTMLElement).closest("button")) return;
         onOpen(data);
       }}
@@ -54,7 +57,6 @@ export default function ChatCard({
       }}
       transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.15 }}
       style={{ borderRadius: 16 }}
-      title="Double click to open"
       className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
     >
       <div>

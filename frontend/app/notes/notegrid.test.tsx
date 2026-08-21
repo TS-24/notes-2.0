@@ -98,14 +98,18 @@ test("a single click on a note card opens it", async () => {
   expect(router.state.location.search).toBe("?open=7");
 });
 
-/** A chat opens on its own page, and only on a double click. */
-test("a double click on a chat card opens the full chat page", async () => {
+/**
+ * A chat opens on the same gesture a note does — one click. The destination
+ * differs (a conversation gets its own page, a note opens in the library) but
+ * the hand does the same thing to both, which is the point.
+ */
+test("a single click on a chat card opens the full chat page", async () => {
   const { router, container } = mount([], [chat(4, "A conversation")]);
   const card = container.querySelector("[data-note-card]");
   expect(card).not.toBeNull();
 
   await act(async () => {
-    card!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+    click(card!, 1);
   });
 
   expect(router.state.location.pathname).toBe("/chats/4");
