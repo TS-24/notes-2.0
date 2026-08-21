@@ -197,6 +197,7 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
               provider={loaderData.provider}
               mode="boxed"
               onClose={() => navigate("/notes", { replace: true })}
+              onReturn={() => navigate(`/chats/${chat.id}`)}
             />
           );
         })()

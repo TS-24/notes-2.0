@@ -37,11 +37,14 @@ export default function ChatSurface({
   provider: initialProvider,
   mode = "page",
   onClose,
+  onReturn,
 }: {
   chat: Chat;
   provider: ProviderSettings;
   mode?: "page" | "boxed";
   onClose: () => void;
+  /** Boxed only: take the conversation out to its own page. */
+  onReturn?: () => void;
 }) {
   const navigate = useNavigate();
   const sender = useFetcher();
@@ -126,24 +129,49 @@ export default function ChatSurface({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      onClose();
-      return;
-    }
+    // Escape is on `document` below. This prop only fires while focus is inside
+    // the surface, and opening a chat from its card leaves focus on `<body>`.
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     send();
   };
 
+  /*
+    Double click takes the conversation out to its own page, which is what the
+    same gesture does to a note: one click opens it where it sits, a second
+    asks for the room. It used to close the chat, so the two surfaces answered
+    the same gesture with opposite things.
+  */
   const handleDoubleClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("input, textarea, button")) return;
-    onClose();
+    if (onReturn) onReturn();
   };
 
   const collapse = useRef(() => {});
   useEffect(() => {
     collapse.current = () => onClose();
   });
+
+  /*
+    Escape, from anywhere on the page — the same treatment the note surface has.
+
+    It hung off `onKeyDown` on the root, which only fires when focus is already
+    inside. The composer autofocuses, so it worked until you clicked anything
+    else; after that the key went nowhere. Opening a chat from its card leaves
+    focus on `<body>`, which is every time.
+  */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[data-slot="dialog-content"]:not([data-closed])')) {
+        return;
+      }
+      event.preventDefault();
+      collapse.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
   useEffect(() => {
     if (mode !== "boxed") return;
     const onMouseDown = (event: MouseEvent) => {

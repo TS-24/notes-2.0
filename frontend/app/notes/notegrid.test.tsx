@@ -12,6 +12,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeAll, expect, test } from "vitest";
 
 import Notegrid from "~/notes/notegrid";
+import { chatLayoutId } from "~/chat/chat-surface";
 import type { Chat, Note } from "~/lib/types";
 
 declare global {
@@ -99,11 +100,14 @@ test("a single click on a note card opens it", async () => {
 });
 
 /**
- * A chat opens on the same gesture a note does — one click. The destination
- * differs (a conversation gets its own page, a note opens in the library) but
- * the hand does the same thing to both, which is the point.
+ * A chat opens exactly as a note does: one click, and it expands where it sits.
+ *
+ * Sending the click to `/chats/:id` instead left the layout route, so there was
+ * no surface on the far side for the card's `layoutId` to hand its measurements
+ * to — the grid was replaced wholesale and the card appeared to jump to another
+ * screen. Staying on `/notes` is what makes it a morph rather than a swap.
  */
-test("a single click on a chat card opens the full chat page", async () => {
+test("a single click on a chat card opens it in the library", async () => {
   const { router, container } = mount([], [chat(4, "A conversation")]);
   const card = container.querySelector("[data-note-card]");
   expect(card).not.toBeNull();
@@ -112,7 +116,13 @@ test("a single click on a chat card opens the full chat page", async () => {
     click(card!, 1);
   });
 
-  expect(router.state.location.pathname).toBe("/chats/4");
+  expect(router.state.location.pathname).toBe("/notes");
+  expect(router.state.location.search).toBe("?chat=4");
+});
+
+/** The card hands its box to the surface; without a shared id there is no morph. */
+test("a chat card and the chat surface share one layout id", () => {
+  expect(chatLayoutId(4)).toBe("chat-4");
 });
 
 /**

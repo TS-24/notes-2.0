@@ -359,7 +359,7 @@ export default function Notegrid({
   );
 
   const handleOpenChat = useCallback(
-    (chat: Chat) => navigate(`/chats/${chat.id}`),
+    (chat: Chat) => navigate(`/notes?chat=${chat.id}`, { preventScrollReset: true }),
     [navigate],
   );
 

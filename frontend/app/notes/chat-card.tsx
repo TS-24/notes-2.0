@@ -59,7 +59,13 @@ export default function ChatCard({
       style={{ borderRadius: 16 }}
       className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
     >
-      <div>
+      {/*
+        layout="position" counter-scales the contents, so the box can grow into
+        the surface without the type stretching with it. The note card has done
+        this since it gained a shared id; without it a chat's title visibly
+        warps on the way open.
+      */}
+      <motion.div layout="position" transition={{ layout: NOTE_LAYOUT_TRANSITION }}>
         {/* The one mark that says this is a conversation rather than a note.
             Ink, matching the ghost button that started it. */}
         <p className="text-xs uppercase tracking-[0.14em] text-ink/45">
@@ -100,9 +106,13 @@ export default function ChatCard({
         <div className="mt-6 text-sm italic text-ink/45">
           <LocalTime value={data.updated_at} />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="mt-4 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <motion.div
+        layout="position"
+        transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+        className="mt-4 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+      >
         <fetcher.Form method="post" action="/chats">
           <input type="hidden" name="intent" value="delete" />
           <input type="hidden" name="id" value={data.id} />
@@ -117,7 +127,7 @@ export default function ChatCard({
             <Trash2 className="size-3.5" />
           </motion.button>
         </fetcher.Form>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
