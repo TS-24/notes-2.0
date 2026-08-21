@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..crud import chat as crud_chat
+from ..crud import note as crud_note
 from ..crud import provider_credential as crud_credential
 from ..db.database import get_db
 from ..db.models import Chat, User
@@ -76,6 +77,7 @@ def _read(chat: Chat) -> ChatRead:
             questions=chat.summary_questions or "",
             answers=chat.summary_answers or "",
             summarized_at=chat.summarized_at,
+            note_id=chat.summary_note_id,
         )
     return body
 
@@ -204,4 +206,27 @@ def summarize_chat(
             detail="The provider could not summarise this conversation. Try again.",
         )
 
-    return _read(crud_chat.store_summary(db, chat, summary))
+    # What the reader keeps is a note, not a card: the summary becomes the text
+    # of a real one so it can be corrected, added to and pinned like anything
+    # else they wrote. The transcript stays where it is.
+    content = conversation_summary.as_note(summary)
+    existing = (
+        crud_note.get_note(db, chat.summary_note_id, current_user.id)
+        if chat.summary_note_id is not None
+        else None
+    )
+    if existing is not None:
+        # Re-summarising is the retry path for a poor first attempt, so it
+        # corrects the note already written. A second note would leave the
+        # library holding two for one conversation — one of them the summary
+        # the reader was retrying to be rid of.
+        crud_note.update_note(
+            db, existing.id, current_user.id, title=chat.title, content=content
+        )
+        note_id = existing.id
+    else:
+        note_id = crud_note.create_note(
+            db, user_id=current_user.id, title=chat.title, content=content
+        ).id
+
+    return _read(crud_chat.store_summary(db, chat, summary, note_id))

@@ -52,7 +52,7 @@ export default function ChatCard({
         boxShadow:
           "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
       }}
-      transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.2 }}
+      transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.15 }}
       style={{ borderRadius: 16 }}
       title="Double click to open"
       className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
@@ -100,7 +100,7 @@ export default function ChatCard({
         </div>
       </div>
 
-      <div className="mt-8 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="mt-4 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <fetcher.Form method="post" action="/chats">
           <input type="hidden" name="intent" value="delete" />
           <input type="hidden" name="id" value={data.id} />

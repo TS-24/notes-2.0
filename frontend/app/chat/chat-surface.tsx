@@ -96,6 +96,26 @@ export default function ChatSurface({
     (sender.data && !(sender.data as { ok: boolean }).ok ? (sender.data as { error: string }).error : null) ??
     (finisher.data && !(finisher.data as { ok: boolean }).ok ? (finisher.data as { error: string }).error : null);
 
+  /*
+    Finishing writes a note, so finishing goes to it.
+
+    What a conversation leaves behind is the note, not the transcript — it is
+    the thing you can correct, add to and pin. Staying here to read the summary
+    in place would show it in the one form you cannot edit, and then leave the
+    reader to go and find the note themselves.
+
+    Guarded by a ref because the fetcher's data outlives the navigation: without
+    it the effect re-fires on every later render and pins the route here.
+  */
+  const wroteNote = useRef(false);
+  useEffect(() => {
+    const data = finisher.data as { ok?: boolean; chat?: Chat } | undefined;
+    const noteId = data?.ok ? data.chat?.summary?.note_id : null;
+    if (finisher.state !== "idle" || !noteId || wroteNote.current) return;
+    wroteNote.current = true;
+    navigate(`/notes?open=${noteId}`, { replace: true });
+  }, [finisher.state, finisher.data, navigate]);
+
   const send = () => {
     const content = draft.trim();
     if (!content || pending || finished) return;
@@ -202,11 +222,6 @@ export default function ChatSurface({
                     </MessageScrollerItem>
                   )}
 
-                  {finished && chat.summary && (
-                    <MessageScrollerItem messageId="summary">
-                      <Summary summary={chat.summary} />
-                    </MessageScrollerItem>
-                  )}
                 </MessageScrollerContent>
               </MessageScrollerViewport>
             </MessageScroller>
@@ -221,7 +236,7 @@ export default function ChatSurface({
 
         {finished ? (
           <p className="mt-8 text-center text-base italic text-ink/50">
-            This conversation is finished. Its summary is on its card in the
+            This conversation is finished. What it came to is a note in your
             library.
           </p>
         ) : (
@@ -288,39 +303,5 @@ export default function ChatSurface({
         )}
       </div>
     </motion.div>
-  );
-}
-
-function Summary({ summary }: { summary: NonNullable<Chat["summary"]> }) {
-  const parts = [
-    { heading: "What this was about", body: summary.general },
-    { heading: "What you were asking", body: summary.questions },
-    { heading: "What the answers covered", body: summary.answers },
-  ];
-
-  return (
-    <section className="mt-10 border-t border-hairline pt-8">
-      {summary.topics.length > 0 && (
-        <ul className="mb-6 flex flex-wrap gap-x-4 gap-y-1">
-          {summary.topics.map(topic => (
-            <li key={topic} className="text-sm italic text-accent-ink">
-              {topic}
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="space-y-6">
-        {parts.map(part => (
-          <div key={part.heading}>
-            <h2 className="font-display text-lg font-medium tracking-tight text-ink">
-              {part.heading}
-            </h2>
-            <p className="mt-1 text-base leading-relaxed text-ink/85">
-              {part.body}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }

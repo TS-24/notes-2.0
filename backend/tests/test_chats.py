@@ -330,3 +330,81 @@ class TestWhatTheRefusalSays:
         )
 
         assert KEY not in send(configured, new_chat(configured)).text
+
+
+class TestWhatAFinishedChatLeavesBehind:
+    """
+    Finishing a conversation writes a note.
+
+    A summary that can only be read on a card is a worse thing to own than a
+    note: you cannot correct it, add to it, or pin it. So the summary becomes
+    the text of a real note, and the library shows that note in the
+    conversation's place. The transcript is kept — nothing here deletes it.
+    """
+
+    @pytest.fixture
+    def summarising(self, monkeypatch):
+        answer = summary.ConversationSummary(
+            general="A conversation about gerunds.",
+            topics=["gerunds"],
+            questions="The reader asked what a gerund is.",
+            answers="The replies defined it and gave examples.",
+        )
+        monkeypatch.setattr("app.api.chats.conversation_summary.summarize", lambda *a: answer)
+        return answer
+
+    def test_finishing_writes_a_note(self, configured, answering, summarising):
+        before = len(configured.get("/api/notes").json())
+        chat = new_chat(configured)
+        send(configured, chat)
+
+        configured.post(f"/api/chats/{chat}/summarize")
+
+        assert len(configured.get("/api/notes").json()) == before + 1
+
+    def test_the_note_holds_the_summary(self, configured, answering, summarising):
+        chat = new_chat(configured)
+        send(configured, chat)
+        configured.post(f"/api/chats/{chat}/summarize")
+
+        note = configured.get("/api/notes").json()[0]
+        assert "A conversation about gerunds." in note["content"]
+        assert "What this was about" in note["content"]
+
+    def test_the_summary_says_which_note_it_became(self, configured, answering, summarising):
+        chat = new_chat(configured)
+        send(configured, chat)
+
+        got = configured.post(f"/api/chats/{chat}/summarize").json()
+        assert got["summary"]["note_id"] is not None
+
+    def test_the_note_id_survives_a_reload(self, configured, answering, summarising):
+        chat = new_chat(configured)
+        send(configured, chat)
+        written = configured.post(f"/api/chats/{chat}/summarize").json()["summary"]["note_id"]
+
+        assert configured.get(f"/api/chats/{chat}").json()["summary"]["note_id"] == written
+
+    def test_summarising_again_rewrites_the_same_note(self, configured, answering, summarising):
+        """
+        Re-summarising is the retry path for a poor first attempt. It has to
+        correct the note it already wrote — a second one would leave the
+        library holding two notes for one conversation, one of them the bad
+        summary the reader was retrying to be rid of.
+        """
+        chat = new_chat(configured)
+        send(configured, chat)
+        first = configured.post(f"/api/chats/{chat}/summarize").json()["summary"]["note_id"]
+        before = len(configured.get("/api/notes").json())
+
+        again = configured.post(f"/api/chats/{chat}/summarize").json()["summary"]["note_id"]
+
+        assert again == first
+        assert len(configured.get("/api/notes").json()) == before
+
+    def test_the_transcript_is_not_deleted(self, configured, answering, summarising):
+        chat = new_chat(configured)
+        send(configured, chat)
+        configured.post(f"/api/chats/{chat}/summarize")
+
+        assert len(configured.get(f"/api/chats/{chat}").json()["messages"]) == 2

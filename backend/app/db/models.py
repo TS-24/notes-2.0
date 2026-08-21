@@ -322,6 +322,12 @@ class Chat(Base):
     summary_questions: Mapped[Optional[str]] = mapped_column(Text)
     summary_answers: Mapped[Optional[str]] = mapped_column(Text)
     summarized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # The note this summary was written into. Finishing a conversation leaves a
+    # note behind, and the library shows that note in the chat's place; this is
+    # what says which one, and what stops a re-summarise writing a second.
+    # Nullable because chats summarised before notes were written have none —
+    # those keep their card, since there is nothing to show instead.
+    summary_note_id: Mapped[Optional[int]] = mapped_column(ForeignKey("notes.id"))
 
     # Ordered by id rather than created_at: a question and its answer are
     # written in the same transaction and can share a timestamp, and a

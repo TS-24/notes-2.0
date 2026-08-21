@@ -81,6 +81,12 @@ export interface ChatSummary {
   /** What the replies actually concentrated on. */
   answers: string;
   summarized_at: string;
+  /**
+   * The note this summary was written into, which is what the library shows in
+   * the conversation's place. Null for chats summarised before notes were
+   * written — those keep their card, because there is no note to show instead.
+   */
+  note_id: number | null;
 }
 
 /** Mirrors backend/app/schemas/chat.py::ChatRead */

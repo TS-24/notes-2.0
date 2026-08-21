@@ -157,6 +157,18 @@ const CONTEXT_LIMIT = 400;
 /** How long the caret has to hold still before the backend is asked about it. */
 const SETTLE_DELAY = 350;
 
+/*
+  How long the reel spins.
+
+  One constant for both halves deliberately. The tween below and the timeout
+  that commits the replacement have to end together — the timeout is what writes
+  the new word — and as two separate literals they were free to drift apart,
+  which shows up as the reel snapping back to the old word before the new one
+  lands. Deriving the tween from the timeout makes that impossible rather than
+  merely unlikely.
+*/
+const ROLL_MS = 260;
+
 /**
  * `value`, but only once it has held still for `delay`.
  *
@@ -438,7 +450,7 @@ export default function WordRoller({
       );
       onReplace(span.start, span.end, to);
       setRoll(null);
-    }, 460);
+    }, ROLL_MS);
   };
 
   const active = roll?.span ?? span;
@@ -489,7 +501,7 @@ export default function WordRoller({
           <motion.div
             initial={{ y: roll.direction === 1 ? 0 : -(REEL - 1) * active.height }}
             animate={{ y: roll.direction === 1 ? -(REEL - 1) * active.height : 0 }}
-            transition={{ duration: 0.46, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: ROLL_MS / 1000, ease: [0.16, 1, 0.3, 1] }}
           >
             {Array.from({ length: REEL }, (_, i) => (
               <div

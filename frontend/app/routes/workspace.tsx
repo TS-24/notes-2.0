@@ -5,6 +5,7 @@ import {
   useLocation,
   useNavigate,
   useSearchParams,
+  type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import type { Route } from "./+types/workspace";
 import AccountBubble from "~/notes/account-bubble";
@@ -62,6 +63,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { notes, user, chats, provider };
 }
 
+/**
+ * Opening a note or a chat is not a reason to refetch.
+ *
+ * `?open=` and `?chat=` only *select* from the lists this loader already
+ * returned — the component resolves both with a `find` over data it is holding.
+ * Left to itself React Router revalidates on every navigation, so changing a
+ * search param re-ran all four API calls above to redisplay what was already on
+ * screen: 190-436ms of blocking latency on every open and close, which is most
+ * of the delay between a click and anything moving.
+ *
+ * Writes still refetch. Every mutation in the app goes through a fetcher
+ * submission, and those set `formMethod`; only plain navigation is skipped.
+ *
+ * The cost is that a note edited in another tab does not appear here until the
+ * next mutation. That is the trade this makes deliberately.
+ */
+export function shouldRevalidate({
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (!formMethod) return false;
+  return defaultShouldRevalidate;
+}
+
 export default function Workspace({ loaderData }: Route.ComponentProps) {
   const { notes, user } = loaderData;
   const location = useLocation();
@@ -78,6 +103,13 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
   const focused = onLanding
     ? (notes[0] ?? null)
     : (notes.find(n => n.id === openId) ?? null);
+
+  // A note written by finishing a conversation keeps a way back to it. The
+  // chats are already loaded, so this is a lookup rather than a fetch.
+  const cameFrom =
+    focused
+      ? (loaderData.chats.find(c => c.summary?.note_id === focused.id)?.id ?? null)
+      : null;
 
   // Opening a note counts as an update, so it becomes "where you left off".
   // Guarded by id so revalidation does not re-touch in a loop.
@@ -141,6 +173,7 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
           key={focused.id}
           note={focused}
           mode={onLanding ? "page" : "boxed"}
+          conversationId={cameFrom}
           onOpen={() => navigate(`/notes?open=${focused.id}`)}
           onClose={() => navigate("/notes", { replace: true })}
           onReturn={() => navigate("/")}
