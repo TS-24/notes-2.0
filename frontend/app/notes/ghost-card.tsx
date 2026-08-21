@@ -34,7 +34,7 @@ export default function GhostCard({
   onClick,
 }: {
   tone: GhostTone;
-  /** Shown under the icon, and doubles as the tooltip and the accessible name. */
+  /** The tooltip and the accessible name. The card itself shows only the icon. */
   label: string;
   icon: ReactNode;
   /** Set only for the note ghost, which morphs into the note it creates. */
@@ -50,15 +50,9 @@ export default function GhostCard({
       aria-label={label}
       style={{ borderRadius: 16 }}
       transition={{ layout: NOTE_LAYOUT_TRANSITION }}
-      className={`flex min-h-[104px] w-full flex-col items-center justify-center gap-2 border-2 border-dashed cursor-pointer transition-colors ${TONE[tone]}`}
+      className={`flex min-h-[104px] w-full items-center justify-center border-2 border-dashed cursor-pointer transition-colors ${TONE[tone]}`}
     >
       {icon}
-      {/*
-        Shown, not just announced. These were icon-only with the label in
-        `title` and `aria-label`, so the two largest things in the library were
-        a `+` and a speech bubble and nothing on screen said which started what.
-      */}
-      <span className="font-sans text-sm">{label}</span>
     </motion.button>
   );
 }
