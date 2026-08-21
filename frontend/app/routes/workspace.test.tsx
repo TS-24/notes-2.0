@@ -14,7 +14,7 @@ import { createRoot } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeAll, expect, test } from "vitest";
 
-import Workspace from "~/routes/workspace";
+import Workspace, { shouldRevalidate } from "~/routes/workspace";
 import type { Route } from "./+types/workspace";
 import type { Note, User } from "~/lib/types";
 import { DEFAULT_THEME } from "~/lib/themes";
@@ -159,4 +159,56 @@ test("shows the newly opened note's text", async () => {
   });
 
   expect(body()?.value).toBe("The text of Second.");
+});
+
+/**
+ * Escape has to work without the note having been clicked into first.
+ *
+ * `handleKeyDown` was a React prop on the surface's root, so it only fired when
+ * focus was already inside the surface. Opening a note from a card leaves focus
+ * on `<body>`, so the key never reached the handler and Escape did nothing at
+ * all — which is every time anyone actually opens a note.
+ */
+test("escape closes a boxed note without focusing it first", async () => {
+  const { router } = mount();
+  expect(router.state.location.search).toBe("?open=1");
+
+  await act(async () => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+  });
+
+  expect(router.state.location.pathname).toBe("/notes");
+  expect(router.state.location.search).toBe("");
+});
+
+/**
+ * Opening a note must not go to the server.
+ *
+ * `?open=` only selects from the list the loader already returned, so
+ * revalidating it re-runs four API calls to redisplay data held in memory —
+ * measured at 190-436ms of blocking latency on every open and close.
+ */
+test("does not revalidate when only the search params change", () => {
+  const args = {
+    currentUrl: new URL("http://x/notes"),
+    nextUrl: new URL("http://x/notes?open=2"),
+    formMethod: undefined,
+    defaultShouldRevalidate: true,
+  } as unknown as Parameters<typeof shouldRevalidate>[0];
+
+  expect(shouldRevalidate(args)).toBe(false);
+});
+
+/** A write still has to refetch, or the grid shows the pre-mutation list. */
+test("still revalidates after a mutation", () => {
+  const args = {
+    currentUrl: new URL("http://x/notes"),
+    nextUrl: new URL("http://x/notes"),
+    formMethod: "POST",
+    defaultShouldRevalidate: true,
+  } as unknown as Parameters<typeof shouldRevalidate>[0];
+
+  expect(shouldRevalidate(args)).toBe(true);
 });

@@ -19,10 +19,10 @@ export default [
     ]),
     route("analytics", "routes/analytics.tsx"),
     route("settings", "routes/menu.tsx"),
-    // Chat routes are action-only: the conversation itself renders as a boxed
-    // overlay inside the workspace layout, morphing from its card in the grid.
-    // "chats" handles create/delete from the library; "chats/:chatId" handles
-    // send/finish from the overlay fetchers.
+    // "chats" is action-only: create and delete, from the library.
+    // "chats/:chatId" is a page — a conversation opened from its card, in the
+    // room a long exchange needs. It also carries the send/finish actions that
+    // the boxed overlay's fetchers post to, so a chat behaves the same in both.
     route("chats", "routes/chats.tsx"),
     route("chats/:chatId", "routes/chat.tsx"),
     // Resource route (loader only, no component). Deliberately outside the

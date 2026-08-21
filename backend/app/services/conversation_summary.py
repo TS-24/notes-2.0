@@ -107,3 +107,33 @@ def summarize(
         return ConversationSummary.model_validate(answer)
     except (ValidationError, TypeError):
         return None
+
+
+# The headings a summary becomes, paired with the field each one introduces.
+# Same words the chat surface used when it showed the summary in place, so a
+# conversation reads the same before and after it is finished.
+NOTE_SECTIONS = (
+    ("What this was about", "general"),
+    ("What you were asking", "questions"),
+    ("What the answers covered", "answers"),
+)
+
+
+def as_note(summary: ConversationSummary) -> str:
+    """
+    The summary as the text of a note.
+
+    Finishing a conversation leaves a note behind rather than a card that only
+    looks like one, so the three parts have to survive as prose the reader can
+    edit. A heading is a line of text with a blank line under it: the note body
+    is an unstyled textarea and there is no markdown renderer to make it more.
+
+    Topics are appended only when the summariser found any — an empty heading
+    would be the note claiming a section it does not have.
+    """
+    parts = [
+        f"{heading}\n\n{getattr(summary, field)}" for heading, field in NOTE_SECTIONS
+    ]
+    if summary.topics:
+        parts.append("Topics\n\n" + ", ".join(summary.topics))
+    return "\n\n".join(parts)

@@ -65,7 +65,10 @@ function NoteCard({
   const title = data.title;
   const content = data.content;
 
-  const handleCardDoubleClick = (e: React.MouseEvent) => {
+  // Single click, because the card already renders `cursor: pointer` and a
+  // pointer that does nothing is a promise the card was not keeping. The guard
+  // is what lets the card's own actions still be clicked.
+  const handleCardClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
     onExpand(data);
   };
@@ -124,11 +127,10 @@ function NoteCard({
         // the other cards glide to their new spots when the grid reflows.
         layoutId={noteLayoutId(data.id)}
         data-note-card
-        onDoubleClick={handleCardDoubleClick}
+        onClick={handleCardClick}
         whileHover={{ y: -4, boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)" }}
-        transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.2 }}
+        transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.15 }}
         style={{ borderRadius: 16 }}
-        title="Double click to open"
         // No border, no shadow, no blur — one step of paper tone (DESIGN.md §5).
         className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
       >
@@ -155,7 +157,7 @@ function NoteCard({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={(e) => e.stopPropagation()}
-                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all cursor-pointer ${isPinned ? "opacity-100 text-accent-ink" : "text-ink/35 hover:text-ink"
+                className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer ${isPinned ? "opacity-100 text-accent-ink" : "text-ink/35 hover:text-ink"
                   }`}
               >
                 <Pin className="size-3.5 fill-current" />
@@ -177,10 +179,15 @@ function NoteCard({
         <motion.div
           layout="position"
           transition={{ layout: NOTE_LAYOUT_TRANSITION }}
-          className="flex flex-col gap-2 mt-8"
+          className="flex flex-col gap-2 mt-4"
         >
-          {/* Action Toolbar — separated by space, not a rule. */}
-          <div className="flex items-center justify-between opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          {/*
+            Action toolbar — separated by space, not a rule, and gathered at one
+            end rather than pushed to both. Split across the card's full width,
+            reaching the delete and then the review button was a trip of most of
+            310px for two controls that belong to the same card.
+          */}
+          <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <div className="flex items-center gap-2">
               <fetcher.Form method="post">
                 <input type="hidden" name="intent" value="delete" />
@@ -207,7 +214,7 @@ function NoteCard({
                 <Archive className="size-3.5" />
               </motion.button>
             </div>
-            
+
             <button
               onClick={handleQuizClick}
               className="px-4 py-1.5 text-sm rounded-lg bg-accent text-on-accent hover:opacity-90 transition-opacity cursor-pointer"
@@ -333,7 +340,12 @@ export default function Notegrid({
 
   const gridNotes = notes.filter(n => n.id !== openNoteId);
   const pinnedNotes = gridNotes.filter(n => n.is_pinned);
-  const gridChats = openChatId ? chats.filter(c => c.id !== openChatId) : chats;
+  // A finished conversation is shown as the note it wrote, not as a second card
+  // saying the same thing. Keyed on `note_id` rather than on `summary` so that
+  // chats summarised before notes were written keep their card — there is no
+  // note to show in their place.
+  const liveChats = chats.filter(c => !c.summary?.note_id);
+  const gridChats = openChatId ? liveChats.filter(c => c.id !== openChatId) : liveChats;
   // Interleaved by when they were last touched, not grouped by kind: the
   // library is a record of what you were working on, and splitting it into a
   // notes half and a chats half would make it two records instead.

@@ -5,9 +5,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { useFetcher } from "react-router";
-import { motion } from "framer-motion";
-import { Minimize2 } from "lucide-react";
+import { Link, useFetcher } from "react-router";
+import { motion, useReducedMotion } from "framer-motion";
+import { MessagesSquare } from "lucide-react";
 import WordRoller from "~/workspace/word-roller";
 import type { Note } from "~/lib/types";
 
@@ -28,14 +28,37 @@ export type SurfaceMode = "page" | "boxed";
 export const noteLayoutId = (id: number) => `note-${id}`;
 
 /** Shared by the surface and by the cards reflowing around it. */
+/*
+  How long the surface takes to change mode.
+
+  One number, because three things have to agree on it: the layout tween below,
+  the CSS transition on the chrome, and the window the fields re-measure over.
+  As separate literals they drift, and a chrome transition outlasting its tween
+  is the heading arriving after the box it sits in.
+
+  This is the duration the app was designed at. It was never the problem: it ran
+  *after* a 190-436ms loader round trip, so the gesture took the better part of a
+  second and the tween was blamed for the wait in front of it. With that round
+  trip gone the morph starts on the frame you click, and the same 550ms reads as
+  deliberate rather than slow. Shortening it was solving the wrong half.
+*/
+const MORPH_MS = 550;
+
 export const NOTE_LAYOUT_TRANSITION = {
   type: "tween",
-  duration: 0.55,
+  duration: MORPH_MS / 1000,
   ease: [0.4, 0, 0.2, 1],
 } as const;
 
-const CHROME_TRANSITION =
-  "font-size 550ms cubic-bezier(0.4,0,0.2,1), padding 550ms cubic-bezier(0.4,0,0.2,1), background-color 550ms cubic-bezier(0.4,0,0.2,1), box-shadow 550ms cubic-bezier(0.4,0,0.2,1), min-height 550ms cubic-bezier(0.4,0,0.2,1)";
+const CHROME_TRANSITION = [
+  "font-size",
+  "padding",
+  "background-color",
+  "box-shadow",
+  "min-height",
+]
+  .map(property => `${property} ${MORPH_MS}ms cubic-bezier(0.4,0,0.2,1)`)
+  .join(", ");
 
 const TYPE = {
   page: { title: "3.25rem", body: "1.25rem" },
@@ -125,9 +148,22 @@ function useAutoHeight() {
     [measure],
   );
 
+  /*
+    Cancelling the frame has to clear the handle too, or nothing ever tracks again.
+
+    React runs an effect's setup, cleanup and setup again on mount. The first
+    pass started a loop; this cleanup cancelled the frame but left
+    `frame.current` holding its id; and every later call read that stale id as
+    "a loop is already running" and returned without starting one. So `track`
+    was dead for the life of the component and the per-frame remeasure it exists
+    for never happened — leaving the ResizeObserver below to do all of it, one
+    callback per write, which is what overflowed its loop (240 "undelivered
+    notifications" across a single 550ms morph).
+  */
   useEffect(
     () => () => {
       if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
     },
     [],
   );
@@ -164,6 +200,7 @@ export default function NoteSurface({
   onOpen,
   onClose,
   onReturn,
+  conversationId = null,
 }: {
   note: Note;
   mode: SurfaceMode;
@@ -173,6 +210,8 @@ export default function NoteSurface({
   onClose: () => void;
   /** Boxed only: take the note back out to its own page. */
   onReturn: () => void;
+  /** Set when this note is what finishing a conversation wrote. */
+  conversationId?: number | null;
 }) {
   const fetcher = useFetcher();
   const [title, setTitle] = useState(note.title);
@@ -183,6 +222,17 @@ export default function NoteSurface({
 
   const boxed = mode === "boxed";
   const type = boxed ? TYPE.boxed : TYPE.page;
+  /*
+    §12 — the whole point of this surface is that the note does not jump, so
+    reduced motion cannot simply drop the transition: it collapses it to nothing
+    instead, which lands the note in its resting state in one frame. The mode
+    still changes, it just stops being animated.
+  */
+  const reduced = useReducedMotion();
+  const layoutTransition = reduced
+    ? { ...NOTE_LAYOUT_TRANSITION, duration: 0 }
+    : NOTE_LAYOUT_TRANSITION;
+  const chromeTransition = reduced ? "none" : CHROME_TRANSITION;
   // What the fields actually sit on. The box is transparent on the landing
   // page, so there the surface is the page's own paper, not paper-raised —
   // the word roller masks against this and looked like a patch without it.
@@ -221,7 +271,7 @@ export default function NoteSurface({
   /*
     …and keep re-measuring for the length of the tween, not just at its ends.
 
-    The type animates for 550ms, so the fields' heights have to animate with
+    The type animates for MORPH_MS, so the fields' heights have to animate with
     it. Nothing else reports that frame by frame: each field sits in a wrapper
     that fits it exactly (the word roller measures against it), so the parent
     the ResizeObserver watches is only as tall as the height we ourselves just
@@ -231,9 +281,11 @@ export default function NoteSurface({
     in the heading.
   */
   useEffect(() => {
-    // A little past the 550ms tween, so the last frame is the settled value.
-    titleField.track(650);
-    bodyField.track(650);
+    // A little past the tween, so the last frame is the settled value. Every
+    // frame of this forces two synchronous layouts per field, so the window is
+    // kept as short as the tween allows.
+    titleField.track(MORPH_MS + 40);
+    bodyField.track(MORPH_MS + 40);
     // The hooks return a fresh object each render; the callbacks themselves are
     // stable, so depend on those or this runs on every keystroke.
   }, [boxed, titleField.track, bodyField.track]);
@@ -316,11 +368,9 @@ export default function NoteSurface({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      commitAndLeave(event);
-      return;
-    }
-
+    // Escape is handled on `document` below, not here: this prop only fires
+    // when focus is already inside the surface, which it is not after a card
+    // click.
     if (event.key !== "Enter" || event.shiftKey) return;
 
     // Enter commits everywhere else in the app, but the body is the one place
@@ -349,6 +399,47 @@ export default function NoteSurface({
     ref carries the fresh closure instead, leaving the subscription to change
     only when the mode does.
   */
+  /*
+    Escape, from anywhere on the page.
+
+    It used to hang off `onKeyDown` on the root below, which meant it only ever
+    fired when focus was already inside the surface — and opening a note from a
+    card leaves focus on `<body>`, so the key never reached the handler at all.
+    A document listener does not care where focus is.
+
+    The ref carries the fresh closure for the same reason `collapse` does: the
+    handler needs the current text and the current callbacks, and re-subscribing
+    a document listener on every keystroke is what that costs otherwise.
+  */
+  const escape = useRef(() => {});
+  useEffect(() => {
+    escape.current = () => {
+      save();
+      // Boxed: collapse to the library. On the landing page the same key is the
+      // reliable way into the library, which the double-click gesture cannot be
+      // — the fields span the reading column, and a double click inside one
+      // means "select this word".
+      if (boxed) onClose();
+      else onOpen();
+    };
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // A dialog over the note owns Escape while it is up — the vocabulary one
+      // opens from a card in the grid behind an open note. Base UI keeps the
+      // popup mounted through its close animation and marks it `data-closed`,
+      // so only an un-closed one counts.
+      if (document.querySelector('[data-slot="dialog-content"]:not([data-closed])')) {
+        return;
+      }
+      event.preventDefault();
+      escape.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const collapse = useRef(() => {});
   useEffect(() => {
     collapse.current = () => {
@@ -388,12 +479,12 @@ export default function NoteSurface({
         Measure for a layout animation only when the note is actually moving
         between its two states. Left to itself Framer re-measures on every
         render, so each keystroke in a note taller than the box started a fresh
-        550ms tween of the whole surface — caught mid-word at scaleY(0.18).
+        tween of the whole surface — caught mid-word at scaleY(0.18).
         That squash and settle, on every character, is most of what made typing
         here feel like it was struggling.
       */
       layoutDependency={`${mode}:${note.id}`}
-      transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+      transition={{ layout: layoutTransition }}
       ref={rootRef}
       role={boxed ? "dialog" : undefined}
       aria-label={boxed ? `Edit note: ${note.title || "Untitled"}` : undefined}
@@ -414,7 +505,7 @@ export default function NoteSurface({
         boxShadow: boxed
           ? "0px 25px 50px -12px rgb(56 56 90 / 0.15)"
           : "0px 25px 50px -12px rgb(56 56 90 / 0)",
-        transition: CHROME_TRANSITION,
+        transition: chromeTransition,
       }}
       // cursor-text because all of it now is: the handler above sends any click
       // that missed a field into the note.
@@ -457,7 +548,7 @@ export default function NoteSurface({
             aria-label="Note title"
             // text-center on the field itself: form controls do not inherit
             // text-align from an ancestor.
-            style={{ fontSize: type.title, transition: CHROME_TRANSITION }}
+            style={{ fontSize: type.title, transition: chromeTransition }}
             className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-display font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
           />
           <WordRoller
@@ -486,7 +577,7 @@ export default function NoteSurface({
             rows={1}
             placeholder="Start writing…"
             aria-label="Note text"
-            style={{ fontSize: type.body, transition: CHROME_TRANSITION }}
+            style={{ fontSize: type.body, transition: chromeTransition }}
             className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
           />
           <WordRoller
@@ -513,18 +604,35 @@ export default function NoteSurface({
         className="mx-auto flex h-20 w-full max-w-4xl shrink-0 items-center justify-between gap-4 transition-opacity duration-500"
         style={{ opacity: boxed ? 1 : 0, pointerEvents: boxed ? "auto" : "none" }}
       >
-        <span className="text-sm italic text-ink/40">
-          Esc to save · Enter for a new line
-        </span>
+        <div className="flex items-baseline gap-5">
+          <span className="text-sm italic text-ink/40">
+            Esc to close · Enter for a new line
+          </span>
+          {/* The house form for an exit: one serif line at Meta size
+              (DESIGN.md §8), not a button competing with the one opposite. */}
+          {conversationId !== null && (
+            <Link
+              to={`/chats/${conversationId}`}
+              className="text-sm tracking-wide text-ink/50 transition-colors hover:text-ink"
+            >
+              See the conversation →
+            </Link>
+          )}
+        </div>
+        {/*
+          A placeholder, deliberately: it says what it will do and does not do it
+          yet. "Done" stood here and went unused — Escape and a click outside
+          both close the note, so the button was a third way to do what two
+          gestures already did.
+        */}
         <button
           type="button"
-          onClick={onClose}
           aria-hidden={!boxed}
           tabIndex={boxed ? 0 : -1}
           className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2 text-base text-on-accent transition-opacity hover:opacity-90 cursor-pointer"
         >
-          <Minimize2 className="size-4" />
-          Done
+          <MessagesSquare className="size-4" />
+          Chat about this
         </button>
       </div>
     </motion.div>

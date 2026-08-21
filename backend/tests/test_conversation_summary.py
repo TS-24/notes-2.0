@@ -123,3 +123,53 @@ def _answering(monkeypatch, answer):
             return _Invoker(answer)
 
     monkeypatch.setattr(summary.llm, "chat_model", lambda *a: Model())
+
+
+class TestAsNote:
+    """
+    The summary, rendered as the text of a note.
+
+    A finished conversation is kept as a note you can edit, so the three parts
+    have to survive as prose rather than as fields. The note body is an
+    unstyled textarea with no markdown renderer, so a heading here is a line of
+    text with a blank line under it — nothing more is available.
+    """
+
+    def _summary(self, **over):
+        base = dict(
+            general="A conversation about gerunds.",
+            topics=["gerunds", "verb forms"],
+            questions="The reader asked what a gerund is.",
+            answers="The replies defined it and gave examples.",
+        )
+        base.update(over)
+        return summary.ConversationSummary(**base)
+
+    def test_every_part_is_in_the_text(self):
+        text = summary.as_note(self._summary())
+
+        assert "A conversation about gerunds." in text
+        assert "The reader asked what a gerund is." in text
+        assert "The replies defined it and gave examples." in text
+
+    def test_each_part_is_introduced_by_a_heading(self):
+        text = summary.as_note(self._summary())
+
+        for heading in ("What this was about", "What you were asking", "What the answers covered"):
+            assert heading in text
+
+    def test_a_heading_is_a_line_of_its_own(self):
+        """Not "Heading: body" — the body is prose and starts its own line."""
+        lines = summary.as_note(self._summary()).splitlines()
+
+        assert "What this was about" in lines
+
+    def test_topics_are_listed_when_there_are_any(self):
+        text = summary.as_note(self._summary())
+
+        assert "gerunds" in text and "verb forms" in text
+
+    def test_no_empty_topics_heading_when_there_are_none(self):
+        text = summary.as_note(self._summary(topics=[]))
+
+        assert "Topics" not in text

@@ -40,10 +40,18 @@ export default function ChatCard({
 
   return (
     <motion.div
-      layout
+      /*
+        `layoutId` only, as the note card has it. A bare `layout` alongside it
+        makes framer re-measure on every render, and this card re-renders
+        whenever its delete fetcher changes state — each one able to start a
+        fresh tween of a card that is not moving.
+      */
       layoutId={chatLayoutId(data.id)}
       data-note-card
-      onDoubleClick={event => {
+      // Single click, the same gesture a note card takes. Where they go differs
+      // — a conversation gets a page, a note opens in the library — but asking
+      // for one should not be a different act from asking for the other.
+      onClick={event => {
         if ((event.target as HTMLElement).closest("button")) return;
         onOpen(data);
       }}
@@ -52,12 +60,17 @@ export default function ChatCard({
         boxShadow:
           "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
       }}
-      transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.2 }}
+      transition={{ layout: NOTE_LAYOUT_TRANSITION, duration: 0.15 }}
       style={{ borderRadius: 16 }}
-      title="Double click to open"
       className="group relative flex flex-col justify-between p-7 bg-paper-raised cursor-pointer select-none"
     >
-      <div>
+      {/*
+        layout="position" counter-scales the contents, so the box can grow into
+        the surface without the type stretching with it. The note card has done
+        this since it gained a shared id; without it a chat's title visibly
+        warps on the way open.
+      */}
+      <motion.div layout="position" transition={{ layout: NOTE_LAYOUT_TRANSITION }}>
         {/* The one mark that says this is a conversation rather than a note.
             Ink, matching the ghost button that started it. */}
         <p className="text-xs uppercase tracking-[0.14em] text-ink/45">
@@ -98,9 +111,13 @@ export default function ChatCard({
         <div className="mt-6 text-sm italic text-ink/45">
           <LocalTime value={data.updated_at} />
         </div>
-      </div>
+      </motion.div>
 
-      <div className="mt-8 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <motion.div
+        layout="position"
+        transition={{ layout: NOTE_LAYOUT_TRANSITION }}
+        className="mt-4 flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+      >
         <fetcher.Form method="post" action="/chats">
           <input type="hidden" name="intent" value="delete" />
           <input type="hidden" name="id" value={data.id} />
@@ -115,7 +132,7 @@ export default function ChatCard({
             <Trash2 className="size-3.5" />
           </motion.button>
         </fetcher.Form>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }

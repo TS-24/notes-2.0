@@ -38,6 +38,9 @@ class ChatSummaryRead(BaseModel):
     questions: str
     answers: str
     summarized_at: datetime
+    # Which note this summary became. Null only for conversations finished
+    # before that existed.
+    note_id: int | None = None
 
 
 class ChatRead(BaseModel):

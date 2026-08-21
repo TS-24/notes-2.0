@@ -489,6 +489,18 @@ Each of these cost real time. They are all commented at the site too.
     stand in — it is a production install with `tsc` but no `react-router` dev
     CLI. Do what CI does and `npm ci` inside the container; §2 has the command.
 
+35. **The workspace loader deliberately does not revalidate on navigation.**
+    `routes/workspace.tsx` exports a `shouldRevalidate` returning false when
+    there is no `formMethod`. This is not an oversight to be tidied away: the
+    layout's loader is the *only* fetch behind `/`, `/notes`, `?open=` and
+    `?chat=`, and all four resolve what they show with a `find` over the lists
+    it already returned. Left to revalidate, changing a search param re-ran four
+    API calls to redisplay what was on screen — 190-436ms measured, and most of
+    the delay between a click and anything moving. Writes still refetch, because
+    every mutation goes through a fetcher submission and those set `formMethod`.
+    The price is that a note edited in another tab does not appear until the
+    next mutation. That trade was made on purpose.
+
 ---
 
 ## 5. Conventions

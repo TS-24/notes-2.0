@@ -34,7 +34,7 @@ export default function GhostCard({
   onClick,
 }: {
   tone: GhostTone;
-  /** Doubles as the tooltip and the accessible name; the card shows only the icon. */
+  /** The tooltip and the accessible name. The card itself shows only the icon. */
   label: string;
   icon: ReactNode;
   /** Set only for the note ghost, which morphs into the note it creates. */
@@ -50,7 +50,7 @@ export default function GhostCard({
       aria-label={label}
       style={{ borderRadius: 16 }}
       transition={{ layout: NOTE_LAYOUT_TRANSITION }}
-      className={`flex min-h-[200px] w-full items-center justify-center border-2 border-dashed cursor-pointer transition-colors ${TONE[tone]}`}
+      className={`flex min-h-[104px] w-full items-center justify-center border-2 border-dashed cursor-pointer transition-colors ${TONE[tone]}`}
     >
       {icon}
     </motion.button>

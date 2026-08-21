@@ -37,11 +37,14 @@ export default function ChatSurface({
   provider: initialProvider,
   mode = "page",
   onClose,
+  onReturn,
 }: {
   chat: Chat;
   provider: ProviderSettings;
   mode?: "page" | "boxed";
   onClose: () => void;
+  /** Boxed only: take the conversation out to its own page. */
+  onReturn?: () => void;
 }) {
   const navigate = useNavigate();
   const sender = useFetcher();
@@ -96,6 +99,26 @@ export default function ChatSurface({
     (sender.data && !(sender.data as { ok: boolean }).ok ? (sender.data as { error: string }).error : null) ??
     (finisher.data && !(finisher.data as { ok: boolean }).ok ? (finisher.data as { error: string }).error : null);
 
+  /*
+    Finishing writes a note, so finishing goes to it.
+
+    What a conversation leaves behind is the note, not the transcript — it is
+    the thing you can correct, add to and pin. Staying here to read the summary
+    in place would show it in the one form you cannot edit, and then leave the
+    reader to go and find the note themselves.
+
+    Guarded by a ref because the fetcher's data outlives the navigation: without
+    it the effect re-fires on every later render and pins the route here.
+  */
+  const wroteNote = useRef(false);
+  useEffect(() => {
+    const data = finisher.data as { ok?: boolean; chat?: Chat } | undefined;
+    const noteId = data?.ok ? data.chat?.summary?.note_id : null;
+    if (finisher.state !== "idle" || !noteId || wroteNote.current) return;
+    wroteNote.current = true;
+    navigate(`/notes?open=${noteId}`, { replace: true });
+  }, [finisher.state, finisher.data, navigate]);
+
   const send = () => {
     const content = draft.trim();
     if (!content || pending || finished) return;
@@ -106,24 +129,49 @@ export default function ChatSurface({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      onClose();
-      return;
-    }
+    // Escape is on `document` below. This prop only fires while focus is inside
+    // the surface, and opening a chat from its card leaves focus on `<body>`.
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     send();
   };
 
+  /*
+    Double click takes the conversation out to its own page, which is what the
+    same gesture does to a note: one click opens it where it sits, a second
+    asks for the room. It used to close the chat, so the two surfaces answered
+    the same gesture with opposite things.
+  */
   const handleDoubleClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("input, textarea, button")) return;
-    onClose();
+    if (onReturn) onReturn();
   };
 
   const collapse = useRef(() => {});
   useEffect(() => {
     collapse.current = () => onClose();
   });
+
+  /*
+    Escape, from anywhere on the page — the same treatment the note surface has.
+
+    It hung off `onKeyDown` on the root, which only fires when focus is already
+    inside. The composer autofocuses, so it worked until you clicked anything
+    else; after that the key went nowhere. Opening a chat from its card leaves
+    focus on `<body>`, which is every time.
+  */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[data-slot="dialog-content"]:not([data-closed])')) {
+        return;
+      }
+      event.preventDefault();
+      collapse.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
   useEffect(() => {
     if (mode !== "boxed") return;
     const onMouseDown = (event: MouseEvent) => {
@@ -141,6 +189,17 @@ export default function ChatSurface({
   return (
     <motion.div
       layout
+      /*
+        Measure only when the conversation is actually moving between its two
+        states — the same guard the note surface carries, and for the same
+        reason. Left to itself framer re-measures on every render, and this
+        surface re-renders on every character typed into the composer and on
+        every fetcher transition, so it was starting a fresh tween of a box that
+        had not moved. Leaving one of those running is what made closing a chat
+        lurch: the exit projects from wherever that spurious tween had got to
+        rather than from the box on screen.
+      */
+      layoutDependency={`${mode}:${chat.id}`}
       layoutId={boxed ? chatLayoutId(chat.id) : undefined}
       transition={{ layout: NOTE_LAYOUT_TRANSITION }}
       ref={rootRef}
@@ -202,11 +261,6 @@ export default function ChatSurface({
                     </MessageScrollerItem>
                   )}
 
-                  {finished && chat.summary && (
-                    <MessageScrollerItem messageId="summary">
-                      <Summary summary={chat.summary} />
-                    </MessageScrollerItem>
-                  )}
                 </MessageScrollerContent>
               </MessageScrollerViewport>
             </MessageScroller>
@@ -221,7 +275,7 @@ export default function ChatSurface({
 
         {finished ? (
           <p className="mt-8 text-center text-base italic text-ink/50">
-            This conversation is finished. Its summary is on its card in the
+            This conversation is finished. What it came to is a note in your
             library.
           </p>
         ) : (
@@ -288,39 +342,5 @@ export default function ChatSurface({
         )}
       </div>
     </motion.div>
-  );
-}
-
-function Summary({ summary }: { summary: NonNullable<Chat["summary"]> }) {
-  const parts = [
-    { heading: "What this was about", body: summary.general },
-    { heading: "What you were asking", body: summary.questions },
-    { heading: "What the answers covered", body: summary.answers },
-  ];
-
-  return (
-    <section className="mt-10 border-t border-hairline pt-8">
-      {summary.topics.length > 0 && (
-        <ul className="mb-6 flex flex-wrap gap-x-4 gap-y-1">
-          {summary.topics.map(topic => (
-            <li key={topic} className="text-sm italic text-accent-ink">
-              {topic}
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="space-y-6">
-        {parts.map(part => (
-          <div key={part.heading}>
-            <h2 className="font-display text-lg font-medium tracking-tight text-ink">
-              {part.heading}
-            </h2>
-            <p className="mt-1 text-base leading-relaxed text-ink/85">
-              {part.body}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
