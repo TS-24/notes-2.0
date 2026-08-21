@@ -76,16 +76,18 @@ restyle/
 │   └── app/
 │       ├── routes.ts          # Route config; the layout wrapper lives here
 │       ├── routes/            # workspace (layout), home, notes, analytics,
-│       │                      #   login / register / logout, chats.tsx and
-│       │                      #   chat.tsx (served at /chats and /chats/:chatId),
-│       │                      #   menu.tsx (served at /settings), and three resource
-│       │                      #   routes: api.word-ladder, api.vocabulary,
+│       │                      #   login / register / logout, menu.tsx (served
+│       │                      #   at /settings), and five action- or loader-only
+│       │                      #   routes with no component of their own: chats,
+│       │                      #   chat, api.word-ladder, api.vocabulary,
 │       │                      #   api.active-model
 │       ├── workspace/         # note-surface.tsx, word-roller.tsx
 │       ├── chat/              # chat-surface.tsx, model-picker.tsx
 │       ├── notes/             # notegrid.tsx — the library grid — plus chat-card,
 │       │                      #   ghost-card and account-bubble
-│       ├── components/ui/     # shadcn/ui primitives, moved onto the role tokens
+│       ├── components/ui/     # shadcn/ui primitives on the role tokens, plus the
+│       │                      #   chat set: message, bubble, message-scroller,
+│       │                      #   marker, input-group, field, combobox
 │       ├── hooks/             # use-mobile.ts
 │       ├── lib/               # api.server.ts (server-only typed API client),
 │       │                      #   session.server.ts, theme.server.ts, themes.ts,
@@ -489,7 +491,7 @@ wants only `DATABASE_URL` and a `JWT_SECRET` of at least 32 bytes, and `conftest
 cd backend && .venv/bin/python -m pytest tests/ -q
 ```
 
-The frontend has 98 of its own, in 8 files:
+The frontend has 107 of its own, in 8 files:
 
 ```bash
 cd frontend && npm test
@@ -497,7 +499,7 @@ cd frontend && npm test
 
 ```
  Test Files  8 passed (8)
-      Tests  98 passed (98)
+      Tests  107 passed (107)
 ```
 
 Two of those files are guards rather than unit tests. `themes.test.ts` fails when

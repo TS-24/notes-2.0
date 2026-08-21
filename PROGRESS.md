@@ -42,7 +42,8 @@ Double clicking the note toggles between the two, in both directions. That
 gesture is the only navigation — there is no sidebar, nav bar, or exit link.
 
 Since #34 there is a **second object**: an AI chat, started from a twin of the
-`+` ghost card and opened at `/chats/:id`. It runs on a provider API key the
+`+` ghost card and opened as a boxed overlay on the library at `/notes?chat=<id>`,
+morphing out of its card the way a note does. It runs on a provider API key the
 reader supplies on `/settings`, and finishing one writes a three-part summary
 that becomes what its card in the library shows. It is *not* a note and does
 not share the note surface — see §3.
@@ -149,8 +150,8 @@ values. That approach was built, tried, and deleted — see
 | `app/notes/notegrid.tsx` | The library grid (CSS columns), note cards, the twin ghost row, vocabulary dialog |
 | `app/notes/ghost-card.tsx` | **One** component for both ghost cards. `tone` is the only axis that varies — see trap 30 |
 | `app/notes/chat-card.tsx` | A conversation in the grid. Shows the summary, or how many turns are still unsummarised |
-| `app/chat/chat-surface.tsx` | The conversation, in the boxed note's chrome. Transcript, composer, the three-part summary when finished |
-| `app/routes/chat.tsx` | One chat: loader + `send` / `finish` actions. Two fetchers, so "Thinking…" and "Summarising…" are distinguishable |
+| `app/chat/chat-surface.tsx` | The conversation, in the boxed note's chrome. Transcript, composer, the three-part summary when finished. Owns its own fetchers for `send` / `finish` / model choice — two of them, so "Thinking…" and "Summarising…" stay distinguishable |
+| `app/routes/chat.tsx` | Action-only: `send` / `finish`. No loader and no component, because the conversation renders as an overlay inside the workspace layout rather than on a page of its own |
 | `app/routes/chats.tsx` | Action-only resource route: create and delete, the things you do to a chat from outside one |
 | `app/lib/local-time.tsx` | Timestamps without a hydration mismatch — see trap 31 |
 | `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
@@ -184,7 +185,8 @@ values. That approach was built, tried, and deleted — see
 - All note mutations post to `/notes`'s action with an `intent`:
   `create` · `update` · `togglePin` · `touch` · `delete` · `markKnown`.
   Chats have their own: `/chats` takes `create` · `delete`, and
-  `/chats/:chatId` takes `send` · `finish`.
+  `/chats/:chatId` takes `send` · `finish` — both action-only routes with no
+  component, since the conversation itself renders inside the workspace layout.
 - After any action React Router revalidates the layout loader, so the UI follows
   the database with no manual refetching.
 - The grid interleaves notes and chats by `updated_at` rather than grouping them
