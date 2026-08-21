@@ -38,19 +38,29 @@ model ranks.**
   and editable. Double-click it and a box animates in around text that never moves, revealing the
   library of every other note beneath. Double-click again to go back. That gesture is the only
   navigation: there is no sidebar and no nav bar.
-- **Vocabulary analysis** — the words in a note (or in every note at once) that are worth
-  learning, with definitions. Dismissing one records it as known, per reader, so the list shrinks
-  as you work through it instead of showing you the same words forever.
-- **AI chats** — a second card sits at the right of the library, the twin of the `+` that starts a
-  note, and it opens a conversation in the same box an open note sits in. Finishing one asks the
-  model to summarise it in three parts: what it was about and its topics, what you kept asking,
-  and what the answers concentrated on. That summary becomes what the chat's card shows in the
-  library, because nobody rereads a transcript.
+- **Vocabulary analysis** — the words worth learning in one note, as flashcards on its card in
+  the library, or in every note at once as the word cloud at `/analytics`, where clicking a word
+  opens its definition in a sheet. Dismissing a flashcard records that word as known, per reader,
+  so the list shrinks as you work through it instead of showing you the same words forever.
+- **AI chats** — the twin of the `+` that starts a note sits beside it at the head of the
+  library, and it opens a conversation in the same box an open note sits in. Finishing one asks
+  the model to summarise it in three parts: what it was about and its topics, what you kept
+  asking, and what the answers concentrated on. That summary becomes what the chat's card shows in
+  the library, because nobody rereads a transcript.
 
-  **This needs your own API key.** Add a provider (Anthropic or OpenAI) and a key on `/settings`;
-  it is encrypted at rest and never sent back to the browser. Without one, chats refuse politely
-  and tell you where to go. There is no shared or built-in key.
-- **Persistence** — notes, pinning, and word definitions are stored in PostgreSQL through a
+  **This needs your own API key.** Add one on `/settings` for Anthropic, OpenAI, OpenRouter or
+  OpenCode Zen. The key is sent to the provider *before* it is stored, so one that will not work
+  is refused in the dialog that asked for it rather than at your first question — and the model
+  list that same call comes back with is what the picker above the composer offers. Keys are held
+  one per provider, so moving between two you own is a dropdown rather than a re-paste. They are
+  encrypted at rest and never sent back to the browser. Without one, chats refuse politely and
+  tell you where to go. There is no shared or built-in key.
+- **Seven palettes** — Paper is the cream-and-indigo ramp the app was drawn in; the rest are ports
+  of schemes you may already read code in (Everforest Light and Dark, Rosé Pine Moon, Nord, Tokyo
+  Night, Catppuccin Mocha). Picked on `/settings` and kept in a cookie the root loader reads, so
+  the server's first byte already carries the right palette and nothing flashes. See
+  [Themes](#themes).
+- **Persistence** — notes, pinning, chats and word definitions are stored in PostgreSQL through a
   FastAPI backend, with the whole ladder computation cached so a repeat lookup costs no model time.
 
 See [Project status](#-project-status) for what does not work yet.
@@ -61,31 +71,48 @@ See [Project status](#-project-status) for what does not work yet.
 restyle/
 ├── frontend/                  # Frontend (React Router v7 + Vite, SSR)
 │   ├── Dockerfile             # Multi-stage; the compose image runs react-router-serve
+│   ├── vitest.config.ts       # Separate from vite.config.ts — a unit test wants no
+│   │                          #   route manifest and no server bundle
 │   └── app/
 │       ├── routes.ts          # Route config; the layout wrapper lives here
 │       ├── routes/            # workspace (layout), home, notes, analytics,
-│       │                      #   menu.tsx (served at /settings),
-│       │                      #   api.word-ladder (resource route)
+│       │                      #   login / register / logout, chats.tsx and
+│       │                      #   chat.tsx (served at /chats and /chats/:chatId),
+│       │                      #   menu.tsx (served at /settings), and three resource
+│       │                      #   routes: api.word-ladder, api.vocabulary,
+│       │                      #   api.active-model
 │       ├── workspace/         # note-surface.tsx, word-roller.tsx
-│       ├── notes/             # notegrid.tsx — the library grid
-│       ├── components/ui/     # shadcn/ui primitives, unmodified
+│       ├── chat/              # chat-surface.tsx, model-picker.tsx
+│       ├── notes/             # notegrid.tsx — the library grid — plus chat-card,
+│       │                      #   ghost-card and account-bubble
+│       ├── components/ui/     # shadcn/ui primitives, moved onto the role tokens
 │       ├── hooks/             # use-mobile.ts
-│       ├── lib/api.server.ts  # Server-only typed API client
-│       └── app.css            # Design tokens: paper/ink/rose, Playfair + EB Garamond
+│       ├── lib/               # api.server.ts (server-only typed API client),
+│       │                      #   session.server.ts, theme.server.ts, themes.ts,
+│       │                      #   types.ts
+│       ├── app.css            # Layout, motion, type: Playfair + EB Garamond
+│       └── themes.css         # The palettes — one [data-theme] block each
 ├── backend/                   # API + persistence (FastAPI + SQLAlchemy)
 │   ├── main.py                # App entrypoint: CORS, /health, router wiring
 │   ├── entrypoint.sh          # Runs `alembic upgrade head`, then uvicorn
 │   ├── app/
-│   │   ├── api/               # Routers: users, notes, word_definitions, vocab,
-│   │   │                      #   analyze, known_words; deps.py holds the current user
+│   │   ├── api/               # Routers: auth, users, settings, notes, chats,
+│   │   │                      #   known_words, word_definitions, vocab, analyze;
+│   │   │                      #   deps.py holds the current user
+│   │   ├── cli.py             # Invites, accounts, housekeeping
+│   │   ├── core/              # config, security (argon2 + JWT), secrets (Fernet)
 │   │   ├── crud/              # Database operations, incl. the ladder cache
-│   │   ├── db/                # SQLAlchemy models, session factory, dev seed
+│   │   ├── db/                # SQLAlchemy models and the session factory
 │   │   ├── schemas/           # Pydantic request/response models
 │   │   └── services/          # vocab.py (the ladder), ranker.py (the judge),
-│   │                          #   analysis.py (difficult-word extraction)
+│   │                          #   analysis.py (difficult-word extraction),
+│   │                          #   llm.py (the provider registry),
+│   │                          #   conversation_summary.py
 │   ├── alembic/               # Database migrations
-│   └── tests/                 # 64 tests: ladder, ranker, analysis, known words
-├── docker-compose.yml         # frontend + backend + PostgreSQL
+│   └── tests/                 # 296 tests across 18 modules
+├── docker-compose.yml         # frontend + backend; the database is Neon, not a service
+├── docker-compose.prod.yml    # Production overlay: Caddy in front, nothing else published
+├── Caddyfile                  # TLS and the reverse proxy, for that overlay
 ├── .env.example               # Config template; copy to .env (which is ignored)
 ├── DESIGN.md                  # Visual and navigation direction
 └── PROGRESS.md                # Working context: architecture, traps, open items
@@ -107,8 +134,11 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 - **Framework:** React Router v7 (SSR), React 19, Vite
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS v4, with `shadcn/ui` and Base UI components
+- **Theming:** ten role tokens per palette in `app/themes.css`, selected by `data-theme` on
+  `<html>` from a cookie — see [Themes](#themes)
 - **Animations:** Framer Motion (tweens, never springs — see `DESIGN.md` §10)
 - **Type:** Playfair Display (display) + EB Garamond (body), via Fontsource
+- **Tests:** Vitest, `node` by default with `jsdom` requested per file where a DOM is needed
 
 **Backend (`backend/`)**
 - **Framework:** FastAPI (Python 3.12)
@@ -119,6 +149,33 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 - **Ranking:** a hosted sentence-embedding model via `huggingface_hub`, used to pick the sense
   that belongs in the sentence. Optional — without credentials the ladder falls back to the
   dictionary's own ordering
+- **Chats:** LangChain (`langchain-anthropic`, `langchain-openai`) against a key the reader
+  supplies, with each provider's own SDK used directly for the one thing LangChain has no notion
+  of — asking a key which models it can reach
+- **Tests:** pytest, against SQLite with the ranker and every provider call mocked
+
+### Themes
+
+Seven palettes: Paper, the light cream-and-indigo ramp the app was drawn in (`DESIGN.md` §4), and
+six ports — Everforest Light, Rosé Pine Moon, Nord, Everforest Dark, Tokyo Night, Catppuccin
+Mocha. Five of the seven are dark.
+
+A palette is ten role tokens (`paper`, `paper-raised`, `ink`, `hairline`, `accent-surface`,
+`accent-ink`, `on-accent`, `danger`, `success`, `scrim`) in one `[data-theme="…"]` block in
+`app/themes.css`. `@theme inline` is what makes them swappable at all: a plain `@theme` compiles
+its values into the utilities as literals, so `bg-paper` would be one fixed colour for the life of
+the build, while the inline form emits a `var()` that a `[data-theme]` block further down can
+redefine.
+
+The choice is a cookie rather than a column on the user, so the root loader resolves it from the
+request itself and the first byte of HTML already carries the right palette — no blocking inline
+script, no first paint in the wrong colours. A dark palette also puts the `dark` class on `<html>`,
+because shadcn's own components carry `dark:` rules that key off the class and not the attribute;
+without it a dark theme renders correctly right up until a form field goes invalid.
+
+Adding one is a CSS block plus a row in `app/lib/themes.ts`. `themes.test.ts` fails if you do only
+one of those or leave a role unfilled, and `no-hardcoded-colours.test.ts` fails if any component
+names a Tailwind colour instead of a role token.
 
 ### Data model
 
@@ -132,25 +189,37 @@ about a word.
 User ──< Note >──note_word──< WordDefinition          WordLadder
  ├──< KnownWord
  ├──< Chat ──< ChatMessage
- └──1 ProviderCredential
+ └──< ProviderCredential
 ```
 
 Plus `invite_codes` and `revoked_tokens`, which belong to registration and sign-out rather than to
 the reading path.
 
-Deleting a user cascades to their notes, known words, chats and stored credential. Deleting a note
+Deleting a user cascades to their notes, known words, chats and every stored credential. Deleting a note
 or a word only removes the link between them, never the row on the other side.
 
 A chat holds its own summary in four columns written together, with `summarized_at` as the single
 test for "finished" — a separate status column would be a second fact to keep in step, and the two
-would eventually disagree. `ProviderCredential` is **one row per user**, not one per provider:
-picking a different provider is a change of mind, not a second credential.
+would eventually disagree.
+
+`ProviderCredential` is **one row per provider per user**. A reader holding keys for two services
+should not have to paste one of them again to go back to it, and the model picker in the chat is
+only worth having if the alternatives are already reachable. Each row also caches what that key
+could reach when it was last asked, which is what the picker is built from: a provider call on
+every chat load would be a spinner, and a provider outage would be an empty picker.
+
+*Which* of those rows is in use is not stored there. It is `active_provider` and `active_model` on
+the user, because "what am I chatting with" is one fact about the account, and one fact stored once
+cannot disagree with itself. Both are plain strings, so the selection can outlive the credential it
+names — the key can be forgotten, or stop decrypting, without those columns changing, and
+`crud/provider_credential.py::active` is the single place the two are resolved against each other.
 
 ## 🔌 API
 
-All routes are prefixed with `/api`. Interactive docs are served at `/docs` once running.
+All routes are prefixed with `/api`. Interactive docs are served at `/docs` once running, in
+development only — `ENVIRONMENT=production` removes them along with `/redoc` and `/openapi.json`.
 
-Every route requires a signed-in account. Send `Authorization: Bearer <token>` from a script, or
+Every route under `/api` requires a signed-in account. Send `Authorization: Bearer <token>` from a script, or
 let the cookie the API sets carry it in a browser. Registration is invite-only, so the way in is
 a code issued from the CLI — see [Your first account](#your-first-account).
 
@@ -166,10 +235,10 @@ directory of other people's writing.
 | `POST` | `/api/words/known` | Mark words as already known, up to 500 per request. Returns 204 with no body — the caller has already removed the card and has nothing to do with a response |
 | `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, 409 if the email is taken |
 | `POST` | `/api/auth/login` | Exchange an email and password for a token. One message for a wrong password and an unknown email alike, so the endpoint cannot be used to find out who has an account |
-| `POST` | `/api/auth/logout` | Clear the API's cookie. Tokens are stateless, so this stops this browser sending one rather than invalidating it |
+| `POST` | `/api/auth/logout` | Record this token's `jti` as revoked and clear the API's cookie. Only this token, so other sessions on the same account keep working. Deliberately unauthenticated: someone holding a token they cannot use is still entitled to retire it. **The web app's own Sign out does not call this** — see [Project status](#-project-status) |
 | `GET` | `/api/users/me` | The signed-in account |
-| `PATCH`/`DELETE` | `/api/users/me` | Update or delete your own account. Deleting takes your notes and known words with it |
-| `POST` | `/api/notes` | Create a note (404 if the owner doesn't exist) |
+| `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, known words, chats and stored keys with it |
+| `POST` | `/api/notes` | Create a note. The owner is the signed-in account, never a field in the body |
 | `GET` | `/api/notes` | List notes, newest-touched first. `?search=` matches the title; `?skip=` / `?limit=` page. Scope is always the signed-in account, never a parameter |
 | `GET`/`PATCH`/`DELETE` | `/api/notes/{id}` | Read, partially update, or delete a note |
 | `POST` | `/api/notes/{id}/touch` | Bump `updated_at`. Needed because an empty `PATCH` changes no attributes, so SQLAlchemy's `onupdate` never fires — opening a note has to touch it explicitly |
@@ -177,7 +246,11 @@ directory of other people's writing.
 | `POST` | `/api/words` | Create a word definition |
 | `GET` | `/api/words` | List definitions, or look one up with `?word=` |
 | `GET`/`PATCH`/`DELETE` | `/api/words/{id}` | Read, partially update, or delete a definition |
-| `GET`/`PUT`/`DELETE` | `/api/settings/provider` | The AI provider credential. `GET` never returns the key — only `key_hint`, its last four characters, plus the providers you could pick. `PUT` replaces whatever was there; `DELETE` forgets it and is not an error when there is nothing to forget |
+| `GET` | `/api/settings/providers` | Which keys are on file, which providers could be added, and which pair is in use. Never returns a key — only `key_hint`, its last four characters. A key this deployment can no longer decrypt is left out entirely, which is what it is from the reader's side |
+| `PUT` | `/api/settings/providers/{provider}` | Store a key for one provider. The provider is called first and nothing is written until it answers, so a rejected key leaves the account exactly as it was — including a working key for the same provider somebody was trying to replace. **422** for a provider not in the registry, **502** when the provider would not have the key. The model list that call returns is stored alongside it. The first key an account saves becomes the one it chats with; later ones do not take over |
+| `POST` | `/api/settings/providers/{provider}/refresh` | Ask the stored key what it can reach now, so a model added or retired since is one button rather than a re-paste. **409** if there is no usable key on file |
+| `DELETE` | `/api/settings/providers/{provider}` | Forget one provider's key. If it was the one in use the account falls to another key it holds rather than to nothing. Not an error when there is nothing to forget |
+| `PUT` | `/api/settings/active-model` | Chat with this provider and this model from now on. Both halves together, both checked against what is actually on file: **409** for a provider with no key, **422** for a model that key never listed |
 | `POST` | `/api/chats` | Start an empty conversation. Deliberately does **not** require a key: the refusal belongs on the first message, not on the button that opens the page you are being told to configure |
 | `GET` | `/api/chats` | List conversations, newest-touched first |
 | `GET`/`DELETE` | `/api/chats/{id}` | Read one conversation with its turns and summary, or delete it and its turns |
@@ -188,14 +261,35 @@ directory of other people's writing.
 
 ### Chats and your API key
 
-Chats run on a provider account you own. The key is stored encrypted with Fernet, under a key
-derived from `JWT_SECRET` by HKDF — so there is no extra environment variable to set, and one
-consequence worth knowing: **rotating `JWT_SECRET` makes every stored key undecryptable.** That is
-already the documented way to sign everyone out. An unreadable key reads as "no key on file"
-rather than an error, so the remedy is the same either way: paste it again.
+Chats run on a provider account you own. Four are in the registry in `services/llm.py`:
 
-Nothing sends the key back down. `GET /api/settings/provider` returns four characters of it, and a
-provider error that quotes the key back has it scrubbed out before the 502 leaves the backend.
+| Provider | Speaks | Model list |
+| --- | --- | --- |
+| Anthropic | Anthropic's API | Behind the key, so listing it is proof enough that the key works |
+| OpenAI | OpenAI's API | Behind the key, likewise |
+| OpenRouter | OpenAI's API, at `openrouter.ai/api/v1` | Public, so saving a key spends one extra 1-token request to prove it |
+| OpenCode Zen | OpenAI's API, at `opencode.ai/zen/v1` | Public, likewise |
+
+A table of import paths rather than LangChain's `init_chat_model`, because it is greppable, it
+fails at the point of the typo instead of at the first request with a real key, and it can be
+checked by a test that has no credentials — which is the only kind of test this can have. Adding a
+provider is one row there plus one package in `requirements.txt`; the two gateways reuse
+`ChatOpenAI` and differ only by where the call is addressed, which is the one thing that must not
+be forgotten, since the OpenAI client will otherwise take an OpenRouter key and post it to OpenAI.
+
+The key is stored encrypted with Fernet, under a key derived from `JWT_SECRET` by HKDF — so there
+is no extra environment variable to set, and one consequence worth knowing: **rotating
+`JWT_SECRET` makes every stored key undecryptable.** That is already the documented way to sign
+everyone out. An unreadable key reads as "no key on file" rather than an error, so the remedy is
+the same either way: paste it again.
+
+Nothing sends the key back down. `GET /api/settings/providers` returns four characters of it, and
+a provider error that quotes the key back has it scrubbed out before the 502 leaves the backend.
+
+Every provider call is bounded at 60 seconds with a single retry. The chat routes are sync `def`,
+so an in-flight call holds a FastAPI threadpool slot shared with every other route in the app:
+generous enough for a long summarisation, short enough that one hung provider cannot take the
+whole app down.
 
 ### The ladder endpoint
 
@@ -247,11 +341,16 @@ there is no local volume holding your data.
 Configuration comes from `.env` at the repo root, which is gitignored. Copy the template first:
 
 ```bash
-cp .env.example .env      # then fill in DATABASE_URL
+cp .env.example .env      # then fill in DATABASE_URL, JWT_SECRET and SESSION_SECRET
 ```
 
-It sets `DATABASE_URL`, the two host ports and the two secrets,
-plus the three optional ranker switches (`HF_TOKEN`, `HF_MODEL`, `LADDER_RANKING`). Those three
+Those three have no defaults and compose refuses to start without them, which is deliberate: a
+fallback signing key is not a convenience but a skeleton key for every deployment that forgot to
+set one. `JWT_SECRET` must also be at least 32 bytes, or the backend refuses to import.
+
+It sets `DATABASE_URL`, the two host ports, the two secrets (`JWT_SECRET` and `SESSION_SECRET`,
+both required, neither with a default), `ENVIRONMENT`, `DOMAIN` for the production overlay, and
+the three optional ranker switches (`HF_TOKEN`, `HF_MODEL`, `LADDER_RANKING`). Those last three
 have to go in this file to reach the container: `docker-compose.yml` forwards exactly the
 variables it names into the backend's environment, and nothing else in `.env` crosses that
 boundary. Setting `HF_TOKEN` only in your shell does nothing under compose.
@@ -284,14 +383,17 @@ taking it as a flag, so it stays out of your shell history:
 docker compose exec backend python -m app.cli create-user --email you@example.com
 ```
 
-Notes written before there were accounts belong to a seeded `dev@example.com`. Move them across
-once, then that user is gone:
+Notes written before there were accounts belong to a seeded `dev@example.com`. Nothing seeds that
+user any more, but a database from back then still has one. Move its rows across once, after which
+it is gone (and the command is a no-op if there was never one):
 
 ```bash
 docker compose exec backend python -m app.cli adopt-dev-data --email you@example.com
 ```
 
-`list-invites` shows every code and whether it has been spent.
+`list-invites` shows every code and whether it has been spent. `prune-tokens` drops revocation
+records for tokens that have expired anyway, which is the only thing stopping that table growing
+by one row per sign-out forever.
 
 ### Deploying
 
@@ -316,20 +418,44 @@ session cookie `Secure`. That flag is why the TLS is not optional: browsers
 silently drop a `Secure` cookie sent over plain http, so without https login
 appears to succeed and no session ever exists.
 
-Nothing deploys automatically. CI publishes images to
-`ghcr.io/ts-24/restyle-{backend,frontend}`, tagged `dev` and by commit sha; the
-sha tag is the one worth pulling, since `dev` moves.
+Nothing deploys automatically. `publish.yml` builds images on pushes to `dev`
+— and only after the whole of CI has passed — pushing them to
+`ghcr.io/ts-24/restyle-{backend,frontend}`, tagged `dev` and by commit sha. The
+sha tag is the one worth pulling, since `dev` moves. `master` publishes
+nothing.
 
-### Working on the frontend without Node on the host
+### Frontend checks
 
-Typecheck and build through Docker:
+They run on the host, and these three are exactly what CI runs:
 
 ```bash
-docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine \
-  sh -c "node_modules/.bin/react-router typegen && node_modules/.bin/tsc"
+cd frontend
+npm run typecheck     # react-router typegen && tsc
+npm test              # vitest run
+npm run build
 ```
 
-Add a dependency without touching the host's `node_modules`:
+`typegen` before `tsc` is not optional — the route types every loader imports are generated, and
+`tsc` cannot resolve them until they exist. `npm run typecheck` does both in that order.
+
+The one thing to watch is that **CI and the image pin Node 20 while the host is probably newer**,
+so a devDependency can install and pass here and still fail on the runner. `jsdom` is held below
+30 for precisely that reason: 30 pulls a `undici` that calls `worker_threads.markAsUncloneable`,
+which does not exist before Node 22.10, so it installs without a murmur and then cannot start a
+worker. To reproduce the runner, install *inside* a Node 20 container rather than mounting the
+host's `node_modules`, which holds platform-specific binaries:
+
+```bash
+docker run --rm -v "$PWD/frontend":/src -w /work node:20-alpine sh -c '
+  cp /src/package.json /src/package-lock.json /src/tsconfig.json \
+     /src/react-router.config.ts /src/vite.config.ts /work/
+  npm ci --no-audit --no-fund
+  cp -r /src/app /work/app
+  node_modules/.bin/react-router typegen && node_modules/.bin/tsc
+'
+```
+
+To add a dependency without touching the host's `node_modules` at all:
 
 ```bash
 docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine \
@@ -338,39 +464,68 @@ docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine \
 
 ### Tests
 
+296 backend tests across 18 modules:
+
 ```bash
 docker compose exec backend python -m pytest tests/ -q
 ```
 
 ```
-........................................................................ [100%]
-243 passed in 10.62s
+........................................................................ [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+........................................................................ [ 97%]
+........                                                                 [100%]
+296 passed, 2 warnings in 28.34s
 ```
 
 The suite runs against SQLite, so it needs neither Postgres nor any API key: the ranker is mocked,
 and so is every provider call the chat feature makes. That is also why it is fast. For the same
-reason it runs fine outside Docker, from any virtualenv with `requirements.txt` installed:
+reason it runs fine outside Docker, from any virtualenv with `requirements.txt` installed — it
+wants only `DATABASE_URL` and a `JWT_SECRET` of at least 32 bytes, and `conftest.py` will
+`setdefault` both:
 
 ```bash
 cd backend && .venv/bin/python -m pytest tests/ -q
 ```
 
-Because `conftest.py` builds the schema with `Base.metadata.create_all`, the suite never runs a
-migration and a broken one would pass every test. CI's `migrations` job is the only thing that
-catches that, and it round-trips upgrade → downgrade → upgrade against real Postgres.
+The frontend has 98 of its own, in 8 files:
+
+```bash
+cd frontend && npm test
+```
+
+```
+ Test Files  8 passed (8)
+      Tests  98 passed (98)
+```
+
+Two of those files are guards rather than unit tests. `themes.test.ts` fails when
+`app/lib/themes.ts` and `app/themes.css` disagree about which palettes exist or which roles they
+fill, and `no-hardcoded-colours.test.ts` fails when any component names a Tailwind colour instead
+of a role token — on five of the seven palettes a stray `text-zinc-500` is not merely off-brand,
+it is a paragraph nobody can read, and no DOM test would catch it.
+
+Because `conftest.py` builds the schema with `Base.metadata.create_all`, the backend suite never
+runs a migration and a broken one would pass every test. CI's `migrations` job is the only thing
+that catches that, and it round-trips upgrade → downgrade → upgrade against real Postgres.
 
 ### Running outside Docker
-
-A stale `backend/venv/` may still be sitting on disk from before it was untracked; **its
-interpreter does not work**. Ignore it and build your own:
 
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python -m nltk.downloader wordnet omw-1.4     # not bundled with the nltk package
 alembic upgrade head
 uvicorn main:app --reload --port 8700
 ```
+
+The corpus download is not optional. `nltk.corpus.wordnet` is a lazy loader, so importing
+`services/vocab.py` succeeds without it and the failure arrives later, as a `LookupError` on the
+first ladder built — which is a confusing way to be told your install is incomplete. The
+Dockerfile does the same fetch at build time, which is why the container needs no network on its
+first roll.
 
 ```bash
 cd frontend && npm install && npm run dev     # http://localhost:5173
@@ -382,25 +537,34 @@ never calls the backend directly, there is no CORS to configure for this path.
 
 ## 📌 Project status
 
-The ladder, the note surface, persistence, and vocabulary analysis are wired end to end. What is
-not:
+The ladder, the note surface, persistence, vocabulary analysis, chats and themes are wired end to
+end. What is not:
 
-- **No chat has spoken to a real model yet.** The plumbing is verified to the provider boundary
-  and no further: with a deliberately invalid key it reaches Anthropic and returns a real 401, so
-  decryption, client construction, the request and the error path all work — but an actual reply
-  and an actual three-part summary have not been observed, because there was no key to observe
-  them with. The OpenAI default model id is likewise unverified; the settings form lets you
-  correct it in one field.
+- **No chat here has spoken to a real model.** There has never been a provider key on the machine
+  this was built on, so everything up to the provider boundary is verified and nothing past it is:
+  an actual reply, and an actual three-part summary, have not been observed. What *was* seen is a
+  genuine 401 from Anthropic with a deliberately invalid key, so decryption, client construction,
+  the request and the error path all work. Saving a key now proves rather more than it used to —
+  the provider has to answer with a model list before anything is written, and on the two gateways
+  it has to accept a real one-token request as well — so any key that reached the table has
+  demonstrably worked at least once.
 - **Chat replies arrive whole, not streamed.** A long answer is a long wait with nothing on screen
-  but "Thinking…".
+  but "Thinking…". LangChain's `.stream()` would fix it, but a React Router action returns once,
+  so it needs a resource route serving a stream and a reader on the client: a real change, not a
+  flag.
 - **A finished chat is closed.** Summarising it refuses further turns, because a summary that no
   longer describes its conversation is worse than no summary.
-
-- **There is no password reset and no way to change a password.** Losing one means a new account
-  or an `UPDATE` by hand. Registration being invite-only is what makes that survivable for now.
-- **There is no refresh flow.** Signing out revokes the token it was given, and only that one, so
-  other sessions on the same account keep working — but a token nobody signs out stays valid for
-  its full seven days. Rotating `JWT_SECRET` still invalidates every session at once.
+- **Signing out of the web app does not revoke the token.** `POST /api/auth/logout` records the
+  token's `jti` and refuses it from then on — but the app's own Sign out posts to the *frontend's*
+  `/logout`, which only drops the session cookie this server set. Nothing in `app/lib/api.server.ts`
+  calls the API's logout route, so the token inside that cookie stays valid until it expires and
+  revocation is reachable today from `curl` and `/docs` rather than from the button.
+- **There is no password reset and no way to change a password.** `PATCH /api/users/me` accepts a
+  username and an email and nothing else. Losing a password means a new account or an `UPDATE` by
+  hand. Registration being invite-only is what makes that survivable for now.
+- **There is no refresh flow.** A token nobody revokes stays valid for its full seven days.
+  Rotating `JWT_SECRET` invalidates every session at once — and, because the credential cipher is
+  derived from it, orphans every stored provider key along with them.
 - **Acronyms and jargon have no ladder.** `ML` resolves to *millilitre*; `API` and `GPU` have no
   WordNet entry at all. This is a lexicon gap, not a ranking one, so nothing downstream can fix
   it — it needs either a guard that declines on unknown tokens or an open-vocabulary fallback.
@@ -411,11 +575,22 @@ not:
   rungs come back ("escape" for "run"). Ranking by embedding similarity is also a weaker signal
   than the masked language model it replaced: it asks whether a substitution preserves the
   sentence's meaning, not whether it is grammatical.
-- **Dark mode does not exist**, and the ornament layer in `DESIGN.md` §6 is specified but unbuilt.
+- **Both ghost cards write a row on click**, before anything is typed. The `+` leaves an empty
+  `Untitled` note which, being the most recently touched, then takes over the landing page; its
+  chat twin leaves a card reading "Nothing said yet." that never leaves the grid.
+- **`/analytics` has not been through the design pass.** It came onto the colour tokens with the
+  themes, but it is still a bold sans heading over a `flex-wrap` cloud. The ornament layer in
+  `DESIGN.md` §6 is likewise specified but unbuilt, and blocked on assets rather than on code.
+- **`alembic check` cannot be used as a drift gate.** `invite_codes` and `revoked_tokens` were
+  migrated with a unique *constraint* plus a plain index, while their models declare
+  `unique=True, index=True`, which SQLAlchemy renders as a unique *index*. Functionally identical,
+  and the round-trip job passes, so nothing is broken — `check` simply reports drift that is not
+  there.
 - **The old `.env` is still in git history.** The tracked copy is gone and `.env` is ignored now,
   but this repo is public, so the Postgres password that was in it is permanently exposed. It has
   been rotated, and `DATABASE_URL` no longer has a hardcoded fallback, so the leaked value is dead.
   No history rewrite was done.
 
 `PROGRESS.md` carries the full open-items list and 34 documented traps that cost real time — read
-it before touching the UI. It is current as of PR #34.
+it before touching the UI. Both it and this file were last checked against the code on 2026-08-20,
+on `feature/three-more-palettes`.

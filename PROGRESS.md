@@ -10,10 +10,16 @@ Companion documents:
   what is applied and what is still outstanding.
 - [README.md](README.md) — what the app is, the API, and setup.
 
-Last updated: 2026-08-19 · branch `feature/ai-chats` (PR #34, into `dev`).
-`dev` is at the merge of #31; `master` is 34 behind it and stale; `prod` is at
-the merge of #26, 9 behind `dev`. Checking out an older branch is dangerous —
-see traps 22 and 24.
+Last updated: 2026-08-20 · branch `feature/three-more-palettes`. Since #34 this
+has taken on #36 (compact grid cards), #37 (a new element per note), #39 (Neon),
+#40 (palettes), the three extra palettes, and per-provider keys with a model
+picker in the chat. `master` is well behind and stale; `prod` is older still.
+Checking out an older branch is dangerous — see traps 22 and 24.
+
+This whole file was re-checked against the code on 2026-08-20, and several
+entries that had gone stale were corrected rather than left as history. Where an
+item was simply *done*, it says so instead of being deleted, because the reason
+it existed is often still worth reading.
 
 **This repo is worked on by more than one session at a time.** During this
 session another one committed into the shared working tree, and its commits
@@ -41,6 +47,11 @@ reader supplies on `/settings`, and finishing one writes a three-part summary
 that becomes what its card in the library shows. It is *not* a note and does
 not share the note surface — see §3.
 
+Since #40 there is also a **palette**, chosen on `/settings` and held in a
+cookie the root loader reads. Seven of them, five dark. Every colour in the app
+now goes through one of ten role tokens, and a test fails the build if a
+component names a Tailwind colour instead — see §3.
+
 ---
 
 ## 2. Stack and how to run it
@@ -56,13 +67,18 @@ not share the note surface — see §3.
 docker compose up -d --build
 ```
 
-Frontend on `:3000`, API on `:8000`. The backend entrypoint runs
-`alembic upgrade head` before uvicorn. The database is Neon, so there is no
-`db` service and no healthcheck gate.
+Frontend on `:3700`, API on `:8700` from the host (`FRONTEND_PORT` /
+`BACKEND_PORT`); inside the compose network they are still `:3000` and `:8000`.
+The backend entrypoint runs `alembic upgrade head` before uvicorn. The database
+is Neon, so there is no `db` service and no healthcheck gate.
 
-**There is no Node on the host.** Typecheck through Docker — but *not* by
-mounting the host's `node_modules`, which holds macOS-only rolldown bindings
-(trap 34). Install linux deps in the container, as CI does:
+**There is Node on the host now, and `npm run typecheck` / `npm test` /
+`npm run build` all work there** — that is the fast path, and it is what CI
+runs. What the host cannot tell you is whether something works on **Node 20**,
+which is what CI and the image pin while the host is newer; `jsdom` is held
+below 30 for exactly that reason. To check that, install linux deps in a
+container — *not* by mounting the host's `node_modules`, which holds
+platform-specific bindings (trap 34):
 
 ```bash
 docker run --rm -v "$PWD/frontend":/src -w /work node:20-alpine sh -c '
@@ -85,8 +101,9 @@ To add a dependency without touching the host's `node_modules`:
 docker run --rm -v "$PWD/frontend":/app -w /app node:20-alpine npm install --package-lock-only --save <pkg>
 ```
 
-The committed `backend/venv` is broken — do not try to use it. Run backend work
-in the container.
+There is no `backend/venv` any more. Backend work runs either in the container
+(`docker compose exec backend …`) or from `backend/.venv-test`, which is
+gitignored, built with `uv`, and what the 296 tests were last run from.
 
 ---
 
@@ -137,7 +154,13 @@ values. That approach was built, tried, and deleted — see
 | `app/routes/chats.tsx` | Action-only resource route: create and delete, the things you do to a chat from outside one |
 | `app/lib/local-time.tsx` | Timestamps without a hydration mismatch — see trap 31 |
 | `app/routes/notes.tsx` | The action for **every** note mutation. No loader — reads the list from the layout |
-| `app/app.css` | Design tokens: paper/ink/rose palette, Playfair + EB Garamond |
+| `app/app.css` | Layout, motion and type: Playfair + EB Garamond, the page-enter animation, the note-preview mask |
+| `app/themes.css` | The seven palettes. One `[data-theme]` block each, ten role tokens apiece. `@theme inline` is what makes them swappable — a plain `@theme` would compile the values into the utilities as literals |
+| `app/lib/themes.ts` | The registry: id, label, appearance. Metadata only, no colours — `themes.test.ts` asserts it agrees with the CSS |
+| `app/lib/theme.server.ts` | The palette cookie. Deliberately *not* HttpOnly, unlike the session cookie: it is a colour preference, and hiding it would rule out ever reading it on the client |
+| `app/chat/model-picker.tsx` | Two native selects above the composer. Only providers the account holds a key for, only models that key actually reached |
+| `app/routes/api.active-model.tsx` | Action-only route for the picker. Not an intent on the chat's action: the choice belongs to the account, and posting it there would revalidate a transcript to change a dropdown |
+| `app/routes/api.vocabulary.tsx` | Action-only route for the flashcard dialog. Outside the layout for the same reason as the ladder |
 | `app/lib/api.server.ts` | Server-only typed API client. The browser never calls the backend directly |
 | `app/routes/api.word-ladder.tsx` | Loader-only resource route feeding the roller. Outside the layout on purpose — a lookup inside it would revalidate the note list on every chevron click |
 | `backend/app/services/vocab.py` | The ladder: unit detection, WordNet candidates, frequency ordering. Pure apart from calling the ranker |
@@ -151,7 +174,7 @@ values. That approach was built, tried, and deleted — see
 | `backend/app/services/conversation_summary.py` | The three parts, via `with_structured_output`. Returns `None` on any failure, like `ranker.py` |
 | `backend/app/core/secrets.py` | Fernet encryption for the reader's API key, HKDF-derived from `JWT_SECRET`. `decrypt` fails closed to `None` |
 | `backend/app/api/chats.py` | Chats. Three distinct refusals (409 no key, 409 finished, 502 provider), and it scrubs the key out of provider errors — trap 33 |
-| `backend/app/api/settings.py` | The provider credential. `GET` returns the last four characters of the key and nothing more |
+| `backend/app/api/settings.py` | The provider credentials. `GET` returns the last four characters of a key and nothing more. Saving one calls the provider **first**, so a key that will not work is refused in the dialog that asked for it rather than at someone's first question |
 
 ### Data flow
 
@@ -178,9 +201,17 @@ values. That approach was built, tried, and deleted — see
   `chat.updated_at` by hand for the same reason: appending to a relationship
   does not dirty the parent's own columns.
 - Migration `f2b6c48e0d19` adds `provider_credentials`, `chats` and
-  `chat_messages`. One credential row **per user**, not per provider: picking a
-  different provider is a change of mind, not a second credential, and a set of
-  stored keys would need an "active" flag to keep in step with.
+  `chat_messages`. Migration `a9d3c17b52f4` then made credentials **one row per
+  provider per user** and moved the selection onto the user as
+  `active_provider` / `active_model`. The earlier note here argued for one row
+  per user, on the grounds that a set of keys would need an "active" flag to
+  keep in step with. That objection was right and is answered rather than
+  ignored: the flag does not live on the credential, it lives on the user, so
+  there is still exactly one place that says what the account chats with. What
+  the change buys is that holding an Anthropic key and an OpenAI key no longer
+  means re-pasting one to go back to it, which is what makes a model picker in
+  the chat worth having at all. Each row also caches the model list the key
+  returned when it was last checked.
 - `chats.summarized_at` is the *only* test for "finished". A separate status
   column would be a second fact to keep in step, and the two would disagree.
   The four summary columns are written together by `store_summary` or not at
@@ -217,12 +248,14 @@ caret ─▶ unit          longest known phrase, else the word, article folded i
       ─▶ rungs         survivors, ordered by word frequency
 ```
 
-Two environment switches, both defaulting on/standard:
+Three environment switches. `MLM_MODEL` is gone with the local masked LM it
+named; the ranker is a hosted call now and nothing is baked into the image:
 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word |
-| `MLM_MODEL` | `distilbert-base-uncased` | Baked into the image at build time |
+| `HF_TOKEN` | unset | Credentials for the hosted ranker. Unset behaves like `LADDER_RANKING=off`, and `ranker.enabled()` checks it *before* any request so a token-less install never waits out a timeout to discover it |
+| `HF_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | The embedding model the ranker calls |
 
 Cached in `word_ladders`, keyed `(word, context_hash)`. The hash is empty when
 ranking is off — a dictionary ladder depends on nothing but the word, so it
@@ -589,11 +622,12 @@ it is: a real reply, and a real three-part summary, have **not** been seen. What
 decryption, client construction, the network call and the error path do work.
 The first thing to do with a real key is send one message and finish one chat.
 
-**`gpt-5.1` is a guess.** The OpenAI default in `services/llm.py` could not be
-checked against anything — no key, and the id postdates what was verifiable
-here. Anthropic's `claude-opus-5` was confirmed. The settings form exposes an
-editable model field precisely so a wrong default costs one field rather than
-the feature, but the default itself should be checked by whoever has a key.
+~~**`gpt-5.1` is a guess.**~~ **No longer load-bearing.** The registry defaults
+are now only a *preference*: saving a key fetches the provider's real catalogue,
+and `settings._preferred` uses the registry's default solely if the provider
+still lists it, else the first id it does list. A stale default therefore costs
+nothing, and the editable model field it used to justify is gone — the model is
+picked in the chat, from what the key actually reached.
 
 **`alembic check` is red on `dev`, and was before #34.** `invite_codes` and
 `revoked_tokens` were migrated with a unique *constraint* plus a plain index,
@@ -604,12 +638,22 @@ as a drift gate. The three tables added by `f2b6c48e0d19` are clean, because
 that migration writes `create_index(..., unique=True)` to match. Fixing the two
 old tables is a small migration nobody has needed yet.
 
-**Authentication landed (#22, #23).** Invite-only registration, a JWT in an
-HttpOnly cookie set by the React Router server, a single seven-day token, and
-every route scoped to its owner. What it does *not* have: a password reset, and
-any way to revoke a token before it expires. Rotating `JWT_SECRET` invalidates
-every session at once and is the only lever. Accounts come from
-`python -m app.cli issue-invite` or `create-user`.
+**Authentication landed (#22, #23), and revocation with #26.** Invite-only
+registration, a JWT in an HttpOnly cookie set by the React Router server, a
+seven-day token, and every route scoped to its owner. Accounts come from
+`python -m app.cli issue-invite` or `create-user`. Still missing: a password
+reset, and any way to change a password at all — `UserUpdate` carries a username
+and an email and nothing else.
+
+**The Sign out button does not reach the revocation it was built for.**
+`POST /api/auth/logout` records the token's `jti` in `revoked_tokens` and
+`deps.get_current_user_optional` honours it on every request, so revocation
+works. But the app's Sign out posts to the *frontend's* `/logout`
+(`routes/logout.tsx`), which only clears the session cookie this server set —
+nothing in `lib/api.server.ts` calls the API route at all. So the token inside
+that cookie stays valid for its remaining seven days, and the feature is
+reachable today only from `curl` or `/docs`. Fix is one call in the frontend's
+logout action, which needs the token before it destroys the cookie.
 
 **Before this faces the internet.** `docker-compose.prod.yml` now covers most
 of it: only Caddy is published, it terminates TLS and gets its own certificate,
@@ -658,24 +702,37 @@ deploys them, and there is no password reset.
    way back to `/` is the browser's back button. Decide between: make those
    actions also return to `/`, or give the bare library its own quiet exit.
 
-5. **Vocabulary analysis is not wired up.** `notegrid.tsx` still calls
-   `http://127.0.0.1:8000/api/analyze/vocabulary` **directly from the browser** —
-   the last place that bypasses the server-only API client — and the endpoint
-   does not exist. See the `TODO(step 6)` in that file.
+5. ~~**Vocabulary analysis is not wired up.**~~ **Done.** The endpoint exists
+   (`POST /api/analyze/vocabulary`), and nothing calls it from the browser any
+   more: the analytics page runs it in its loader over every note joined
+   together, and the grid's flashcard dialog posts to the `api.vocabulary`
+   resource route. That route is deliberately outside the workspace layout, for
+   the same reason `api.word-ladder` is — a fetcher submission inside it would
+   revalidate the whole note list every time the dialog opens.
 
-6. **Dark mode does not exist.** The paper ramp is light-only and `app.css`
-   pins `color-scheme: light`.
+6. ~~**Dark mode does not exist.**~~ **Done, and generalised past dark mode.**
+   The ramp is ten role tokens per palette in `frontend/app/themes.css`,
+   selected by `data-theme` on `<html>`; seven palettes ship and five are dark.
+   The choice is a cookie resolved in the root loader, so the server's first
+   byte is already in the right colours. `color-scheme` is set per palette. Two
+   tests hold it together: `themes.test.ts` fails when the CSS and
+   `lib/themes.ts` disagree, and `no-hardcoded-colours.test.ts` fails when a
+   component names a Tailwind colour instead of a role.
 
 7. **The ornament layer (DESIGN.md §6) is unbuilt.** Needs real SVG line art;
-   it is specified but has no assets.
+   it is specified but has no assets. This is the only item in DESIGN.md §12's
+   "Remaining" list that is blocked on something other than code.
 
-8. **`components/ui/*` is unmigrated** — still shadcn defaults, off the design
-   tokens.
+8. ~~**`components/ui/*` is unmigrated**~~ **Done** — they sit on the role
+   tokens now, which the themes work required, and the no-hardcoded-colours
+   test covers them along with everything else.
 
 9. **`/analytics` and `/settings` are outside the workspace layout.**
-   `/settings` is no longer a placeholder — it carries the AI provider section
-   now, in the house style — but neither page has been through the DESIGN.md
-   migration, and `/analytics` is still un-migrated in full.
+   `/settings` has since been through the house form — an identity card, the
+   theme picker, the provider section with its add-key dialog — but
+   `/analytics` has only been brought onto the colour tokens, and is still a
+   bold sans heading over a `flex-wrap` cloud. Neither page has been through
+   §9's navigation rules.
 
 9b. **A finished chat cannot be reopened, extended, or branched.** Summarising
    closes it: `POST /messages` answers 409 once `summarized_at` is set. Deciding
@@ -688,22 +745,15 @@ deploys them, and there is no password reset.
    fix it, but React Router actions return once, so it needs a resource route
    returning a stream and a reader on the client — a real change, not a flag.
 
-9a. **`backend/venv` cannot run the app — rebuild it when off a metered
-   connection.** The interpreter is fine (3.12.13) but only 16 packages are
-   installed, and `fastapi`, `uvicorn`, `SQLAlchemy`, `alembic` and `pytest` are
-   not among them: `venv/bin/python -c "import main"` dies on
-   `ModuleNotFoundError: No module named 'fastapi'`. It is the scratch env for
-   `app/services/run_once.py` (the only importer of `wn` and `defusedxml`,
-   neither of which belongs in `requirements.txt`), not a stale backend env.
-   Fix is `venv/bin/pip install -r requirements.txt`. That used to pull torch
-   and transformers and was deferred as a large download; it no longer does
-   (the ranker became a hosted call), so this is now a small install and the
-   reason for deferring it is gone. **There is already a working test env at
-   `backend/.venv-test`** — gitignored, built with `uv`, and what the 243 tests
-   were last run from. The `psycopg2-binary` pin against the venv's
-   `psycopg` 3 is *not* a conflict: SQLAlchemy resolves the bare `postgresql://`
-   URL in `app/db/database.py:12` to psycopg2, and `run_once.py` uses psycopg 3
-   on its own. See SAFETY-UPDATES.md.
+9a. ~~**`backend/venv` cannot run the app.**~~ **Gone.** That directory is no
+   longer on disk. Backend work runs in the container or from
+   `backend/.venv-test` — gitignored, built with `uv`, and what the 296 tests
+   were last run from. `run_once.py` remains the only importer of `wn` and
+   `defusedxml`, neither of which belongs in `requirements.txt`; it is a
+   one-off script, not part of the app. The `psycopg2-binary` pin is not a
+   conflict with a venv holding `psycopg` 3: SQLAlchemy resolves the bare
+   `postgresql://` URL in `app/db/database.py` to psycopg2, and `run_once.py`
+   uses psycopg 3 on its own. See SAFETY-UPDATES.md.
 
 10. ~~**The root `.gitignore` is UTF-16 encoded.**~~ **Fixed.** Both ignore files
    are UTF-8 now and 5,914 files were dropped from the index: `backend/venv/`
@@ -723,10 +773,11 @@ deploys them, and there is no password reset.
 
 ## 8. Verification habits that paid off
 
-- Typecheck in Docker, then `docker compose up -d --build frontend`, then drive
-  the real app in the browser. Several bugs here were invisible in the source.
-- Check the database directly after any mutation:
-  `curl -s localhost:8000/api/notes | python3 -m json.tool`.
+- Typecheck, then `docker compose up -d --build frontend`, then drive the real
+  app in the browser. Several bugs here were invisible in the source.
+- Check the API directly after any mutation, and again before you finish. Every
+  route needs a token now, so this is no longer a bare curl:
+  `curl -s -H "Authorization: Bearer $TOKEN" localhost:8700/api/notes | python3 -m json.tool`.
 - Read the console after UI changes — two crashes were only visible there.
 - **Test against a scratch note, not the user's notes.** Create one via
   `POST /api/notes`, drive it, `DELETE` it afterwards. Learned the hard way:
@@ -734,8 +785,6 @@ deploys them, and there is no password reset.
   (`Demo→Demonstration`, `model→framework`, `wanted→required`) and they were
   only caught by inspecting the API at the end. Restoring meant reconstructing
   the original text from an earlier transcript, which is luck, not process.
-- Check the database directly after any mutation, and again before you finish:
-  `curl -s localhost:8000/api/notes | python3 -m json.tool`.
 - The backend restarts when you `compose up --build frontend`, because frontend
   depends on it. A page load during that window fails with `ECONNREFUSED` and
   looks like a code bug. Check `compose ps` uptime before believing it.
