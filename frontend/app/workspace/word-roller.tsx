@@ -167,7 +167,7 @@ const SETTLE_DELAY = 350;
   lands. Deriving the tween from the timeout makes that impossible rather than
   merely unlikely.
 */
-const ROLL_MS = 260;
+const ROLL_MS = 460;
 
 /**
  * `value`, but only once it has held still for `delay`.

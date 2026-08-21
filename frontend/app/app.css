@@ -41,7 +41,7 @@ html {
   departure animates the same properties, and a forwards fill would outrank it.
 */
 .page-enter {
-  animation: page-enter 180ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: page-enter 280ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
 @keyframes page-enter {

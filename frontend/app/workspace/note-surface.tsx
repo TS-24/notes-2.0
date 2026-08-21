@@ -28,14 +28,37 @@ export type SurfaceMode = "page" | "boxed";
 export const noteLayoutId = (id: number) => `note-${id}`;
 
 /** Shared by the surface and by the cards reflowing around it. */
+/*
+  How long the surface takes to change mode.
+
+  One number, because three things have to agree on it: the layout tween below,
+  the CSS transition on the chrome, and the window the fields re-measure over.
+  As separate literals they drift, and a chrome transition outlasting its tween
+  is the heading arriving after the box it sits in.
+
+  This is the duration the app was designed at. It was never the problem: it ran
+  *after* a 190-436ms loader round trip, so the gesture took the better part of a
+  second and the tween was blamed for the wait in front of it. With that round
+  trip gone the morph starts on the frame you click, and the same 550ms reads as
+  deliberate rather than slow. Shortening it was solving the wrong half.
+*/
+const MORPH_MS = 550;
+
 export const NOTE_LAYOUT_TRANSITION = {
   type: "tween",
-  duration: 0.18,
+  duration: MORPH_MS / 1000,
   ease: [0.4, 0, 0.2, 1],
 } as const;
 
-const CHROME_TRANSITION =
-  "font-size 180ms cubic-bezier(0.4,0,0.2,1), padding 180ms cubic-bezier(0.4,0,0.2,1), background-color 180ms cubic-bezier(0.4,0,0.2,1), box-shadow 180ms cubic-bezier(0.4,0,0.2,1), min-height 180ms cubic-bezier(0.4,0,0.2,1)";
+const CHROME_TRANSITION = [
+  "font-size",
+  "padding",
+  "background-color",
+  "box-shadow",
+  "min-height",
+]
+  .map(property => `${property} ${MORPH_MS}ms cubic-bezier(0.4,0,0.2,1)`)
+  .join(", ");
 
 const TYPE = {
   page: { title: "3.25rem", body: "1.25rem" },
@@ -235,7 +258,7 @@ export default function NoteSurface({
   /*
     …and keep re-measuring for the length of the tween, not just at its ends.
 
-    The type animates for 180ms, so the fields' heights have to animate with
+    The type animates for MORPH_MS, so the fields' heights have to animate with
     it. Nothing else reports that frame by frame: each field sits in a wrapper
     that fits it exactly (the word roller measures against it), so the parent
     the ResizeObserver watches is only as tall as the height we ourselves just
@@ -248,8 +271,8 @@ export default function NoteSurface({
     // A little past the tween, so the last frame is the settled value. Every
     // frame of this forces two synchronous layouts per field, so the window is
     // kept as short as the tween allows.
-    titleField.track(220);
-    bodyField.track(220);
+    titleField.track(MORPH_MS + 40);
+    bodyField.track(MORPH_MS + 40);
     // The hooks return a fresh object each render; the callbacks themselves are
     // stable, so depend on those or this runs on every keystroke.
   }, [boxed, titleField.track, bodyField.track]);
@@ -493,7 +516,7 @@ export default function NoteSurface({
         }`}
       >
         <p
-          className="font-sans text-sm italic text-accent-ink transition-opacity duration-150"
+          className="font-sans text-sm italic text-accent-ink transition-opacity duration-500"
           style={{ opacity: boxed ? 0 : 1 }}
         >
           {lastTouched}
@@ -565,7 +588,7 @@ export default function NoteSurface({
         shift the centred text as the box arrives.
       */}
       <div
-        className="mx-auto flex h-20 w-full max-w-4xl shrink-0 items-center justify-between gap-4 transition-opacity duration-150"
+        className="mx-auto flex h-20 w-full max-w-4xl shrink-0 items-center justify-between gap-4 transition-opacity duration-500"
         style={{ opacity: boxed ? 1 : 0, pointerEvents: boxed ? "auto" : "none" }}
       >
         <div className="flex items-baseline gap-5">
