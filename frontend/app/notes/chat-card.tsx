@@ -40,7 +40,12 @@ export default function ChatCard({
 
   return (
     <motion.div
-      layout
+      /*
+        `layoutId` only, as the note card has it. A bare `layout` alongside it
+        makes framer re-measure on every render, and this card re-renders
+        whenever its delete fetcher changes state — each one able to start a
+        fresh tween of a card that is not moving.
+      */
       layoutId={chatLayoutId(data.id)}
       data-note-card
       // Single click, the same gesture a note card takes. Where they go differs

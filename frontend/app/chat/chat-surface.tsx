@@ -189,6 +189,17 @@ export default function ChatSurface({
   return (
     <motion.div
       layout
+      /*
+        Measure only when the conversation is actually moving between its two
+        states — the same guard the note surface carries, and for the same
+        reason. Left to itself framer re-measures on every render, and this
+        surface re-renders on every character typed into the composer and on
+        every fetcher transition, so it was starting a fresh tween of a box that
+        had not moved. Leaving one of those running is what made closing a chat
+        lurch: the exit projects from wherever that spurious tween had got to
+        rather than from the box on screen.
+      */
+      layoutDependency={`${mode}:${chat.id}`}
       layoutId={boxed ? chatLayoutId(chat.id) : undefined}
       transition={{ layout: NOTE_LAYOUT_TRANSITION }}
       ref={rootRef}
