@@ -9,6 +9,7 @@ import {
 import type { Route } from "./+types/workspace";
 import AccountBubble from "~/notes/account-bubble";
 import NoteSurface from "~/workspace/note-surface";
+import ChatSurface from "~/chat/chat-surface";
 import { api } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
 
@@ -30,12 +31,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Only /notes draws the account bubble, but a loader on that child would
   // refetch the account after every note edit, and this one is already running
   // and already revalidating.
-  // Chats come from the same loader as the notes so the library has one fetch
-  // and one revalidation for everything it shows.
-  const [notes, user, chats] = await Promise.all([
+  // Chats and provider settings come from the same loader so the library has
+  // one fetch and one revalidation for everything it shows — including which
+  // provider and model an open conversation runs on.
+  const [notes, user, chats, provider] = await Promise.all([
     api.listNotes(token),
     api.getCurrentUser(token),
     api.listChats(token),
+    api.getProviderSettings(token),
   ]);
 
   // An account with no notes has nothing for the surface below to render, and
@@ -52,10 +55,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       notes: [await api.createNote(token, { title: "Untitled", content: "" })],
       user,
       chats,
+      provider,
     };
   }
 
-  return { notes, user, chats };
+  return { notes, user, chats, provider };
 }
 
 export default function Workspace({ loaderData }: Route.ComponentProps) {
@@ -67,6 +71,7 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
 
   const onLanding = location.pathname === "/";
   const openId = Number(searchParams.get("open"));
+  const openChatId = Number(searchParams.get("chat"));
 
   // Landing shows whatever note was touched last; the grid shows whichever the
   // URL points at. The URL is the single source of truth for "open".
@@ -140,6 +145,28 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
           onClose={() => navigate("/notes", { replace: true })}
           onReturn={() => navigate("/")}
         />
+      )}
+
+      {/*
+        A chat opened from a card in the grid — same spot as the boxed note,
+        same chrome, same double-click to close. Only on the library, never the
+        landing page: a chat is opened from its card, and cards only appear in
+        the grid.
+      */}
+      {!onLanding && Number.isFinite(openChatId) && openChatId > 0 && (
+        (() => {
+          const chat = loaderData.chats.find(c => c.id === openChatId);
+          if (!chat) return null;
+          return (
+            <ChatSurface
+              key={chat.id}
+              chat={chat}
+              provider={loaderData.provider}
+              mode="boxed"
+              onClose={() => navigate("/notes", { replace: true })}
+            />
+          );
+        })()
       )}
 
       <Outlet />

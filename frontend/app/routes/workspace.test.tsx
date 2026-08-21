@@ -68,7 +68,9 @@ const user: User = { id: 1, username: "reader", email: "reader@example.com" };
 
 const notes = [note(1, "First"), note(2, "Second")];
 
-const loaderData = { notes, user, chats: [] };
+const provider = { available: [], configured: [], active: null };
+
+const loaderData = { notes, user, chats: [], provider };
 
 /** Root now resolves the palette for `<html>`, so the match tree carries it. */
 const rootLoaderData = { theme: DEFAULT_THEME };

@@ -2,6 +2,7 @@ import { useFetcher } from "react-router";
 import { motion } from "framer-motion";
 import { Trash2 } from "lucide-react";
 
+import { chatLayoutId } from "~/chat/chat-surface";
 import { NOTE_LAYOUT_TRANSITION } from "~/workspace/note-surface";
 import LocalTime from "~/lib/local-time";
 import type { Chat } from "~/lib/types";
@@ -15,9 +16,9 @@ import type { Chat } from "~/lib/types";
  * its text, and a chat shows what it was *about*, because nobody rereads a
  * transcript.
  *
- * No `layoutId`. A note card shares one with the note surface so it can morph
- * into it; a chat opens on its own page instead, and a shared id that nothing
- * on the other side claims would be a measurement framer keeps and never uses.
+ * Carries a `layoutId` shared with the chat surface, so opening one morphs the
+ * card into the boxed conversation on the library — the same way a note card
+ * becomes the open note.
  */
 export default function ChatCard({
   data,
@@ -40,6 +41,7 @@ export default function ChatCard({
   return (
     <motion.div
       layout
+      layoutId={chatLayoutId(data.id)}
       data-note-card
       onDoubleClick={event => {
         if ((event.target as HTMLElement).closest("button")) return;

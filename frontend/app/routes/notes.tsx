@@ -84,12 +84,14 @@ export default function Notes() {
   };
   const [searchParams] = useSearchParams();
   const open = Number(searchParams.get("open"));
+  const chat = Number(searchParams.get("chat"));
 
   return (
     <Notegrid
       notes={workspace.notes}
       chats={workspace.chats}
       openNoteId={Number.isFinite(open) && open > 0 ? open : null}
+      openChatId={Number.isFinite(chat) && chat > 0 ? chat : null}
     />
   );
 }

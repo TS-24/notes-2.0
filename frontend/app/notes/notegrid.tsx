@@ -313,26 +313,31 @@ export default function Notegrid({
   notes,
   chats = [],
   openNoteId = null,
+  openChatId = null,
 }: {
   notes: Note[];
   /** Conversations, shown beside the notes. Same library, two kinds of thing. */
   chats?: Chat[];
   /** Set when the landing hero handed a note over to be opened on arrival. */
   openNoteId?: number | null;
+  /** Set when a chat is open as an overlay on the library. */
+  openChatId?: number | null;
 }) {
   // The open note is the workspace layout's, not the grid's — the grid only
   // has to leave a gap where it went. `?open=` is the single source of truth,
   // so opening is a URL change rather than local state.
+  // Same for chats: the open chat lives above the grid, so filter it out.
   const navigate = useNavigate();
   const createFetcher = useFetcher<{ ok: boolean; id?: number }>();
   const chatFetcher = useFetcher<{ ok: boolean; id?: number }>();
 
   const gridNotes = notes.filter(n => n.id !== openNoteId);
   const pinnedNotes = gridNotes.filter(n => n.is_pinned);
+  const gridChats = openChatId ? chats.filter(c => c.id !== openChatId) : chats;
   // Interleaved by when they were last touched, not grouped by kind: the
   // library is a record of what you were working on, and splitting it into a
   // notes half and a chats half would make it two records instead.
-  const rest: GridItem[] = [...gridNotes.filter(n => !n.is_pinned), ...chats].sort(
+  const rest: GridItem[] = [...gridNotes.filter(n => !n.is_pinned), ...gridChats].sort(
     (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
   );
 
@@ -342,7 +347,7 @@ export default function Notegrid({
   );
 
   const handleOpenChat = useCallback(
-    (chat: Chat) => navigate(`/chats/${chat.id}`),
+    (chat: Chat) => navigate(`/notes?chat=${chat.id}`, { preventScrollReset: true }),
     [navigate],
   );
 
@@ -373,7 +378,7 @@ export default function Notegrid({
     const id = chatFetcher.data?.id;
     if (chatFetcher.state !== "idle" || !id || openedChat.current) return;
     openedChat.current = true;
-    navigate(`/chats/${id}`);
+    navigate(`/notes?chat=${id}`, { preventScrollReset: true });
   }, [chatFetcher.state, chatFetcher.data, navigate]);
 
   /*

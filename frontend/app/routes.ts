@@ -19,10 +19,10 @@ export default [
     ]),
     route("analytics", "routes/analytics.tsx"),
     route("settings", "routes/menu.tsx"),
-    // Chats sit outside the workspace layout for the same reason /analytics
-    // does: that layout renders the focused *note*, and a conversation is a
-    // different object. "chats" is action-only — starting and deleting one from
-    // the library — and "chats/:chatId" is the conversation itself.
+    // Chat routes are action-only: the conversation itself renders as a boxed
+    // overlay inside the workspace layout, morphing from its card in the grid.
+    // "chats" handles create/delete from the library; "chats/:chatId" handles
+    // send/finish from the overlay fetchers.
     route("chats", "routes/chats.tsx"),
     route("chats/:chatId", "routes/chat.tsx"),
     // Resource route (loader only, no component). Deliberately outside the
