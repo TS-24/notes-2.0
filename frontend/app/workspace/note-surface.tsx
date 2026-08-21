@@ -148,9 +148,22 @@ function useAutoHeight() {
     [measure],
   );
 
+  /*
+    Cancelling the frame has to clear the handle too, or nothing ever tracks again.
+
+    React runs an effect's setup, cleanup and setup again on mount. The first
+    pass started a loop; this cleanup cancelled the frame but left
+    `frame.current` holding its id; and every later call read that stale id as
+    "a loop is already running" and returned without starting one. So `track`
+    was dead for the life of the component and the per-frame remeasure it exists
+    for never happened — leaving the ResizeObserver below to do all of it, one
+    callback per write, which is what overflowed its loop (240 "undelivered
+    notifications" across a single 550ms morph).
+  */
   useEffect(
     () => () => {
       if (frame.current) cancelAnimationFrame(frame.current);
+      frame.current = 0;
     },
     [],
   );
