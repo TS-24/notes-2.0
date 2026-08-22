@@ -108,8 +108,15 @@ function mount(conversationId: number | null) {
         await new Promise(resolve => setTimeout(resolve, 0));
       });
     },
-    type: (text: string) =>
-      act(() => {
+    type: async (text: string) => {
+      // The body renders its markdown until it is written in, so getting at the
+      // field means asking for it first — the same click a reader makes.
+      await act(async () => {
+        container
+          .querySelector("[data-note-body]")
+          ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      });
+      await act(async () => {
         const field = container.querySelector<HTMLTextAreaElement>(
           'textarea[aria-label="Note text"]',
         )!;
@@ -118,7 +125,8 @@ function mount(conversationId: number | null) {
           "value",
         )!.set!.call(field, text);
         field.dispatchEvent(new Event("input", { bubbles: true }));
-      }),
+      });
+    },
   };
 }
 

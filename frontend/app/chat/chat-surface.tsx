@@ -9,6 +9,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { CornerDownLeft, Sparkles } from "lucide-react";
 
 import ModelPicker from "~/chat/model-picker";
+import Markdown from "~/notes/markdown";
 import {
   CHROME_TRANSITION,
   fitToText,
@@ -473,8 +474,14 @@ export default function ChatSurface({
                             </Bubble>
                           ) : (
                             <Bubble variant="muted" className="max-w-none">
-                              <BubbleContent className="max-w-[76ch] rounded-3xl px-7 py-5 text-lg leading-relaxed text-ink/85 whitespace-pre-line">
-                                {message.content}
+                              {/* Rendered: models write markdown whether or not
+                                  anything is listening, so the alternative is
+                                  not plain prose — it is asterisks and hashes
+                                  in the middle of the answer. `remark-breaks`
+                                  keeps the line breaks `whitespace-pre-line`
+                                  used to carry. */}
+                              <BubbleContent className="max-w-[76ch] rounded-3xl px-7 py-5 text-lg leading-relaxed text-ink/85">
+                                <Markdown>{message.content}</Markdown>
                               </BubbleContent>
                             </Bubble>
                           )}
