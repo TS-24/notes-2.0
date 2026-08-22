@@ -41,6 +41,7 @@ const chat: Chat = {
   id: 7,
   user_id: 1,
   title: "About the tides",
+  note_id: 3,
   created_at: NOW,
   updated_at: NOW,
   messages: [
