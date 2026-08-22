@@ -37,6 +37,7 @@ const chat: Chat = {
   id: 7,
   user_id: 1,
   title: "what makes a spring tide",
+  note_id: 3,
   created_at: NOW,
   updated_at: NOW,
   messages: [],
