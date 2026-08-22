@@ -113,6 +113,24 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
       ? (loaderData.chats.find(c => c.note_id === focused.id)?.id ?? null)
       : null;
 
+  /*
+    The conversation to show in the note's place, if the URL asks for one.
+
+    It has to be *this note's* conversation: `?chat=` naming a chat that belongs
+    to some other note would put a conversation where its own note is not, and
+    closing it would land on a note it was never about. The binding is
+    one-to-one, so this is a single comparison rather than a rule.
+
+    Not on the landing page. There the note is the whole screen and has no
+    chrome to start a conversation from — DESIGN.md §9 rule 8.
+  */
+  const conversation =
+    !onLanding && focused
+      ? (loaderData.chats.find(
+          c => c.id === openChatId && c.note_id === focused.id,
+        ) ?? null)
+      : null;
+
   // Opening a note counts as an update, so it becomes "where you left off".
   // Guarded by id so revalidation does not re-touch in a loop.
   const touched = useRef<number | null>(null);
@@ -153,10 +171,21 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
       )}
 
       {/*
-        No exit link: double clicking the note toggles between its own page and
-        the library, in both directions, so the gesture is the navigation.
+        The note, or the conversation it belongs to — one at a time, in the same
+        place.
+
+        That is what makes leaving a conversation an animation rather than a
+        cut. The two share `noteLayoutId(note.id)`, so when one unmounts and the
+        other mounts in the same commit Framer moves a single box between two
+        shapes. Rendering both and hiding one would defeat it: a layoutId moving
+        between two *live* elements is the crossfade that once left this page
+        blank with the note still in it (see the `key` note below).
+
+        No exit link on either: double clicking the note toggles between its own
+        page and the library, and double clicking the conversation closes it, so
+        the gesture is the navigation.
       */}
-      {focused && (
+      {focused && !conversation && (
         <NoteSurface
           /*
             Keyed by the note, so switching notes mounts a fresh surface rather
@@ -182,27 +211,19 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
         />
       )}
 
-      {/*
-        A chat opened from a card in the grid — same spot as the boxed note,
-        same chrome, same double-click to close. Only on the library, never the
-        landing page: a chat is opened from its card, and cards only appear in
-        the grid.
-      */}
-      {!onLanding && Number.isFinite(openChatId) && openChatId > 0 && (
-        (() => {
-          const chat = loaderData.chats.find(c => c.id === openChatId);
-          if (!chat) return null;
-          return (
-            <ChatSurface
-              key={chat.id}
-              chat={chat}
-              provider={loaderData.provider}
-              mode="boxed"
-              onClose={() => navigate("/notes", { replace: true })}
-              onReturn={() => navigate(`/chats/${chat.id}`)}
-            />
-          );
-        })()
+      {conversation && (
+        <ChatSurface
+          key={conversation.id}
+          chat={conversation}
+          provider={loaderData.provider}
+          /*
+            Closing goes to the note, not to the library. A conversation is
+            what a note was talked about, so the thing behind it is the note —
+            and after finishing, the note is where the conversation ended up.
+            `replace` so the back button does not walk into the chat again.
+          */
+          onClose={() => navigate(`/notes?open=${conversation.note_id}`, { replace: true })}
+        />
       )}
 
       <Outlet />

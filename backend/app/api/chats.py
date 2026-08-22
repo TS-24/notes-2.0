@@ -4,12 +4,17 @@ AI chats: the conversation, and the summary that outlives it.
 Ownership follows notes.py exactly — one `_owned_chat` helper, checked before
 anything is written, and one shared 404 for "missing" and "not yours" alike.
 
-The three refusals here are deliberately distinct, because the reader can do
+The two refusals here are deliberately distinct, because the reader can do
 something different about each:
 
     409  no usable key on file      → go to /settings and add one
-    409  the chat is already done   → start a new one
     502  the provider would not     → try again; nothing was lost
+
+There used to be a third — talking into a finished chat was a 409 — and it is
+gone. Finishing is a checkpoint, not a door: saying something else takes the
+conversation up again and clears the summary, because a summary describes a
+finished conversation and that one is not finished any more. What the reader
+keeps either way is the note, which holds the last summary as text.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -49,12 +54,6 @@ NO_CREDENTIAL = HTTPException(
 # Leads every provider failure, so the first thing read is a sentence rather
 # than an SDK's error repr. Check your key is the common case by a wide margin.
 PROVIDER_REFUSED = "Your provider would not answer. Check the key and model in settings."
-
-ALREADY_FINISHED = HTTPException(
-    status_code=status.HTTP_409_CONFLICT,
-    detail="This conversation has been summarised and is closed. Start a new one.",
-)
-
 
 def _owned_chat(db: Session, chat_id: int, user: User) -> Chat:
     """This user's chat, or a 404. Called before any write, never after."""
@@ -225,15 +224,16 @@ def send_message(
     rendering a transcript, and one shape for "here is the conversation now" is
     fewer states for it to be in than a delta the client has to splice.
 
+    A finished conversation takes this as well as a live one. Finishing is a
+    checkpoint: saying something else picks the conversation back up, and
+    `crud.chat.add_exchange` clears the summary as it does so.
+
     Order matters here. The reader's turn is *not* stored before the provider
     answers — a refusal would otherwise leave a question hanging in the
     transcript, which the next request would resend and the summary would have
     to describe. Both turns land together or neither does.
     """
     chat = _owned_chat(db, chat_id, current_user)
-    if chat.summarized_at is not None:
-        raise ALREADY_FINISHED
-
     provider, api_key, model = _credential(db, current_user)
     turns = [(m.role, m.content) for m in chat.messages] + [("user", payload.content)]
 
@@ -256,18 +256,28 @@ def send_message(
     return _read(crud_chat.add_exchange(db, chat, payload.content, answer))
 
 
-def _named_by(summary, note) -> str:
+def _named_by(summary, note, chat: Chat) -> str:
     """The note's title after a summary: the suggestion, or the one it has.
 
-    A name the reader typed is theirs and is not overwritten by a model's guess
-    — even a better one. Only a note still carrying a placeholder takes the
-    suggestion, which is exactly the case a chat started from the library
-    produces: a note called "Untitled" with the conversation's text in it.
+    A name the reader typed is theirs and is not overwritten by a model's guess,
+    even a better one. A name the *app* chose is not theirs, and a summary knows
+    the conversation better than its opening line did — so a note still called
+    "Untitled", or still carrying the first question verbatim, takes the
+    suggestion.
+
+    Those are the two names the app gives out: `crud.chat.create_chat` writes
+    the placeholder, and `add_exchange` writes the first question. Anything else
+    in this field was typed by somebody.
     """
     suggested = (summary.title or "").strip()
     if not suggested:
         return note.title
-    return suggested if note.title.strip() in ("", crud_chat.UNTITLED) else note.title
+
+    asked = next((m.content for m in chat.messages if m.role == "user"), None)
+    ours = {"", crud_chat.UNTITLED}
+    if asked is not None:
+        ours.add(crud_chat.title_from(asked))
+    return suggested if note.title.strip() in ours else note.title
 
 
 @router.post("/{chat_id}/summarize", response_model=ChatRead)
@@ -279,9 +289,9 @@ def summarize_chat(
     """
     Finish the conversation and write what it was about, in three parts.
 
-    Summarising again is allowed, and is the retry path when the first attempt
-    produced something poor. Adding turns afterwards is not — see
-    ALREADY_FINISHED on the route above.
+    Summarising again is allowed, and is both the retry path for a poor first
+    attempt and the way a conversation that was taken up again is checkpointed
+    a second time. Either way it rewrites the one note this chat is bound to.
     """
     chat = _owned_chat(db, chat_id, current_user)
     if not chat.messages:
@@ -321,7 +331,7 @@ def summarize_chat(
             db,
             note.id,
             current_user.id,
-            title=_named_by(summary, note),
+            title=_named_by(summary, note, chat),
             content=conversation_summary.as_note(summary),
         )
 

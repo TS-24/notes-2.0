@@ -3,7 +3,7 @@ import type { Route } from "./+types/notes";
 import Notegrid from "~/notes/notegrid";
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
-import type { Chat, Note } from "~/lib/types";
+import type { Note } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Notes" }, { name: "description", content: "Your notes" }];
@@ -78,20 +78,16 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Notes() {
-  const workspace = useRouteLoaderData("routes/workspace") as {
-    notes: Note[];
-    chats: Chat[];
-  };
+  const workspace = useRouteLoaderData("routes/workspace") as { notes: Note[] };
   const [searchParams] = useSearchParams();
   const open = Number(searchParams.get("open"));
-  const chat = Number(searchParams.get("chat"));
 
+  // No chats: the library is a list of notes, and a conversation is reached by
+  // opening the note it belongs to. `?chat=` is the workspace layout's to read.
   return (
     <Notegrid
       notes={workspace.notes}
-      chats={workspace.chats}
       openNoteId={Number.isFinite(open) && open > 0 ? open : null}
-      openChatId={Number.isFinite(chat) && chat > 0 ? chat : null}
     />
   );
 }

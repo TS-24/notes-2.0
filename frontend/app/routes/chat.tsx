@@ -1,32 +1,18 @@
-import { useNavigate } from "react-router";
-
 import type { Route } from "./+types/chat";
-import ChatSurface from "~/chat/chat-surface";
 import { api, ApiError } from "~/lib/api.server";
 import { requireToken } from "~/lib/session.server";
 
 /**
- * A conversation on a page of its own, and the actions that drive it.
+ * What you do inside a conversation: say something, and finish it.
  *
- * The same `ChatSurface` the library renders as a boxed overlay, in its `page`
- * mode — it has always taken that mode, and for a while nothing rendered it.
- * The overlay is where a *new* chat lands, because it is started from a card in
- * the grid and morphs out of it; this is where an existing one is opened, for
- * the room a long exchange needs.
+ * Action only, no loader and no component. A conversation is not a place of its
+ * own — it is shown in its note's place, by the workspace layout, out of data
+ * that layout's loader has already fetched. This route exists so the surface's
+ * fetchers have somewhere to post to.
  *
- * Its own loader rather than the workspace layout's: this route sits outside
- * that layout, and it needs one chat and the provider settings rather than
- * every note, every chat and the account.
+ * It was a page for a while. That is what made leaving one a hard cut: two
+ * whole screens with no element in common and nothing for Framer to move.
  */
-export async function loader({ request, params }: Route.LoaderArgs) {
-  const token = await requireToken(request);
-  const [chat, provider] = await Promise.all([
-    api.getChat(token, Number(params.chatId)),
-    api.getProviderSettings(token),
-  ]);
-  return { chat, provider };
-}
-
 export async function action({ request, params }: Route.ActionArgs) {
   const token = await requireToken(request);
   const id = Number(params.chatId);
@@ -53,20 +39,4 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (error instanceof ApiError) return { ok: false as const, error: error.detail };
     throw error;
   }
-}
-
-export default function ChatRoute({ loaderData }: Route.ComponentProps) {
-  const { chat, provider } = loaderData;
-  const navigate = useNavigate();
-
-  return (
-    <ChatSurface
-      chat={chat}
-      provider={provider}
-      mode="page"
-      // The library is where a conversation came from, so it is where leaving
-      // one goes. `replace` so the back button does not walk into the chat again.
-      onClose={() => navigate("/notes", { replace: true })}
-    />
-  );
 }

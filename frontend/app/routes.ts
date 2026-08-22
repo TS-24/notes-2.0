@@ -19,10 +19,14 @@ export default [
     ]),
     route("analytics", "routes/analytics.tsx"),
     route("settings", "routes/menu.tsx"),
-    // "chats" is action-only: create and delete, from the library.
-    // "chats/:chatId" is a page — a conversation opened from its card, in the
-    // room a long exchange needs. It also carries the send/finish actions that
-    // the boxed overlay's fetchers post to, so a chat behaves the same in both.
+    // Both action-only. "chats" is create, rename and delete — the things you
+    // do to a conversation from outside it. "chats/:chatId" is saying something
+    // and finishing, which are the things you do inside one.
+    //
+    // Neither is a page. A conversation is shown in its note's place by the
+    // workspace layout above, out of chats that layout's loader already
+    // returned, so opening one costs no request and leaving one is a movement
+    // rather than a route change.
     route("chats", "routes/chats.tsx"),
     route("chats/:chatId", "routes/chat.tsx"),
     // Resource route (loader only, no component). Deliberately outside the

@@ -226,16 +226,64 @@ class TestFinishing:
         assert configured.post(f"/api/chats/{chat}/summarize").status_code == 502
         assert len(configured.get(f"/api/chats/{chat}").json()["messages"]) == 2
 
-    def test_a_finished_chat_takes_no_more_turns(self, configured, answering, summarising):
+    def test_a_finished_chat_can_be_taken_up_again(self, configured, answering, summarising):
         """
-        Finishing is a real transition, not a label: another turn would leave
-        the summary describing a conversation that has moved on since.
+        Finishing is a checkpoint, not an end.
+
+        It used to be a one-way door — another turn was a 409, on the grounds
+        that it would leave the summary describing a conversation that had moved
+        on. The summary is what moves instead: talking again makes the chat live
+        again and clears it, because a summary is a property of a *finished*
+        conversation and this one is not finished any more.
+
+        Nothing is lost by clearing it. Every part of it was written into the
+        note as text when the chat was finished, and the note is the durable
+        thing; it keeps what the last finish wrote until the next one.
         """
         chat = new_chat(configured)
         send(configured, chat)
         configured.post(f"/api/chats/{chat}/summarize")
 
-        assert send(configured, chat, "one more thing").status_code == 409
+        assert send(configured, chat, "one more thing").status_code == 200
+
+    def test_taking_it_up_again_makes_it_unfinished(
+        self, configured, answering, summarising
+    ):
+        chat = new_chat(configured)
+        send(configured, chat)
+        configured.post(f"/api/chats/{chat}/summarize")
+
+        body = send(configured, chat, "one more thing").json()
+
+        assert body["summary"] is None
+        assert configured.get(f"/api/chats/{chat}").json()["summary"] is None
+
+    def test_the_note_keeps_what_the_last_finish_wrote(
+        self, configured, answering, summarising
+    ):
+        """The summary the reader can still read is the one in the note."""
+        chat = configured.post("/api/chats", json={}).json()
+        send(configured, chat["id"])
+        configured.post(f"/api/chats/{chat['id']}/summarize")
+
+        send(configured, chat["id"], "one more thing")
+
+        note = configured.get(f"/api/notes/{chat['note_id']}").json()
+        assert "A conversation about gerunds." in note["content"]
+
+    def test_finishing_again_rewrites_that_same_note(
+        self, configured, answering, summarising
+    ):
+        before = len(configured.get("/api/notes").json())
+        chat = configured.post("/api/chats", json={}).json()
+        send(configured, chat["id"])
+        configured.post(f"/api/chats/{chat['id']}/summarize")
+        send(configured, chat["id"], "one more thing")
+
+        configured.post(f"/api/chats/{chat['id']}/summarize")
+
+        assert len(configured.get("/api/notes").json()) == before + 1
+        assert configured.get(f"/api/chats/{chat['id']}").json()["summary"] is not None
 
     def test_summarising_without_a_key_is_the_same_refusal_as_chatting(
         self, client, configured, answering, summarising
@@ -564,6 +612,41 @@ class TestEveryChatHasANote:
 
         roles = [role for role, _ in answering[-1]["turns"]]
         assert roles == ["system", "user"]
+
+
+class TestTheBoundNoteTakesItsNameFromTheChat:
+    """
+    "New AI chat" makes an Untitled note and drops you into its conversation, so
+    closing that conversation would land you on a blank page with no name on it.
+    The first thing said already names the *chat*; it names the note with it.
+    """
+
+    def test_the_first_question_names_the_note(self, configured, answering):
+        chat = configured.post("/api/chats", json={}).json()
+
+        send(configured, chat["id"], "what makes a spring tide?")
+
+        note = configured.get(f"/api/notes/{chat['note_id']}").json()
+        assert note["title"] == "what makes a spring tide?"
+
+    def test_a_note_that_already_has_a_name_keeps_it(self, configured, answering):
+        note = configured.post(
+            "/api/notes", json={"title": "Tides", "content": "The moon pulls."}
+        ).json()
+        chat = configured.post("/api/chats", json={"note_id": note["id"]}).json()
+
+        send(configured, chat["id"], "what makes a spring tide?")
+
+        assert configured.get(f"/api/notes/{note['id']}").json()["title"] == "Tides"
+
+    def test_only_the_first_question_names_it(self, configured, answering):
+        chat = configured.post("/api/chats", json={}).json()
+        send(configured, chat["id"], "what makes a spring tide?")
+
+        send(configured, chat["id"], "and a neap tide?")
+
+        note = configured.get(f"/api/notes/{chat['note_id']}").json()
+        assert note["title"] == "what makes a spring tide?"
 
 
 class TestFinishingWritesIntoTheBoundNote:

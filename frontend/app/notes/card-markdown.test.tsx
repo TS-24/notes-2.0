@@ -50,7 +50,7 @@ function mount(notes: Note[]) {
       {
         path: "/notes",
         action: () => ({ ok: true }),
-        Component: () => <Notegrid notes={notes} chats={[]} />,
+        Component: () => <Notegrid notes={notes} />,
       },
     ],
     { initialEntries: ["/notes"] },

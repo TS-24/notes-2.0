@@ -13,6 +13,7 @@ import Markdown from "~/notes/markdown";
 import {
   CHROME_TRANSITION,
   fitToText,
+  noteLayoutId,
   NOTE_LAYOUT_TRANSITION,
   PAGE_SCROLLER,
   useAutoHeight,
@@ -30,19 +31,29 @@ import { Message, MessageContent } from "~/components/ui/message";
 import { Bubble, BubbleContent } from "~/components/ui/bubble";
 import { Marker } from "~/components/ui/marker";
 
-export const chatLayoutId = (id: number) => `chat-${id}`;
+/**
+ * A conversation is identified by the note it belongs to, not by itself.
+ *
+ * That is what makes leaving one an animation. The conversation and the note
+ * are shown in the same place, one at a time, so sharing an identity lets
+ * Framer move a single box between two shapes; a `chat-7` of its own would be a
+ * second element, and two elements do not crossfade into each other — they
+ * arrive and depart independently, which is the hard cut this replaced.
+ *
+ * Undefined for a conversation from before the binding, which has nothing to
+ * borrow. It simply appears, as it always did.
+ */
+export const conversationLayoutId = (chat: Chat) =>
+  chat.note_id === null ? undefined : noteLayoutId(chat.note_id);
 
 /*
-  Both modes spell out every property that differs between them, including the
-  ones a page-mode conversation does not appear to have.
-
-  That is the note surface's arrangement and it is what makes the change an
-  animation rather than a swap: a property present in one style object and
-  absent from the other has nothing to tween from, so it lands in one frame
-  while everything around it glides. The transparent background and the
-  zero-strength shadow below are that shadow at rest, not an omission.
+  The same box the note wears when it is open, so the two can be tweened into
+  each other rather than swapped. Every value here has a counterpart in
+  note-surface.tsx's boxed style; a property present in one and absent from the
+  other would have nothing to tween from and would land in a single frame while
+  everything around it glided.
 */
-const BOXED_STYLE = {
+const SURFACE_STYLE = {
   borderRadius: 24,
   minHeight: "68vh",
   padding: "2.25rem 2.5rem",
@@ -50,27 +61,15 @@ const BOXED_STYLE = {
   boxShadow: "0px 25px 50px -12px rgb(56 56 90 / 0.15)",
 } as const;
 
-const PAGE_STYLE = {
-  borderRadius: 24,
-  minHeight: "68vh",
-  padding: "2.25rem 2.5rem",
-  backgroundColor: "transparent",
-  boxShadow: "0px 25px 50px -12px rgb(56 56 90 / 0)",
-} as const;
-
 export default function ChatSurface({
   chat: initialChat,
   provider: initialProvider,
-  mode = "page",
   onClose,
-  onReturn,
 }: {
   chat: Chat;
   provider: ProviderSettings;
-  mode?: "page" | "boxed";
+  /** Back to the note this conversation belongs to. The only way out. */
   onClose: () => void;
-  /** Boxed only: take the conversation out to its own page. */
-  onReturn?: () => void;
 }) {
   const navigate = useNavigate();
   const sender = useFetcher();
@@ -197,7 +196,7 @@ export default function ChatSurface({
   */
   const send = () => {
     const content = draft.trim();
-    if (!content || finished) return;
+    if (!content) return;
     if (pending) {
       if (queued !== null) return;
       setQueued(content);
@@ -251,14 +250,16 @@ export default function ChatSurface({
   };
 
   /*
-    Double click takes the conversation out to its own page, which is what the
-    same gesture does to a note: one click opens it where it sits, a second
-    asks for the room. It used to close the chat, so the two surfaces answered
-    the same gesture with opposite things.
+    Double click closes, the same as Escape and the same as clicking outside.
+
+    It used to take the conversation out to a page of its own. There is no page
+    of its own any more — a conversation is shown in the note's place and there
+    is one place to go from it — so the three gestures that used to mean three
+    things all mean the one thing there is to mean.
   */
   const handleDoubleClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("input, textarea, button")) return;
-    if (onReturn) onReturn();
+    collapse.current();
   };
 
   /*
@@ -316,7 +317,6 @@ export default function ChatSurface({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
   useEffect(() => {
-    if (mode !== "boxed") return;
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (rootRef.current?.contains(target)) return;
@@ -325,9 +325,7 @@ export default function ChatSurface({
     };
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [mode]);
-
-  const boxed = mode === "boxed";
+  }, []);
   /*
     §12 — reduced motion collapses the morph to nothing rather than dropping it,
     so the conversation still lands in its resting state, just in one frame. The
@@ -353,15 +351,15 @@ export default function ChatSurface({
         lurch: the exit projects from wherever that spurious tween had got to
         rather than from the box on screen.
       */
-      layoutDependency={`${mode}:${chat.id}`}
-      layoutId={boxed ? chatLayoutId(chat.id) : undefined}
+      layoutDependency={chat.id}
+      layoutId={conversationLayoutId(chat)}
       transition={{ layout: layoutTransition }}
       ref={rootRef}
       role="dialog"
       aria-label={`Conversation: ${chat.title}`}
       onDoubleClick={handleDoubleClick}
       style={{
-        ...(boxed ? BOXED_STYLE : PAGE_STYLE),
+        ...SURFACE_STYLE,
         // The other half of the morph. Without it the projection moved the box
         // while the paper it is made of changed in a single frame — geometry
         // gliding, chrome snapping, which is the jump on close.
@@ -377,7 +375,7 @@ export default function ChatSurface({
       */}
       <motion.div
         layout="position"
-        layoutDependency={`${mode}:${chat.id}`}
+        layoutDependency={chat.id}
         transition={{ layout: layoutTransition }}
         className="mx-auto flex w-full max-w-4xl flex-1 flex-col"
       >
@@ -510,99 +508,112 @@ export default function ChatSurface({
           </p>
         )}
 
-        {finished ? (
+        {/*
+          Finishing is a checkpoint, not a door.
+
+          This used to replace the composer with "this conversation is
+          finished", because the backend refused a further turn. It does not:
+          saying something else picks the conversation back up and clears the
+          summary. A conversation you cannot add to is one you have to start
+          again from a new note, which is the opposite of accumulating.
+
+          What is said instead is where the summary went, because that is the
+          thing a reader wants after finishing and it is no longer on this
+          screen.
+        */}
+        {finished && chat.note_id !== null && (
           <p className="mt-8 text-center text-base italic text-ink/50">
-            This conversation is finished. What it came to is{" "}
-            {chat.note_id !== null ? (
-              <Link
-                to={`/notes?open=${chat.note_id}`}
-                className="not-italic tracking-wide text-ink/70 transition-colors hover:text-ink"
-              >
-                a note in your library →
-              </Link>
-            ) : (
-              "a note in your library."
-            )}
+            Summarised into{" "}
+            <Link
+              to={`/notes?open=${chat.note_id}`}
+              className="not-italic tracking-wide text-ink/70 transition-colors hover:text-ink"
+            >
+              your note →
+            </Link>
+            . Saying more here takes it up again.
           </p>
-        ) : (
-          <div className="mt-8 w-full">
-            <ModelPicker provider={provider} onChoose={(p, m) =>
-              chooser.submit(
-                { provider: p, model: m },
-                { method: "post", action: "/api/active-model", encType: "application/json" },
-              )
-            } />
-            <div className="relative w-full">
-              <textarea
-                ref={composer}
-                value={draft}
-                onChange={event => setDraft(event.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={1}
-                autoFocus
-                placeholder="Ask something..."
-                aria-label="Your message"
-                /*
-                  Not disabled while a reply is in flight. That is precisely the
-                  stretch where you have the next thing to say, and graying the
-                  field out made you wait for the model before you could write
-                  it down.
-                */
-                style={{ maxHeight: "38vh", overflowY: "auto" }}
-                className="block w-full resize-none rounded-2xl border border-ink/10 bg-paper px-5 py-3 pr-14 font-sans text-lg leading-relaxed text-ink caret-accent-ink outline-none transition-colors placeholder:text-ink/30 focus:border-ink/25"
-              />
-              <button
-                type="button"
-                onClick={send}
-                disabled={draft.trim().length === 0 || (pending && queued !== null)}
-                aria-label="Send"
-                title="Send"
-                className="absolute bottom-3 right-3 rounded-xl p-2 text-ink/45 transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink/45 cursor-pointer disabled:cursor-default"
-              >
-                <CornerDownLeft className="size-5" />
-              </button>
-            </div>
-            {queued !== null && (
-              <p className="mt-2 text-sm italic text-ink/45">
-                One message queued — it sends when this reply lands.
-              </p>
-            )}
-          </div>
         )}
+
+        <div className="mt-8 w-full">
+          <ModelPicker provider={provider} onChoose={(p, m) =>
+            chooser.submit(
+              { provider: p, model: m },
+              { method: "post", action: "/api/active-model", encType: "application/json" },
+            )
+          } />
+          <div className="relative w-full">
+            <textarea
+              ref={composer}
+              value={draft}
+              onChange={event => setDraft(event.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={1}
+              autoFocus
+              placeholder="Ask something..."
+              aria-label="Your message"
+              /*
+                Not disabled while a reply is in flight. That is precisely the
+                stretch where you have the next thing to say, and graying the
+                field out made you wait for the model before you could write
+                it down.
+              */
+              style={{ maxHeight: "38vh", overflowY: "auto" }}
+              className="block w-full resize-none rounded-2xl border border-ink/10 bg-paper px-5 py-3 pr-14 font-sans text-lg leading-relaxed text-ink caret-accent-ink outline-none transition-colors placeholder:text-ink/30 focus:border-ink/25"
+            />
+            <button
+              type="button"
+              onClick={send}
+              disabled={draft.trim().length === 0 || (pending && queued !== null)}
+              aria-label="Send"
+              title="Send"
+              className="absolute bottom-3 right-3 rounded-xl p-2 text-ink/45 transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-ink/45 cursor-pointer disabled:cursor-default"
+            >
+              <CornerDownLeft className="size-5" />
+            </button>
+          </div>
+          {queued !== null && (
+            <p className="mt-2 text-sm italic text-ink/45">
+              One message queued — it sends when this reply lands.
+            </p>
+          )}
+        </div>
       </motion.div>
 
       <motion.div
         layout="position"
-        layoutDependency={`${mode}:${chat.id}`}
+        layoutDependency={chat.id}
         transition={{ layout: layoutTransition }}
         className="mx-auto mt-6 flex w-full max-w-4xl shrink-0 items-center justify-between gap-4"
       >
         <span className="text-sm italic text-ink/40">
-          {finished
-            ? "Esc to go back"
-            : "Enter to send · Shift+Enter for a new line · Esc to leave"}
+          Enter to send · Shift+Enter for a new line · Esc for the note
         </span>
-        {!finished && (
-          <button
-            type="button"
-            onClick={() =>
-              finisher.submit(
-                { intent: "finish" },
-                { method: "post", action: `/chats/${chat.id}` },
-              )
-            }
-            disabled={pending || chat.messages.length === 0}
-            title={
-              chat.messages.length === 0
-                ? "Say something first"
-                : "Finish and summarise this conversation"
-            }
-            className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2 text-base text-on-accent transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer disabled:cursor-default"
-          >
-            <Sparkles className="size-4" />
-            {finishing ? "Summarising…" : "Finish & summarise"}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() =>
+            finisher.submit(
+              { intent: "finish" },
+              { method: "post", action: `/chats/${chat.id}` },
+            )
+          }
+          disabled={pending || chat.messages.length === 0}
+          title={
+            chat.messages.length === 0
+              ? "Say something first"
+              : "Finish and summarise this conversation"
+          }
+          className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2 text-base text-on-accent transition-opacity hover:opacity-90 disabled:opacity-40 cursor-pointer disabled:cursor-default"
+        >
+          <Sparkles className="size-4" />
+          {/* "again" once there is a summary to rewrite: finishing a second
+              time is checkpointing a conversation that was taken up, not
+              undoing anything. */}
+          {finishing
+            ? "Summarising…"
+            : finished
+              ? "Summarise again"
+              : "Finish & summarise"}
+        </button>
       </motion.div>
     </motion.div>
   );

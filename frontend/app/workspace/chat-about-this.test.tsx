@@ -135,7 +135,10 @@ test("a note that already has a conversation goes straight to it", async () => {
 
   await surface.click();
 
-  expect(surface.router.state.location.pathname).toBe("/chats/9");
+  // In the note's place, not at a page of its own: `?open=` is the gap it
+  // comes out of, and where closing it goes back to.
+  expect(surface.router.state.location.pathname + surface.router.state.location.search)
+    .toBe("/notes?open=3&chat=9");
   // Nothing was started: the conversation exists, and re-seeding it would put
   // the note back in front of a thread that has moved on.
   expect(surface.log.filter(entry => entry.at === "/chats")).toEqual([]);
@@ -149,7 +152,8 @@ test("a note without one starts a conversation from itself", async () => {
   expect(surface.log.filter(entry => entry.at === "/chats")).toEqual([
     { at: "/chats", form: { intent: "create", noteId: "3" } },
   ]);
-  expect(surface.router.state.location.pathname).toBe("/chats/42");
+  expect(surface.router.state.location.pathname + surface.router.state.location.search)
+    .toBe("/notes?open=3&chat=42");
 });
 
 test("an edit still in the field is saved before the conversation starts", async () => {

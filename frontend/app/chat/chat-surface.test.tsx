@@ -85,7 +85,7 @@ function mount(options: { hold?: boolean; fail?: boolean } = {}) {
           };
         },
         Component: () => (
-          <ChatSurface chat={chat} provider={provider} mode="page" onClose={() => {}} />
+          <ChatSurface chat={chat} provider={provider} onClose={() => {}} />
         ),
       },
     ],

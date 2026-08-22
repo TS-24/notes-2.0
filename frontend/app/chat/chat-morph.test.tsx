@@ -9,6 +9,11 @@
  * with no transition at all — so its geometry glided and its chrome snapped,
  * open to closed in a single frame, which is the jump you see.
  *
+ * It matters more now than it did: the conversation and the note are the same
+ * box wearing two shapes, so the chrome is what carries the change between
+ * them. There is one surface to check rather than two modes, because there is
+ * one place a conversation is ever shown.
+ *
  * jsdom runs no animations and Framer's projection is a no-op here, so what is
  * pinned is that the two surfaces are driven by the same constant. Two literals
  * would drift, and a chrome transition outlasting its tween is the box arriving
@@ -56,7 +61,7 @@ const provider: ProviderSettings = { available: [], configured: [], active: null
 let cleanup = () => {};
 afterEach(() => cleanup());
 
-function mount(mode: "page" | "boxed") {
+function mount() {
   const container = document.createElement("div");
   document.body.append(container);
   const router = createMemoryRouter(
@@ -65,7 +70,7 @@ function mount(mode: "page" | "boxed") {
         path: "/chats/:chatId",
         action: () => ({ ok: true }),
         Component: () => (
-          <ChatSurface chat={chat} provider={provider} mode={mode} onClose={() => {}} />
+          <ChatSurface chat={chat} provider={provider} onClose={() => {}} />
         ),
       },
     ],
@@ -82,10 +87,6 @@ function mount(mode: "page" | "boxed") {
   return container.querySelector<HTMLElement>("[role=dialog]")!;
 }
 
-test("the boxed conversation tweens its chrome over the note's window", () => {
-  expect(mount("boxed").style.transition).toBe(CHROME_TRANSITION);
-});
-
-test("so does the conversation on its own page", () => {
-  expect(mount("page").style.transition).toBe(CHROME_TRANSITION);
+test("the conversation tweens its chrome over the note's window", () => {
+  expect(mount().style.transition).toBe(CHROME_TRANSITION);
 });

@@ -28,7 +28,11 @@ export async function action({ request }: Route.ActionArgs) {
           token,
           Number.isFinite(noteId) && noteId > 0 ? noteId : undefined,
         );
-        return { ok: true, id: created.id };
+        // The note comes back with it, because a conversation is shown in its
+        // note's place: the caller needs both halves of `?open=&chat=`. When
+        // the request carried a note this is that note; when it did not, it is
+        // the one the backend made to hold the conversation.
+        return { ok: true, id: created.id, noteId: created.note_id };
       }
       case "rename": {
         await api.renameChat(
