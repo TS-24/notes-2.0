@@ -18,6 +18,7 @@ import Workspace, { shouldRevalidate } from "~/routes/workspace";
 import type { Route } from "./+types/workspace";
 import type { Note, User } from "~/lib/types";
 import { DEFAULT_THEME } from "~/lib/themes";
+import { DEFAULT_ALIGNMENT } from "~/lib/alignment";
 
 /**
  * Switching notes has to give the surface a new element, not a new prop.
@@ -73,7 +74,7 @@ const provider = { available: [], configured: [], active: null };
 const loaderData = { notes, user, chats: [], provider };
 
 /** Root now resolves the palette for `<html>`, so the match tree carries it. */
-const rootLoaderData = { theme: DEFAULT_THEME };
+const rootLoaderData = { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT };
 
 /**
  * The route module's props, as the framework would hand them over. Only
