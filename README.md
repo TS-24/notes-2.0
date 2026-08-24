@@ -60,6 +60,14 @@ model ranks.**
   Night, Catppuccin Mocha). Picked on `/settings` and kept in a cookie the root loader reads, so
   the server's first byte already carries the right palette and nothing flashes. See
   [Themes](#themes).
+- **Note alignment** — an open note runs flush left, centred or flush right, picked on `/settings`
+  beside the palette and kept the same way, in its own cookie. Left is the default because centred
+  prose is the harder of the two to read at the length a note reaches; centred is how the app was
+  drawn (`DESIGN.md` §4) and is one choice away. Structured blocks — lists, quotes, tables — never
+  take the alignment itself, since a centred list is unreadable: they keep their own contents flush
+  and move as a block, so the note's centre of mass follows the prose. It is one value across both
+  of the surface's modes on purpose, because `text-align` cannot be tweened and an alignment that
+  differed between them would snap the words sideways the instant the box arrived.
 - **Persistence** — notes, pinning, chats and word definitions are stored in PostgreSQL through a
   FastAPI backend, with the whole ladder computation cached so a repeat lookup costs no model time.
 
@@ -178,6 +186,15 @@ without it a dark theme renders correctly right up until a form field goes inval
 Adding one is a CSS block plus a row in `app/lib/themes.ts`. `themes.test.ts` fails if you do only
 one of those or leave a role unfilled, and `no-hardcoded-colours.test.ts` fails if any component
 names a Tailwind colour instead of a role token.
+
+How a note's text is aligned works the same way and is built the same way — `app/lib/alignment.ts`
+alongside `[data-note-align]` blocks in `app.css`, resolved from its own cookie in the same root
+loader, with `alignment.test.ts` reading the stylesheet to check the two agree. Two details are
+worth knowing. The attribute is `data-note-align` and not `data-align`, which base-ui already
+writes on every popup it positions (`start`, `center`, `end`) — a bare `[data-align="center"]` rule
+would also match a centred popup. And every rule is scoped under `.note-text`, which only the open
+note carries, because the library cards render the same `<Markdown>` and so the same `.markdown`
+class; written against that, the setting would swing the whole grid around too.
 
 ### Data model
 

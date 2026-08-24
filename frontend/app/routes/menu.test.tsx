@@ -19,6 +19,7 @@ import Menu from "~/routes/menu";
 import type { Route } from "./+types/menu";
 import type { ProviderSettings, User } from "~/lib/types";
 import { DEFAULT_THEME } from "~/lib/themes";
+import { ALIGNMENTS, DEFAULT_ALIGNMENT } from "~/lib/alignment";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -54,7 +55,12 @@ function mount(answer: unknown) {
   const container = document.createElement("div");
   document.body.append(container);
 
-  const loaderData = { user, provider, theme: DEFAULT_THEME };
+  const loaderData = {
+    user,
+    provider,
+    theme: DEFAULT_THEME,
+    alignment: DEFAULT_ALIGNMENT,
+  };
   const params = {};
   const props: Route.ComponentProps = {
     loaderData,
@@ -64,8 +70,8 @@ function mount(answer: unknown) {
         id: "root",
         params,
         pathname: "/",
-        data: { theme: DEFAULT_THEME },
-        loaderData: { theme: DEFAULT_THEME },
+        data: { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT },
+        loaderData: { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT },
         handle: undefined,
       },
       {
@@ -100,6 +106,7 @@ function mount(answer: unknown) {
     key: () => document.body.querySelector<HTMLInputElement>('input[name="api_key"]'),
     form: () => document.body.querySelector<HTMLFormElement>("[data-key-form]"),
     said: () => document.body.querySelector("[data-key-status]")?.textContent ?? "",
+    align: () => container.querySelector<HTMLSelectElement>('select[name="align"]'),
   };
 }
 
@@ -149,4 +156,43 @@ test("a key that works reports what it can reach", async () => {
   await submit(surface, "a-key-that-works-1234");
 
   expect(surface.said()).toContain("42 models");
+});
+
+/*
+  The alignment picker. jsdom has no stylesheet, so nothing here can say which
+  way the words actually run — `alignment.test.ts` checks the CSS backing it,
+  and the look is a thing only a browser can settle. What is pinned here is
+  that the choice is offered at all, that it offers the three the app ships,
+  and that it starts on the one the reader is already reading in.
+*/
+test("the alignment is a setting rather than a constant", () => {
+  const surface = mount({ ok: true });
+
+  expect(surface.align()).not.toBeNull();
+});
+
+test("it offers exactly the alignments the app ships", () => {
+  const surface = mount({ ok: true });
+
+  const offered = [...surface.align()!.options].map((option) => option.value);
+  expect(offered).toEqual(ALIGNMENTS.map((alignment) => alignment.id));
+});
+
+test("it opens on the alignment already in force", () => {
+  const surface = mount({ ok: true });
+
+  expect(surface.align()!.value).toBe(DEFAULT_ALIGNMENT.id);
+});
+
+test("changing it posts, so the cookie is what makes the choice stick", async () => {
+  const surface = mount({ ok: true });
+  const select = surface.align()!;
+
+  await act(async () => {
+    select.value = "right";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  // A preference that only ran `applyAlignment` would be gone on reload.
+  expect(new FormData(select.form!).get("intent")).toBe("align");
 });

@@ -11,17 +11,27 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { alignmentAttributes } from "./lib/alignment";
+import { getAlignment } from "./lib/alignment.server";
 import { getTheme } from "./lib/theme.server";
 import { themeAttributes } from "./lib/themes";
 
 /**
- * The palette is resolved here and nowhere else, because `<html>` is rendered
- * here and nowhere else. Reading it from the cookie on the server means the
- * markup leaves with the right theme already on it — no inline script blocking
- * the head, no first paint in the wrong colours.
+ * The palette and the note's alignment are resolved here and nowhere else,
+ * because `<html>` is rendered here and nowhere else. Reading them from the
+ * cookies on the server means the markup leaves with both already on it — no
+ * inline script blocking the head, no first paint in the wrong colours and no
+ * text jumping sideways once a fetch comes back.
+ *
+ * Two cookies, read together: they are independent preferences, and neither
+ * should reset the other.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  return { theme: await getTheme(request) };
+  const [theme, alignment] = await Promise.all([
+    getTheme(request),
+    getAlignment(request),
+  ]);
+  return { theme, alignment };
 }
 
 // Fonts are bundled from @fontsource-variable, so there is nothing to preconnect to.
@@ -29,11 +39,15 @@ export const links: Route.LinksFunction = () => [];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   // Not `useLoaderData`: this component also wraps the error boundary, and there
-  // the root loader never ran. `themeAttributes` takes the miss and defaults.
+  // the root loader never ran. Both helpers take the miss and default.
   const data = useRouteLoaderData<typeof loader>("root");
 
   return (
-    <html lang="en" {...themeAttributes(data?.theme)}>
+    <html
+      lang="en"
+      {...themeAttributes(data?.theme)}
+      {...alignmentAttributes(data?.alignment)}
+    >
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

@@ -28,6 +28,23 @@ export type SurfaceMode = "page" | "boxed";
 
 export const noteLayoutId = (id: number) => `note-${id}`;
 
+/**
+ * The measure every row in the note shares: the timestamp, the title and the
+ * body all sit in a box of exactly this width, centred in the column.
+ *
+ * One constant rather than three copies because the thing that matters is that
+ * they *agree*. The title used to take the full column while the body sat in a
+ * narrower box centred inside it, which is invisible when both are centred on
+ * the same axis and 94px of disagreement the moment either edge is the one
+ * being read from.
+ *
+ * 92ch, and wide enough that the column above decides the width in the boxed
+ * mode rather than this cap. It used to be 68ch on the body alone, which made
+ * the thing you actually write in the narrowest element on a page that exists
+ * to be written in.
+ */
+const MEASURE = "mx-auto w-full max-w-[92ch]";
+
 /** Shared by the surface and by the cards reflowing around it. */
 /*
   How long the surface takes to change mode.
@@ -651,11 +668,18 @@ export default function NoteSurface({
       className="flex w-full cursor-text flex-col"
     >
       {/*
-        The reading column, centred both ways in *both* modes, deliberately.
-        text-align cannot be tweened, so alignment that differed between the two
-        states would snap the words sideways the instant the box arrives — the
-        one visible discontinuity in an otherwise continuous transition. The box
-        moves around the text; the text stays put.
+        The reading column. Centred as a *column* in both modes deliberately —
+        the box moves around the text and the text stays put.
+
+        Which way the words themselves run is the reader's, and `.note-text`
+        is where that arrives: `--note-align` comes down from `data-align` on
+        `<html>`, resolved from a cookie in the root loader, so the alignment
+        is already on the markup before it paints. See `lib/alignment.ts`.
+
+        It is one value for both modes, and that part is not a preference:
+        text-align cannot be tweened, so an alignment that differed between the
+        two states would snap the words sideways the instant the box arrives —
+        the one visible discontinuity in an otherwise continuous transition.
 
         Nothing clips it and nothing scrolls inside it: the column is as tall
         as the note, and the page grows to hold it. A writing surface that
@@ -663,20 +687,21 @@ export default function NoteSurface({
         `.note-preview` on the grid cards is the right one.
       */}
       <div
-        className={`mx-auto flex w-full flex-1 flex-col justify-center text-center ${
+        className={`note-text mx-auto flex w-full flex-1 flex-col justify-center ${
           boxed ? "max-w-4xl" : "max-w-3xl"
         }`}
       >
         <p
-          className="font-sans text-sm italic text-accent-ink transition-opacity duration-500"
+          className={`${MEASURE} font-sans text-sm italic text-accent-ink transition-opacity duration-500`}
           style={{ opacity: boxed ? 0 : 1 }}
         >
           {lastTouched}
         </p>
 
         {/* Same contract as the body below: a wrapper that fits the field
-            exactly, so the roller can measure against its origin. */}
-        <div className="relative mt-6 w-full">
+            exactly, so the roller can measure against its origin — and the same
+            measure, so the two share both edges at every alignment. */}
+        <div className={`relative mt-6 ${MEASURE}`}>
           <textarea
             ref={titleField.attach}
             value={title}
@@ -685,10 +710,12 @@ export default function NoteSurface({
             spellCheck={false}
             placeholder="Untitled"
             aria-label="Note title"
-            // text-center on the field itself: form controls do not inherit
-            // text-align from an ancestor.
+            // Aligned by `.note-text textarea` in app.css rather than here:
+            // a form control does not inherit text-align from an ancestor, so
+            // the rule has to name it, and naming it there is what lets the
+            // setting reach it.
             style={{ fontSize: type.title, transition: chromeTransition }}
-            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-display font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
+            className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-display font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
           />
           <WordRoller
             fieldRef={titleField.ref}
@@ -707,13 +734,8 @@ export default function NoteSurface({
         {/*
           The wrapper has to fit the field exactly and be the positioning
           context: the word roller measures against its origin.
-
-          The measure is wide enough that the column above decides the width,
-          not this cap. It used to be 68ch, which made the thing you actually
-          write in the narrowest element on a page that exists to be written in
-          — the title spanned the whole box and the text sat in a third of it.
         */}
-        <div className="relative mx-auto mt-8 w-full max-w-[92ch]">
+        <div className={`relative mt-8 ${MEASURE}`}>
           {writing ? (
             <>
               <textarea
@@ -725,7 +747,7 @@ export default function NoteSurface({
                 placeholder="Start writing…"
                 aria-label="Note text"
                 style={{ fontSize: type.body, transition: chromeTransition }}
-                className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
+                className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
               />
               <WordRoller
                 fieldRef={bodyField.ref}
@@ -745,7 +767,7 @@ export default function NoteSurface({
               ref={rendered}
               data-note-body
               style={{ fontSize: type.body, transition: chromeTransition }}
-              className="block w-full text-center font-sans leading-relaxed text-ink/85"
+              className="block w-full font-sans leading-relaxed text-ink/85"
             >
               {content.trim() ? (
                 <Markdown>{content}</Markdown>

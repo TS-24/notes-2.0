@@ -9,6 +9,13 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { api, ApiError } from "~/lib/api.server";
+import {
+  ALIGNMENTS,
+  applyAlignment,
+  resolveAlignment,
+  type Alignment,
+} from "~/lib/alignment";
+import { commitAlignment, getAlignment } from "~/lib/alignment.server";
 import { requireToken } from "~/lib/session.server";
 import { commitTheme, getTheme } from "~/lib/theme.server";
 import { applyTheme, resolveTheme, THEMES, type Theme } from "~/lib/themes";
@@ -25,7 +32,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     api.getCurrentUser(token),
     api.getProviderSettings(token),
   ]);
-  return { user, provider, theme: await getTheme(request) };
+  return {
+    user,
+    provider,
+    theme: await getTheme(request),
+    alignment: await getAlignment(request),
+  };
 }
 
 /**
@@ -50,6 +62,16 @@ export async function action({ request }: Route.ActionArgs) {
   if (formData.get("intent") === "theme") {
     return redirect("/settings", {
       headers: { "Set-Cookie": await commitTheme(String(formData.get("theme") ?? "")) },
+    });
+  }
+
+  // Same bargain as the theme above, and a separate cookie: the two are
+  // independent preferences and setting one must not disturb the other.
+  if (formData.get("intent") === "align") {
+    return redirect("/settings", {
+      headers: {
+        "Set-Cookie": await commitAlignment(String(formData.get("align") ?? "")),
+      },
     });
   }
 
@@ -305,8 +327,54 @@ function ThemePicker({ current }: { current: Theme }) {
   );
 }
 
+/**
+ * Which way a note's own text runs.
+ *
+ * Built like the palette picker beside it, and for the same reasons — a native
+ * `<select>`, submitting on change, repainting immediately so the words do not
+ * wait on the post, with a real Save button as the no-JS path.
+ *
+ * It is deliberately not a live preview of a note: the thing it changes is two
+ * clicks away, and a swatch of fake prose here would be a second place for the
+ * type scale to be wrong.
+ */
+function AlignmentPicker({ current }: { current: Alignment }) {
+  const fetcher = useFetcher();
+
+  return (
+    <fetcher.Form method="post" className="max-w-xs">
+      <input type="hidden" name="intent" value="align" />
+      <label htmlFor="align" className="text-sm text-ink/60">
+        Note text
+      </label>
+      <select
+        id="align"
+        name="align"
+        defaultValue={current.id}
+        className={`${FIELD} cursor-pointer`}
+        onChange={(event) => {
+          applyAlignment(resolveAlignment(event.target.value));
+          fetcher.submit(event.currentTarget.form);
+        }}
+      >
+        {ALIGNMENTS.map((alignment) => (
+          <option key={alignment.id} value={alignment.id}>
+            {alignment.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="submit"
+        className="mt-4 rounded-xl border border-ink/15 px-4 py-1.5 text-sm text-ink transition-colors hover:bg-paper"
+      >
+        Save
+      </button>
+    </fetcher.Form>
+  );
+}
+
 export default function Menu({ loaderData }: Route.ComponentProps) {
-  const { user, provider, theme } = loaderData;
+  const { user, provider, theme, alignment } = loaderData;
   const [adding, setAdding] = useState(false);
   const initial = (user.username || user.email).trim().charAt(0).toUpperCase();
 
@@ -352,14 +420,22 @@ export default function Menu({ loaderData }: Route.ComponentProps) {
       <section className={`${PANEL} space-y-6`}>
         <div className="space-y-2">
           <p className={EYEBROW}>Appearance</p>
-          <h2 className="font-display text-2xl tracking-tight">Theme</h2>
+          <h2 className="font-display text-2xl tracking-tight">
+            Theme and layout
+          </h2>
           <p className="text-sm leading-relaxed text-ink/60">
-            Applies to this browser. Paper is the palette the app was drawn in;
-            the rest are ports of colour schemes you may already read code in.
+            Both apply to this browser. Paper is the palette the app was drawn
+            in; the rest are ports of colour schemes you may already read code
+            in. Note text sets which way an open note runs — centred is how the
+            app was drawn, flush left is the easier of the two to read at
+            length.
           </p>
         </div>
 
-        <ThemePicker current={theme} />
+        <div className="flex flex-wrap gap-x-12 gap-y-6">
+          <ThemePicker current={theme} />
+          <AlignmentPicker current={alignment} />
+        </div>
       </section>
 
       <section className={`${PANEL} space-y-6`}>
