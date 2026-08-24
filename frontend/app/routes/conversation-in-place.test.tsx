@@ -24,6 +24,7 @@ import { noteLayoutId } from "~/workspace/note-surface";
 import type { Route } from "./+types/workspace";
 import type { Chat, Note, User } from "~/lib/types";
 import { DEFAULT_THEME } from "~/lib/themes";
+import { DEFAULT_ALIGNMENT } from "~/lib/alignment";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -67,7 +68,7 @@ const chat: Chat = {
 const user: User = { id: 1, username: "reader", email: "reader@example.com" };
 const provider = { available: [], configured: [], active: null };
 const loaderData = { notes: [note], user, chats: [chat], provider };
-const rootLoaderData = { theme: DEFAULT_THEME };
+const rootLoaderData = { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT };
 
 const params = {};
 const props: Route.ComponentProps = {

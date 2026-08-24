@@ -89,6 +89,68 @@ html {
 }
 
 /*
+  Where a note's own text sits — the setting in `lib/alignment.ts`, as CSS.
+
+  Three custom properties rather than three sets of rules, so the rules below
+  are written once and the choice is made in one place. `<html>` carries
+  `data-note-align`; the `:root` block is what the error boundary gets, where
+  the root loader never ran.
+
+  Not `data-align`, which base-ui already writes on every popup it positions —
+  `start`, `center`, `end`. A bare `[data-align="center"]` here would match a
+  centred popup too and hand it a `--note-align` nothing asked it for.
+
+  `--note-block-*` is the pair of inline margins the structured blocks use. A
+  centred or right-aligned list is unreadable, so those never take the
+  alignment itself — they keep their own contents flush and move as a block,
+  which keeps the note's centre of mass with the prose.
+*/
+:root {
+  --note-align: left;
+  --note-block-start: 0;
+  --note-block-end: auto;
+}
+
+[data-note-align="left"] {
+  --note-align: left;
+  --note-block-start: 0;
+  --note-block-end: auto;
+}
+
+[data-note-align="center"] {
+  --note-align: center;
+  --note-block-start: auto;
+  --note-block-end: auto;
+}
+
+[data-note-align="right"] {
+  --note-align: right;
+  --note-block-start: auto;
+  --note-block-end: 0;
+}
+
+.note-text {
+  text-align: var(--note-align);
+}
+
+/*
+  By name, because a form control does not inherit `text-align` from an
+  ancestor — the note's title and body are textareas while you write in them.
+*/
+.note-text textarea {
+  text-align: var(--note-align);
+}
+
+/*
+  Scoped under `.note-text`, which only the open note has. The library cards
+  render the same `<Markdown>` and so carry the same `.markdown` class; written
+  against that, these would swing the whole grid around as well.
+*/
+.note-text .markdown :is(ul, ol, blockquote, table) {
+  margin-inline: var(--note-block-start) var(--note-block-end);
+}
+
+/*
   A note's markdown, rendered.
 
   Deliberately close to the textarea it swaps with. This appears and disappears
@@ -97,11 +159,11 @@ html {
   Headings are one modest step each rather than the usual octave, and the block
   rhythm is the field's own line height.
 
-  The surface centres its text in both modes (see note-surface.tsx: alignment
-  cannot be tweened, so it does not differ between them). Prose follows that.
-  The structured blocks do not: a centred list is unreadable. They align their
-  own contents and centre as a block instead, so the note's centre of mass is
-  the same either way.
+  Alignment is not decided here. Prose follows `--note-align` from the block
+  above, and the structured blocks keep their contents flush and move as a
+  whole — `width: fit-content` is what gives their inline margins something to
+  push against. What is left in this block is what holds true wherever a note's
+  markdown is rendered, the library cards included.
 */
 .markdown > :first-child {
   margin-top: 0;
@@ -138,7 +200,6 @@ html {
   padding-inline-start: 1.4em;
   text-align: start;
   width: fit-content;
-  margin-inline: auto;
 }
 
 .markdown ul {
@@ -185,7 +246,6 @@ html {
   margin-block: 0.9em;
   text-align: start;
   width: fit-content;
-  margin-inline: auto;
 }
 
 .markdown hr {
@@ -195,7 +255,7 @@ html {
 }
 
 .markdown table {
-  margin: 0.9em auto;
+  margin-block: 0.9em;
   border-collapse: collapse;
   text-align: start;
 }
