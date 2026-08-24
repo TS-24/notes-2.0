@@ -48,8 +48,8 @@ model ranks.**
   asking, and what the answers concentrated on. That summary becomes what the chat's card shows in
   the library, because nobody rereads a transcript.
 
-  **This needs your own API key.** Add one on `/settings` for Anthropic, OpenAI, OpenRouter or
-  OpenCode Zen. The key is sent to the provider *before* it is stored, so one that will not work
+  **This needs your own API key.** Add one on `/settings` for Anthropic, OpenAI, OpenRouter,
+  OpenCode Zen or Fireworks AI. The key is sent to the provider *before* it is stored, so one that will not work
   is refused in the dialog that asked for it rather than at your first question — and the model
   list that same call comes back with is what the picker above the composer offers. Keys are held
   one per provider, so moving between two you own is a dropdown rather than a re-paste. They are
@@ -263,7 +263,7 @@ directory of other people's writing.
 
 ### Chats and your API key
 
-Chats run on a provider account you own. Four are in the registry in `services/llm.py`:
+Chats run on a provider account you own. Five are in the registry in `services/llm.py`:
 
 | Provider | Speaks | Model list |
 | --- | --- | --- |
@@ -271,13 +271,20 @@ Chats run on a provider account you own. Four are in the registry in `services/l
 | OpenAI | OpenAI's API | Behind the key, likewise |
 | OpenRouter | OpenAI's API, at `openrouter.ai/api/v1` | Public, so saving a key spends one extra 1-token request to prove it |
 | OpenCode Zen | OpenAI's API, at `opencode.ai/zen/v1` | Public, likewise |
+| Fireworks AI | OpenAI's API, at `api.fireworks.ai/inference/v1` | Behind the key, so no probe is spent |
 
 A table of import paths rather than LangChain's `init_chat_model`, because it is greppable, it
 fails at the point of the typo instead of at the first request with a real key, and it can be
 checked by a test that has no credentials — which is the only kind of test this can have. Adding a
-provider is one row there plus one package in `requirements.txt`; the two gateways reuse
-`ChatOpenAI` and differ only by where the call is addressed, which is the one thing that must not
-be forgotten, since the OpenAI client will otherwise take an OpenRouter key and post it to OpenAI.
+provider is one row there, plus a package in `requirements.txt` only if it speaks an API nothing
+else does; the three OpenAI-shaped ones reuse `ChatOpenAI` and differ only by where the call is
+addressed, which is the one thing that must not be forgotten, since the OpenAI client will
+otherwise take an OpenRouter key and post it to OpenAI.
+
+Two properties, and they are independent. `api_style` is whose HTTP API it speaks, which decides
+the SDK; `lists_publicly` is whether the catalogue is readable without a key, which decides whether
+saving one spends an extra 1-token request to prove it. Fireworks is what shows they are separate:
+it is addressed like a gateway and gated like a first-party API.
 
 The key is stored encrypted with Fernet, under a key derived from `JWT_SECRET` by HKDF — so there
 is no extra environment variable to set, and one consequence worth knowing: **rotating

@@ -13,7 +13,8 @@ Two design notes:
 string, but a table of import paths is greppable, fails at the point of the typo
 rather than at the first request with a real key, and can be checked by a test
 that has no credentials — which is the only kind of test this can have. Adding a
-provider is one row here plus one package in requirements.txt.
+provider is one row here, plus a package in requirements.txt only if it speaks an
+API nothing already listed does.
 
 **One exception out.** Anthropic and OpenAI raise entirely unrelated types for
 the same "your key is wrong", and the route above cannot branch on both. They
@@ -72,14 +73,17 @@ class Provider:
     # whose service it is. It decides the SDK used to list models below, and it
     # is why a gateway costs one row here rather than a client of its own.
     api_style: Literal["openai", "anthropic"]
-    # Only the gateways set this. Anthropic's and OpenAI's own SDKs already know
-    # where they live, and repeating the address here would be a second place
-    # for it to be wrong.
+    # Set by everyone the SDK does not already know how to reach. Anthropic's
+    # and OpenAI's own clients know where they live, and repeating the address
+    # here would be a second place for it to be wrong.
     base_url: str | None = None
     # Whether this provider hands out its model list to anybody who asks.
-    # Checked by hand against the live endpoints: both gateways do, and both
-    # first-party APIs answer 401. It decides whether listing models proves a
-    # key works, or whether `check_key` has to spend a request finding out.
+    # Checked by hand against the live endpoints: the two gateways do; the
+    # first-party APIs and Fireworks all answer 401, with no key and with a
+    # nonsense one alike. It decides whether listing models proves a key works,
+    # or whether `check_key` has to spend a request finding out — and it is a
+    # different question from whether `base_url` is set, which Fireworks is
+    # what shows.
     lists_publicly: bool = False
 
 
@@ -124,6 +128,21 @@ PROVIDERS: dict[str, Provider] = {
         api_style="openai",
         base_url="https://opencode.ai/zen/v1",
         lists_publicly=True,
+    ),
+    # Open-weight models on Fireworks' own hardware. OpenAI-shaped like the
+    # gateways above, and addressed like them, but its catalogue is behind the
+    # key — so `lists_publicly` stays false and no probe is spent.
+    #
+    # Its ids are paths, not names: `accounts/fireworks/models/<model>` for the
+    # serverless catalogue, `accounts/<account>/deployments/<id>` for a
+    # dedicated one. Both fit `active_model`, which is String(128).
+    "fireworks": Provider(
+        label="Fireworks AI",
+        module="langchain_openai",
+        class_name="ChatOpenAI",
+        default_model="accounts/fireworks/models/deepseek-v4-pro",
+        api_style="openai",
+        base_url="https://api.fireworks.ai/inference/v1",
     ),
 }
 
@@ -238,9 +257,10 @@ def check_key(provider: str, api_key: str) -> list[str]:
     question.
 
     Two calls or one, depending on the provider. Listing models is proof enough
-    where the list is behind the key — Anthropic and OpenAI both answer 401
-    without one. The gateways serve their catalogues to anybody, so a listing
-    there says nothing about the credential and a real request has to be made.
+    wherever the list is behind the key — Anthropic, OpenAI and Fireworks all
+    answer 401 without one. The two gateways serve their catalogues to anybody,
+    so a listing there says nothing about the credential and a real request has
+    to be made.
     """
     known = PROVIDERS.get(provider)
     if known is None:

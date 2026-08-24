@@ -402,23 +402,28 @@ class TestForgetting:
 
 class TestWhatTheDialogNeeds:
     def test_every_provider_in_the_registry_is_offered(self, client):
+        """
+        The dialog is built from this list, so a provider missing here is one
+        nobody can add a key for. Compared against the registry itself rather
+        than a copy of it: the copy is what goes stale, and what it would fail
+        to catch is a route that quietly drops a row.
+        """
+        from app.services.llm import PROVIDERS
+
         offered = settings(client)["available"]
 
-        assert {p["id"] for p in offered} == {
-            "anthropic",
-            "openai",
-            "openrouter",
-            "opencode-zen",
-        }
+        assert {p["id"] for p in offered} == set(PROVIDERS)
 
     def test_each_offered_provider_carries_a_label_and_a_default(self, client):
         for provider in settings(client)["available"]:
             assert provider["label"] and provider["default_model"]
 
     def test_an_account_with_no_key_is_still_told_what_it_could_pick(self, client):
+        from app.services.llm import PROVIDERS
+
         body = settings(client)
 
-        assert body["configured"] == [] and len(body["available"]) == 4
+        assert body["configured"] == [] and len(body["available"]) == len(PROVIDERS)
 
 
 def _vanished(provider, api_key):
