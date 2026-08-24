@@ -28,6 +28,23 @@ export type SurfaceMode = "page" | "boxed";
 
 export const noteLayoutId = (id: number) => `note-${id}`;
 
+/**
+ * The measure every row in the note shares: the timestamp, the title and the
+ * body all sit in a box of exactly this width, centred in the column.
+ *
+ * One constant rather than three copies because the thing that matters is that
+ * they *agree*. The title used to take the full column while the body sat in a
+ * narrower box centred inside it, which is invisible when both are centred on
+ * the same axis and 94px of disagreement the moment either edge is the one
+ * being read from.
+ *
+ * 92ch, and wide enough that the column above decides the width in the boxed
+ * mode rather than this cap. It used to be 68ch on the body alone, which made
+ * the thing you actually write in the narrowest element on a page that exists
+ * to be written in.
+ */
+const MEASURE = "mx-auto w-full max-w-[92ch]";
+
 /** Shared by the surface and by the cards reflowing around it. */
 /*
   How long the surface takes to change mode.
@@ -675,15 +692,16 @@ export default function NoteSurface({
         }`}
       >
         <p
-          className="font-sans text-sm italic text-accent-ink transition-opacity duration-500"
+          className={`${MEASURE} font-sans text-sm italic text-accent-ink transition-opacity duration-500`}
           style={{ opacity: boxed ? 0 : 1 }}
         >
           {lastTouched}
         </p>
 
         {/* Same contract as the body below: a wrapper that fits the field
-            exactly, so the roller can measure against its origin. */}
-        <div className="relative mt-6 w-full">
+            exactly, so the roller can measure against its origin — and the same
+            measure, so the two share both edges at every alignment. */}
+        <div className={`relative mt-6 ${MEASURE}`}>
           <textarea
             ref={titleField.attach}
             value={title}
@@ -716,13 +734,8 @@ export default function NoteSurface({
         {/*
           The wrapper has to fit the field exactly and be the positioning
           context: the word roller measures against its origin.
-
-          The measure is wide enough that the column above decides the width,
-          not this cap. It used to be 68ch, which made the thing you actually
-          write in the narrowest element on a page that exists to be written in
-          — the title spanned the whole box and the text sat in a third of it.
         */}
-        <div className="relative mx-auto mt-8 w-full max-w-[92ch]">
+        <div className={`relative mt-8 ${MEASURE}`}>
           {writing ? (
             <>
               <textarea
