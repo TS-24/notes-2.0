@@ -15,7 +15,7 @@ from app.services import llm
 TURNS = [("user", "what is a gerund?"), ("assistant", "a verb acting as a noun")]
 
 
-PROVIDER_IDS = ["anthropic", "openai", "openrouter", "opencode-zen"]
+PROVIDER_IDS = ["anthropic", "openai", "openrouter", "opencode-zen", "fireworks"]
 
 
 class TestRegistry:
@@ -45,17 +45,26 @@ class TestRegistry:
         """
         assert llm.PROVIDERS[provider].lists_publicly is True
 
-    @pytest.mark.parametrize("provider", ["anthropic", "openai"])
-    def test_the_first_party_providers_do_not(self, provider):
-        # Their model lists are 401s without a key, so listing is the check.
+    @pytest.mark.parametrize("provider", ["anthropic", "openai", "fireworks"])
+    def test_the_rest_keep_their_catalogue_behind_the_key(self, provider):
+        """
+        Their model lists are 401s without a key, so listing is the check.
+
+        Fireworks is the one that shows this is not the same question as
+        "is it a gateway": it is somebody else's models on somebody else's
+        hardware, reached at its own address, and it still answers 401 to
+        `/inference/v1/models` both with no key and with a nonsense one.
+        """
         assert llm.PROVIDERS[provider].lists_publicly is False
 
-    @pytest.mark.parametrize("provider", ["openrouter", "opencode-zen"])
-    def test_the_gateways_reuse_the_openai_client(self, provider):
+    @pytest.mark.parametrize(
+        "provider", ["openrouter", "opencode-zen", "fireworks"]
+    )
+    def test_the_hosted_providers_reuse_the_openai_client(self, provider):
         """
-        OpenRouter and OpenCode Zen both speak OpenAI's API. That is the whole
-        reason they cost one registry row each rather than a client of their
-        own, so it is worth a test: the day one of them stops being
+        All three speak OpenAI's API at an address of their own. That is the
+        whole reason they cost one registry row each rather than a client of
+        their own, so it is worth a test: the day one of them stops being
         OpenAI-shaped, this says so instead of the first chat saying it.
         """
         assert llm.PROVIDERS[provider].api_style == "openai"
@@ -353,6 +362,24 @@ class TestCheckingAKey:
             llm.check_key("openrouter", "k")
 
         assert "Invalid API key" in str(caught.value)
+
+    def test_an_addressed_provider_can_still_be_proved_by_its_listing(
+        self, monkeypatch
+    ):
+        """
+        Fireworks has a `base_url` and is not probed, which is the pairing this
+        pins: the probe is owed to a *public* catalogue, not to a provider
+        being somewhere other than home. Reading it the other way costs a
+        request per key saved to learn what the listing had just said.
+        """
+        probed = []
+        monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("a"))
+        monkeypatch.setattr(llm, "_probe", lambda *a: probed.append(a))
+
+        llm.check_key("fireworks", "k")
+
+        assert llm.PROVIDERS["fireworks"].base_url
+        assert probed == []
 
     def test_it_returns_the_catalogue(self, monkeypatch):
         monkeypatch.setattr(llm, "_models_client", lambda *a: _catalogue("b", "a"))
