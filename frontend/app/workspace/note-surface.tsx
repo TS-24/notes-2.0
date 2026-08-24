@@ -29,6 +29,16 @@ export type SurfaceMode = "page" | "boxed";
 export const noteLayoutId = (id: number) => `note-${id}`;
 
 /**
+ * Where a note's conversation is shown: in the note's own place.
+ *
+ * Both halves matter. `chat` is what to show, and `open` is which note it is
+ * standing in for — which is the gap it comes out of in the grid, and where
+ * closing it goes back to.
+ */
+export const conversationAt = (noteId: number, chatId: number) =>
+  `/notes?open=${noteId}&chat=${chatId}`;
+
+/**
  * The measure every row in the note shares: the timestamp, the title and the
  * body all sit in a box of exactly this width, centred in the column.
  *
@@ -437,13 +447,13 @@ export default function NoteSurface({
     const id = chatStarter.data?.id;
     if (chatStarter.state !== "idle" || !id || openedChat.current) return;
     openedChat.current = true;
-    navigate(`/chats/${id}`);
-  }, [chatStarter.state, chatStarter.data, navigate]);
+    navigate(conversationAt(note.id, id));
+  }, [chatStarter.state, chatStarter.data, navigate, note.id]);
 
   const talkAboutThis = () => {
     if (conversationId !== null) {
       save();
-      navigate(`/chats/${conversationId}`);
+      navigate(conversationAt(note.id, conversationId));
       return;
     }
     if (save()) {

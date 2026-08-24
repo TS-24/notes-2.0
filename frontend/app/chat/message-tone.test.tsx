@@ -65,7 +65,7 @@ function mount() {
         path: "/chats/:chatId",
         action: () => ({ ok: true }),
         Component: () => (
-          <ChatSurface chat={chat} provider={provider} mode="page" onClose={() => {}} />
+          <ChatSurface chat={chat} provider={provider} onClose={() => {}} />
         ),
       },
     ],

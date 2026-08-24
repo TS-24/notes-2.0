@@ -9,8 +9,7 @@ import {
 import GhostCard from "~/notes/ghost-card";
 import Markdown from "~/notes/markdown";
 import LocalTime from "~/lib/local-time";
-import ChatCard from "~/notes/chat-card";
-import type { Chat, Note, VocabularyAnalysis } from "~/lib/types";
+import type { Note, VocabularyAnalysis } from "~/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -24,13 +23,6 @@ import {
  * claims the same layoutId on the other side of the navigation.
  */
 const GHOST_ID = 0;
-
-/** Notes and chats share the grid; `messages` is what tells them apart. */
-type GridItem = Note | Chat;
-const isChat = (item: GridItem): item is Chat => "messages" in item;
-
-/** Ids restart per table, so a note and a chat can both be 7. */
-const gridKey = (item: GridItem) => `${isChat(item) ? "chat" : "note"}-${item.id}`;
 
 // 1. Separate Child Component declared OUTSIDE to fix unmounting & state-loss bug
 function NoteCard({
@@ -323,50 +315,36 @@ function NoteCard({
 // of its own — the database is the single source of truth.
 export default function Notegrid({
   notes,
-  chats = [],
   openNoteId = null,
-  openChatId = null,
 }: {
   notes: Note[];
-  /** Conversations, shown beside the notes. Same library, two kinds of thing. */
-  chats?: Chat[];
   /** Set when the landing hero handed a note over to be opened on arrival. */
   openNoteId?: number | null;
-  /** Set when a chat is open as an overlay on the library. */
-  openChatId?: number | null;
 }) {
-  // The open note is the workspace layout's, not the grid's — the grid only
-  // has to leave a gap where it went. `?open=` is the single source of truth,
-  // so opening is a URL change rather than local state.
-  // Same for chats: the open chat lives above the grid, so filter it out.
+  /*
+    The library is a list of notes, and only notes.
+
+    Conversations used to have cards of their own here, which made the grid two
+    kinds of thing and gave a chat two ways in — its own card, and the note it
+    was bound to. Every conversation has a note now, so the note is what stands
+    for it; you reach the conversation by opening that note and asking for it.
+
+    The open note is the workspace layout's, not the grid's — the grid only has
+    to leave a gap where it went. `?open=` is the single source of truth, so
+    opening is a URL change rather than local state.
+  */
   const navigate = useNavigate();
   const createFetcher = useFetcher<{ ok: boolean; id?: number }>();
-  const chatFetcher = useFetcher<{ ok: boolean; id?: number }>();
+  const chatFetcher = useFetcher<{ ok: boolean; id?: number; noteId?: number }>();
 
   const gridNotes = notes.filter(n => n.id !== openNoteId);
   const pinnedNotes = gridNotes.filter(n => n.is_pinned);
-  // A finished conversation is shown as the note it wrote, not as a second card
-  // saying the same thing. Both halves of that test matter now that every chat
-  // is bound to a note from the moment it exists: an unfinished one has a note
-  // too, and it is the conversation you want to see, not an empty note. And a
-  // chat finished before the binding has no note to stand in for it, so it
-  // keeps its card rather than vanishing.
-  const liveChats = chats.filter(c => !c.summary || c.note_id === null);
-  const gridChats = openChatId ? liveChats.filter(c => c.id !== openChatId) : liveChats;
-  // Interleaved by when they were last touched, not grouped by kind: the
-  // library is a record of what you were working on, and splitting it into a
-  // notes half and a chats half would make it two records instead.
-  const rest: GridItem[] = [...gridNotes.filter(n => !n.is_pinned), ...gridChats].sort(
-    (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
-  );
+  const rest = gridNotes
+    .filter(n => !n.is_pinned)
+    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 
   const handleExpand = useCallback(
     (note: Note) => navigate(`/notes?open=${note.id}`, { preventScrollReset: true }),
-    [navigate],
-  );
-
-  const handleOpenChat = useCallback(
-    (chat: Chat) => navigate(`/notes?chat=${chat.id}`, { preventScrollReset: true }),
     [navigate],
   );
 
@@ -379,7 +357,12 @@ export default function Notegrid({
     );
   }, [createFetcher]);
 
-  // Same shape for a conversation: it has to exist before it has a page.
+  /*
+    Same shape for a conversation, and it makes a note as well as a chat — a
+    conversation with nothing to be about is a state the app does not have (see
+    backend/app/api/chats.py::create_chat). So this is "a new note, and start
+    talking about it straight away" rather than a second kind of thing.
+  */
   const handleNewChat = useCallback(() => {
     chatFetcher.submit({ intent: "create" }, { method: "post", action: "/chats" });
   }, [chatFetcher]);
@@ -394,10 +377,12 @@ export default function Notegrid({
 
   const openedChat = useRef(false);
   useEffect(() => {
-    const id = chatFetcher.data?.id;
-    if (chatFetcher.state !== "idle" || !id || openedChat.current) return;
+    const { id, noteId } = chatFetcher.data ?? {};
+    if (chatFetcher.state !== "idle" || !id || !noteId || openedChat.current) return;
     openedChat.current = true;
-    navigate(`/notes?chat=${id}`, { preventScrollReset: true });
+    // Both, because the conversation is shown in the note's place: `?open=`
+    // says which gap in the grid it comes out of and where closing it goes.
+    navigate(`/notes?open=${noteId}&chat=${id}`, { preventScrollReset: true });
   }, [chatFetcher.state, chatFetcher.data, navigate]);
 
   /*
@@ -443,16 +428,12 @@ export default function Notegrid({
    * and it server-renders — so opening a note animates the rest of the grid
    * into its new shape rather than tearing the grid down and rebuilding it.
    */
-  const columns = (items: GridItem[], lead?: ReactNode) => (
+  const columns = (items: Note[], lead?: ReactNode) => (
     <div className="columns-[280px] gap-6">
       {lead}
       {items.map(item => (
-        <div key={gridKey(item)} className="mb-6 break-inside-avoid">
-          {isChat(item) ? (
-            <ChatCard data={item} onOpen={handleOpenChat} />
-          ) : (
-            <NoteCard data={item} onExpand={handleExpand} />
-          )}
+        <div key={item.id} className="mb-6 break-inside-avoid">
+          <NoteCard data={item} onExpand={handleExpand} />
         </div>
       ))}
     </div>

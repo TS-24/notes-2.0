@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from ..db.models import Chat, ChatMessage
+from ..db.models import Chat, ChatMessage, Note
 
 # What a chat is called before anything has been said in it — the same
 # placeholder a new note gets, so the two read alike in the library.
@@ -127,6 +127,22 @@ def add_exchange(db: Session, chat: Chat, question: str, answer: str) -> Chat:
 
     if chat.title == UNTITLED:
         chat.title = title_from(question)
+        # And the note it is bound to, when that has no name either. A
+        # conversation started from the library makes an Untitled note to end up
+        # in, so closing it would otherwise land the reader on a blank page with
+        # nothing on it to say what it was. A note the reader named, or one a
+        # conversation was started *from*, already says what it is and is left
+        # alone.
+        note = _bound_note(db, chat)
+        if note is not None and note.title == UNTITLED:
+            note.title = chat.title
+
+    # Talking again takes a finished conversation up where it left off, so it is
+    # not finished any more and the summary describing it has to go. Nothing is
+    # lost: every part of it was written into the note as text when the chat was
+    # finished, and the note keeps that until the next finish rewrites it.
+    if chat.summarized_at is not None:
+        _forget_summary(chat)
 
     # Explicitly, for the reason touch_note gives: appending to a relationship
     # does not dirty the parent's own columns, so `onupdate` would not fire and
@@ -135,6 +151,32 @@ def add_exchange(db: Session, chat: Chat, question: str, answer: str) -> Chat:
     db.commit()
     db.refresh(chat)
     return chat
+
+
+def _bound_note(db: Session, chat: Chat) -> Note | None:
+    """The note this conversation is two faces of, or None for an old one.
+
+    Scoped by owner as well as by id, for the reason every lookup here is: an
+    unscoped filter is one forgotten argument away from meaning "any user".
+    """
+    if chat.note_id is None:
+        return None
+    stmt = select(Note).where(Note.id == chat.note_id, Note.user_id == chat.user_id)
+    return db.scalars(stmt).first()
+
+
+def _forget_summary(chat: Chat) -> None:
+    """Put a chat back to being unfinished. The inverse of `store_summary`.
+
+    All five columns together, as they are written — a chat holding a general
+    summary and no `summarized_at` is a state the schema permits and nothing
+    should create.
+    """
+    chat.summary_general = None
+    chat.summary_topics = None
+    chat.summary_questions = None
+    chat.summary_answers = None
+    chat.summarized_at = None
 
 
 def title_from(question: str) -> str:

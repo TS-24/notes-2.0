@@ -520,6 +520,28 @@ Each of these cost real time. They are all commented at the site too.
     anything that references the new name into two `batch_alter_table` blocks —
     see `e7d41a20c9b8`.
 
+38. **A conversation is shown in its note's place, and borrows the note's
+    `layoutId`.** That is the whole reason leaving one is an animation. It used
+    to be a page at `/chats/:id`, outside the workspace layout — two whole
+    screens with no element in common, so there was nothing for Framer to move
+    and closing a chat was a hard cut. `routes/workspace.tsx` now renders the
+    note surface *or* the chat surface, never both, and
+    `chat-surface.tsx::conversationLayoutId` returns `noteLayoutId(chat.note_id)`
+    rather than an id of its own. Two things follow and neither is optional:
+    rendering both and hiding one breaks it (a layoutId moving between two
+    *live* elements is the crossfade that once left the page blank with the note
+    still in it — see the `key` comment in note-surface.tsx), and a
+    conversation-specific id breaks it too, because two elements do not
+    crossfade into each other, they arrive and depart independently.
+
+39. **Finishing a conversation is a checkpoint, not an end.** `send_message`
+    used to refuse a turn in a summarised chat with a 409. It does not: talking
+    again clears the summary columns, which is to say the chat is live again,
+    because a summary is a property of a *finished* conversation. Nothing is
+    lost, because `conversation_summary.as_note` already wrote every part of it
+    into the bound note as text and the note keeps that until the next finish
+    rewrites it. The surface has to match — a finished chat keeps its composer.
+
 ---
 
 ## 5. Conventions
