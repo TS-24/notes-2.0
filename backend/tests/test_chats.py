@@ -191,27 +191,47 @@ class TestFinishing:
     def summarising(self, monkeypatch):
         answer = summary.ConversationSummary(
             title="Gerunds",
-            general="A conversation about gerunds.",
-            topics=["gerunds", "verb forms"],
-            questions="The reader asked what a gerund is.",
-            answers="The replies defined it and gave examples.",
+            notes="A gerund is a verb form ending in -ing that works as a noun.",
+            actions=["Find three gerunds in your own writing."],
         )
         monkeypatch.setattr("app.api.chats.conversation_summary.summarize", lambda *a: answer)
         return answer
 
-    def test_finishing_writes_all_three_parts(self, configured, answering, summarising):
+    def test_finishing_writes_the_notes_and_the_actions(self, configured, answering, summarising):
         chat = new_chat(configured)
         send(configured, chat)
 
         got = configured.post(f"/api/chats/{chat}/summarize").json()["summary"]
-        assert got["general"] and got["topics"] and got["questions"] and got["answers"]
+        assert got["notes"] == summarising.notes
+        assert got["actions"] == summarising.actions
+
+    def test_the_actions_reach_the_note_as_a_markdown_list(
+        self, configured, answering, summarising
+    ):
+        """The end-to-end proof that as_note's markdown survives the round trip.
+
+        The note renders markdown at rest, so a `-` bullet arrives as a list
+        rather than as punctuation the reader has to look past.
+        """
+        chat = configured.post("/api/chats", json={}).json()
+        send(configured, chat["id"])
+
+        configured.post(f"/api/chats/{chat['id']}/summarize")
+
+        content = configured.get(f"/api/notes/{chat['note_id']}").json()["content"]
+        assert "- Find three gerunds in your own writing." in content
+        assert content.startswith(summarising.notes)
 
     def test_the_summary_survives_a_reload(self, configured, answering, summarising):
         chat = new_chat(configured)
         send(configured, chat)
         configured.post(f"/api/chats/{chat}/summarize")
 
-        assert configured.get(f"/api/chats/{chat}").json()["summary"]["topics"] == summarising.topics
+        stored = configured.get(f"/api/chats/{chat}").json()["summary"]
+        assert stored["notes"] == summarising.notes
+        # An empty list here would be indistinguishable from "never summarised",
+        # so the round trip has to keep the actions as well as the prose.
+        assert stored["actions"] == summarising.actions
 
     def test_an_empty_chat_has_nothing_to_summarise(self, configured, summarising):
         assert configured.post(f"/api/chats/{new_chat(configured)}/summarize").status_code == 400
@@ -269,7 +289,7 @@ class TestFinishing:
         send(configured, chat["id"], "one more thing")
 
         note = configured.get(f"/api/notes/{chat['note_id']}").json()
-        assert "A conversation about gerunds." in note["content"]
+        assert "A gerund is a verb form ending in -ing that works as a noun." in note["content"]
 
     def test_finishing_again_rewrites_that_same_note(
         self, configured, answering, summarising
@@ -395,10 +415,8 @@ class TestWhatAFinishedChatLeavesBehind:
     def summarising(self, monkeypatch):
         answer = summary.ConversationSummary(
             title="Gerunds",
-            general="A conversation about gerunds.",
-            topics=["gerunds"],
-            questions="The reader asked what a gerund is.",
-            answers="The replies defined it and gave examples.",
+            notes="A gerund is a verb form ending in -ing that works as a noun.",
+            actions=[],
         )
         monkeypatch.setattr("app.api.chats.conversation_summary.summarize", lambda *a: answer)
         return answer
@@ -418,8 +436,10 @@ class TestWhatAFinishedChatLeavesBehind:
         configured.post(f"/api/chats/{chat}/summarize")
 
         note = configured.get("/api/notes").json()[0]
-        assert "A conversation about gerunds." in note["content"]
-        assert "What this was about" in note["content"]
+        assert "A gerund is a verb form ending in -ing that works as a noun." in note["content"]
+        # The prose opens the note with no heading over it. This fixture has no
+        # actions, so the note is the prose and nothing else.
+        assert "#" not in note["content"]
 
     def test_the_summary_says_which_note_it_became(self, configured, answering, summarising):
         chat = new_chat(configured)
@@ -498,7 +518,7 @@ class TestRenamingAConversation:
         monkeypatch.setattr(
             "app.api.chats.conversation_summary.summarize",
             lambda *a: summary.ConversationSummary(
-                title="Gerunds", general="g", topics=["t"], questions="q", answers="a"
+                title="Gerunds", notes="Some prose about gerunds.", actions=[]
             ),
         )
         chat = new_chat(configured)
@@ -668,10 +688,8 @@ class TestFinishingWritesIntoTheBoundNote:
     def summarising(self, monkeypatch):
         def fake(*args):
             return summary.ConversationSummary(
-                general="Tides and the moon.",
-                topics=["tides"],
-                questions="How they work.",
-                answers="Sun and moon in line.",
+                notes="A spring tide happens when the sun and moon line up.",
+                actions=[],
                 title="Spring tides",
             )
 
@@ -686,7 +704,7 @@ class TestFinishingWritesIntoTheBoundNote:
         configured.post(f"/api/chats/{chat['id']}/summarize")
 
         note = configured.get(f"/api/notes/{chat['note_id']}").json()
-        assert "Tides and the moon." in note["content"]
+        assert "A spring tide happens when the sun and moon line up." in note["content"]
 
     def test_summarising_twice_leaves_one_note(self, configured, answering, summarising):
         before = len(configured.get("/api/notes").json())

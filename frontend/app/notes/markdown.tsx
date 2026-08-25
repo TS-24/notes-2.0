@@ -48,11 +48,24 @@ export function offsetOfLine(text: string, line: number): number {
   return Math.min(at, text.length);
 }
 
-/** The line a click landed in, from the nearest block that declares one. */
+/**
+ * The line a click landed in, from the nearest block that declares one.
+ *
+ * `data-line-base` is what makes this work while a note is being edited. The
+ * text below the caret is rendered as a markdown document of its own, so remark
+ * numbers its lines from 1 again — a wrapper declaring where that document
+ * starts in the whole note is what turns a local line back into a real one.
+ * Without it a click near the bottom of a note resolves to a block near the top.
+ */
 export function lineAt(target: EventTarget | null): number | null {
   const block = (target as HTMLElement | null)?.closest?.("[data-line]");
   const line = Number(block?.getAttribute("data-line"));
-  return Number.isFinite(line) && line > 0 ? line : null;
+  if (!Number.isFinite(line) || line <= 0) return null;
+
+  const base = Number(
+    block?.closest("[data-line-base]")?.getAttribute("data-line-base"),
+  );
+  return Number.isFinite(base) ? line + base : line;
 }
 
 type Node = { position?: { start?: { line?: number } } };

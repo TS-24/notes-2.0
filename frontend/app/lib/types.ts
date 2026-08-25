@@ -81,13 +81,10 @@ export interface ChatMessage {
 
 /** Mirrors backend/app/schemas/chat.py::ChatSummaryRead */
 export interface ChatSummary {
-  /** What the conversation was about overall. */
-  general: string;
-  topics: string[];
-  /** What the reader kept asking about, across all their turns. */
-  questions: string;
-  /** What the replies actually concentrated on. */
-  answers: string;
+  /** The subject matter written up as notes — prose, and the durable half. */
+  notes: string;
+  /** Things to go and do. Usually empty; most conversations imply none. */
+  actions: string[];
   summarized_at: string;
   /**
    * The note this summary was written into, which is what the library shows in

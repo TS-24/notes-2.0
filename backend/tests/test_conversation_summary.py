@@ -1,12 +1,16 @@
 """
-Tests for the three-part conversation summary
-(app/services/conversation_summary.py).
+Tests for the conversation summary (app/services/conversation_summary.py).
 
 The model is never called. What is pinned is the shape of the request and the
-shape of the refusal: the transcript has to say who said what, or "the focus of
-the questions" and "the focus of the answers" are the same question asked twice;
-and a provider that will not answer has to leave the chat summarisable later
-rather than half-written.
+shape of the refusal: the transcript has to say who said what, and a provider
+that will not answer has to leave the chat summarisable later rather than
+half-written.
+
+The summary used to be four fields, two of which were about the reader by
+construction — "the main focus of the reader's questions". It is prose and a
+list of actions now, because that is what a student watching a discussion would
+actually write down, and because nothing in the interface ever read the four
+fields: the frontend redirects to the note, and the note holds the prose.
 """
 
 import pytest
@@ -22,14 +26,21 @@ TURNS = [
 
 ANSWER = summary.ConversationSummary(
     title="Affect and effect",
-    general="A conversation about two commonly confused words.",
-    topics=["affect vs effect", "verb and noun senses"],
-    questions="The reader asked how to tell two similar words apart.",
-    answers="The replies gave the usual parts of speech and one exception.",
+    notes="Affect is usually the verb and effect usually the noun. Effect has a "
+    "rarer verb sense meaning to bring about, as in 'effect change'.",
+    actions=["Reread anything written this week for the two words."],
 )
 
 
 class TestTheTranscriptItSends:
+    """
+    Unchanged by the reshaping, and deliberately so.
+
+    Notes that cannot tell a question from an answer read as mush, so the
+    labelling still earns its place even though nothing downstream is organised
+    around the two sides any more.
+    """
+
     def test_it_names_the_note_a_conversation_started_from(self):
         """
         A summariser that has not seen the note describes the replies without
@@ -43,8 +54,6 @@ class TestTheTranscriptItSends:
     def test_it_labels_both_speakers(self):
         transcript = summary.transcript(TURNS)
 
-        # Not "does it contain the text" — whether the two sides are
-        # distinguishable is the whole basis of parts two and three.
         assert "affect and effect" in transcript
         assert transcript.count("You:") == 2
         assert transcript.count("Assistant:") == 2
@@ -59,16 +68,31 @@ class TestTheTranscriptItSends:
             summary.transcript([("narrator", "meanwhile")])
 
 
+class TestTheInstruction:
+    """
+    The prompt is an instruction to a model, not a guarantee, so this is the
+    honest limit of what a test can do: it pins that the rule is still being
+    asked for. Whether the model obeys is checked by reading a real summary.
+    """
+
+    def test_it_forbids_describing_the_reader(self):
+        # The failure this exists to prevent: "the user strongly disagreed with
+        # the answer." Two of the four old fields invited exactly that.
+        assert "never describe the reader" in summary.INSTRUCTION.lower()
+
+    def test_it_asks_for_actions_only_when_there_are_any(self):
+        assert "empty" in summary.INSTRUCTION.lower()
+
+
 class TestTheAnswer:
-    def test_it_returns_all_three_parts(self, monkeypatch):
+    def test_it_returns_the_prose_and_the_actions(self, monkeypatch):
         _answering(monkeypatch, ANSWER)
 
         got = summary.summarize("anthropic", "k", None, TURNS)
 
-        assert got.general == ANSWER.general
-        assert got.topics == ANSWER.topics
-        assert got.questions == ANSWER.questions
-        assert got.answers == ANSWER.answers
+        assert got.notes == ANSWER.notes
+        assert got.actions == ANSWER.actions
+        assert got.title == ANSWER.title
 
     def test_it_asks_for_the_schema_it_wants_back(self, monkeypatch):
         asked = {}
@@ -88,7 +112,14 @@ class TestTheAnswer:
         # parsed dict. Both have to end up as one type at the call site.
         _answering(monkeypatch, ANSWER.model_dump())
 
-        assert summary.summarize("anthropic", "k", None, TURNS).topics == ANSWER.topics
+        assert summary.summarize("anthropic", "k", None, TURNS).notes == ANSWER.notes
+
+    def test_no_actions_is_a_summary_rather_than_a_failure(self, monkeypatch):
+        # A conversation that implies nothing to do is the ordinary case, not a
+        # partial answer — so an empty list has to validate.
+        _answering(monkeypatch, {"title": "T", "notes": "Some prose.", "actions": []})
+
+        assert summary.summarize("anthropic", "k", None, TURNS).actions == []
 
 
 class TestWhenItCannot:
@@ -108,7 +139,7 @@ class TestWhenItCannot:
         assert summary.summarize("anthropic", "k", None, TURNS) is None
 
     def test_an_unusable_answer_is_none_rather_than_a_half_summary(self, monkeypatch):
-        _answering(monkeypatch, {"general": "only the first part"})
+        _answering(monkeypatch, {"notes": "prose with no title"})
 
         assert summary.summarize("anthropic", "k", None, TURNS) is None
 
@@ -140,48 +171,49 @@ class TestAsNote:
     """
     The summary, rendered as the text of a note.
 
-    A finished conversation is kept as a note you can edit, so the three parts
-    have to survive as prose rather than as fields. The note body is an
-    unstyled textarea with no markdown renderer, so a heading here is a line of
-    text with a blank line under it — nothing more is available.
+    Real markdown now. The note renders markdown at rest as of PR #52, so the
+    heading below is a `##` rather than the line-with-a-blank-line-under-it the
+    old version had to settle for.
     """
 
     def _summary(self, **over):
         base = dict(
             title="Gerunds",
-            general="A conversation about gerunds.",
-            topics=["gerunds", "verb forms"],
-            questions="The reader asked what a gerund is.",
-            answers="The replies defined it and gave examples.",
+            notes="A gerund is a verb form ending in -ing that works as a noun.",
+            actions=["Find three gerunds in your own writing."],
         )
         base.update(over)
         return summary.ConversationSummary(**base)
 
-    def test_every_part_is_in_the_text(self):
+    def test_the_prose_comes_first_with_nothing_above_it(self):
+        # No "What this was about" heading over it any more. The note opens on
+        # the notes themselves, which is what a page of notes looks like.
         text = summary.as_note(self._summary())
 
-        assert "A conversation about gerunds." in text
-        assert "The reader asked what a gerund is." in text
-        assert "The replies defined it and gave examples." in text
+        assert text.startswith("A gerund is a verb form")
 
-    def test_each_part_is_introduced_by_a_heading(self):
+    def test_the_actions_are_a_markdown_list_under_a_heading(self):
         text = summary.as_note(self._summary())
 
-        for heading in ("What this was about", "What you were asking", "What the answers covered"):
-            assert heading in text
+        assert "## " in text
+        assert "- Find three gerunds in your own writing." in text
 
-    def test_a_heading_is_a_line_of_its_own(self):
-        """Not "Heading: body" — the body is prose and starts its own line."""
-        lines = summary.as_note(self._summary()).splitlines()
+    def test_every_action_gets_its_own_bullet(self):
+        text = summary.as_note(self._summary(actions=["First thing", "Second thing"]))
 
-        assert "What this was about" in lines
+        assert "- First thing" in text
+        assert "- Second thing" in text
 
-    def test_topics_are_listed_when_there_are_any(self):
-        text = summary.as_note(self._summary())
+    def test_no_heading_at_all_when_there_is_nothing_to_do(self):
+        # An empty heading would be the note claiming a section it does not
+        # have — and most conversations imply no actions.
+        text = summary.as_note(self._summary(actions=[]))
 
-        assert "gerunds" in text and "verb forms" in text
+        assert "#" not in text
+        assert text == "A gerund is a verb form ending in -ing that works as a noun."
 
-    def test_no_empty_topics_heading_when_there_are_none(self):
-        text = summary.as_note(self._summary(topics=[]))
+    def test_the_title_is_not_written_into_the_body(self):
+        """It is the note's title; repeating it as a heading says it twice."""
+        text = summary.as_note(self._summary(title="Gerunds"))
 
-        assert "Topics" not in text
+        assert "Gerunds" not in text

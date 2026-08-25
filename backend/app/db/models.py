@@ -329,12 +329,15 @@ class Chat(Base):
         onupdate=func.now(),
     )
 
-    # The three parts. Null together, written together — see api/chats.py, which
-    # refuses a partial summary rather than storing a third of one.
-    summary_general: Mapped[Optional[str]] = mapped_column(Text)
-    summary_topics: Mapped[Optional[list]] = mapped_column(JSON)
-    summary_questions: Mapped[Optional[str]] = mapped_column(Text)
-    summary_answers: Mapped[Optional[str]] = mapped_column(Text)
+    # What the conversation came to. Null together, written together — see
+    # api/chats.py, which refuses a partial summary rather than storing half.
+    #
+    # Two columns, not the four this replaces. `general`/`topics`/`questions`/
+    # `answers` forced every conversation into a shape two parts of which were
+    # about the reader rather than the subject, and nothing ever read them: the
+    # durable copy is the prose written into the bound note.
+    summary_notes: Mapped[Optional[str]] = mapped_column(Text)
+    summary_actions: Mapped[Optional[list]] = mapped_column(JSON)
     summarized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     # The note this conversation is bound to, from the moment the conversation
     # exists — not from the moment it is finished, which is what the old
