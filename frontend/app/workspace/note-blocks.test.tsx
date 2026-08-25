@@ -20,7 +20,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeAll, expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import NoteSurface from "~/workspace/note-surface";
 import type { Note } from "~/lib/types";
@@ -62,6 +62,7 @@ function mount(subject: Note = note) {
   const container = document.createElement("div");
   document.body.append(container);
   const saved: Array<Record<string, string>> = [];
+  const closes = { count: 0 };
   const router = createMemoryRouter(
     [
       {
@@ -76,7 +77,9 @@ function mount(subject: Note = note) {
             mode="boxed"
             conversationId={null}
             onOpen={() => {}}
-            onClose={() => {}}
+            onClose={() => {
+              closes.count += 1;
+            }}
             onReturn={() => {}}
           />
         ),
@@ -99,6 +102,7 @@ function mount(subject: Note = note) {
   return {
     container,
     saved,
+    closes,
     field,
     fields: () => container.querySelectorAll('textarea[aria-label="Note text"]'),
     body: () => container.querySelector("[data-note-body]"),
@@ -322,4 +326,82 @@ test("Enter at the end of a block starts a new line", async () => {
   await surface.type("Twice a day.\n");
 
   expect(surface.field()?.value).toBe("Twice a day.\n");
+});
+
+/*
+  The click that opens a block is the click that used to close the note.
+
+  mousedown is a discrete event, so React flushes the `setActive` from
+  `handleMouseDown` synchronously before the event finishes bubbling to
+  `document` — and the collapse listener there then sees a target that has been
+  replaced by the field. Measured in Chrome on the boxed note: the same `<li>`
+  reports `isConnected: true` in the capture phase and `false` in the bubble
+  phase, and `contains` on a detached node is false, so a click in the middle of
+  the note read as a click outside it and closed it.
+
+  jsdom does not reproduce that flush — React commits in a microtask there, so
+  the behavioural half below passes with or without the fix and is kept only as
+  a description of the outcome. The phase is what actually has to hold, and it
+  is the one thing jsdom can be held to.
+*/
+test("clicking the note's own text does not close the note", async () => {
+  const surface = mount();
+
+  await surface.click(paragraphSaying(surface, "Twice a day."));
+
+  expect(surface.closes.count).toBe(0);
+  expect(surface.field()?.value).toBe("Twice a day.");
+});
+
+test("the outside-click listener runs before React can detach the target", () => {
+  const added: Array<boolean | AddEventListenerOptions | undefined> = [];
+  const real = document.addEventListener.bind(document);
+  const spy = vi
+    .spyOn(document, "addEventListener")
+    .mockImplementation((type, listener, options) => {
+      if (type === "mousedown") added.push(options);
+      real(type, listener, options);
+    });
+
+  mount();
+  spy.mockRestore();
+
+  expect(added).not.toEqual([]);
+  // Capture, not bubble: by the bubble phase the clicked node is gone.
+  expect(added.every(options => options === true)).toBe(true);
+});
+
+/*
+  The field is sized to its text, and the text changes when the caret moves.
+
+  Neither measure fired on a block switch: the note is unchanged, and the hook's
+  mount measure watches the element, which React reuses across the switch. So
+  the field kept the height of the block you came from — a tall empty gap under
+  a short paragraph, and, because the field is `overflow-hidden`, a taller block
+  clipped to the height of the shorter one it was opened from. That is what made
+  a list collapse.
+*/
+test("the field is re-measured when the caret moves to another block", async () => {
+  const heights: Record<string, number> = { "One\ntwo\nthree": 60, "Short.": 20 };
+  const scrollHeight = vi
+    .spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get")
+    .mockImplementation(function (this: HTMLTextAreaElement) {
+      return heights[this.value] ?? 0;
+    });
+  // `fitToText` refuses to trust an unlaid-out field, and jsdom is all zeroes.
+  const clientWidth = vi
+    .spyOn(HTMLTextAreaElement.prototype, "clientWidth", "get")
+    .mockReturnValue(600);
+
+  const surface = mount({ ...note, content: "One\ntwo\nthree\n\nShort." });
+
+  await surface.click(paragraphSaying(surface, "One\ntwo\nthree"));
+  expect(surface.field()?.style.height).toBe("60px");
+
+  await surface.click(paragraphSaying(surface, "Short."));
+  expect(surface.field()?.value).toBe("Short.");
+  expect(surface.field()?.style.height).toBe("20px");
+
+  scrollHeight.mockRestore();
+  clientWidth.mockRestore();
 });

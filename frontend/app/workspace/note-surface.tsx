@@ -587,7 +587,13 @@ export default function NoteSurface({
   // text did not. Kept apart so that typing in the body does not also force a
   // layout of the title.
   useMeasureEffect(titleField.measure, [titleField.measure, title, boxed]);
-  useMeasureEffect(bodyField.measure, [bodyField.measure, content, boxed]);
+  // `blockText`, not `content`: moving the caret from one block to another
+  // changes what the field is holding without changing the note, and the hook's
+  // own mount measure does not fire either — React keeps the same textarea
+  // across the switch. Left out, the field kept the height of the block you
+  // came from: a tall gap under a short paragraph, and a list clicked into from
+  // a one-line paragraph clipped to one line by `overflow-hidden`.
+  useMeasureEffect(bodyField.measure, [bodyField.measure, blockText, content, boxed]);
 
   /*
     …and keep re-measuring for the length of the tween, not just at its ends.
@@ -887,8 +893,18 @@ export default function NoteSurface({
       if (target.closest("[data-note-card], button, a")) return;
       collapse.current();
     };
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    /*
+      Capture, and this is the whole of the fix for a note that could not be
+      written in: mousedown is a discrete event, so React flushes the
+      `setActive` from `handleMouseDown` synchronously before the event finishes
+      bubbling to `document`. The paragraph that was clicked has been replaced
+      by the field by then — measured in Chrome, the same target reports
+      `isConnected: false` in the bubble phase and `true` in the capture phase —
+      and `contains` on a detached node is false, so every first click *inside*
+      the note read as a click outside it and closed the note.
+    */
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
   }, [boxed]);
 
   // Just the date. The landing page is not a "resume where you left off"
