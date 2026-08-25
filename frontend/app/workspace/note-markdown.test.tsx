@@ -123,12 +123,15 @@ test("the note's markdown is rendered at rest", () => {
   expect(surface.field()).toBeNull();
 });
 
-test("writing in it gives back the text you wrote", async () => {
+test("writing in it gives back the source of the block you clicked", async () => {
+  // It used to give back the whole note, which turned every heading and list in
+  // the document back into `##` and `-` because you clicked one of them. See
+  // note-blocks.test.tsx for the rest of that contract.
   const surface = mount();
 
   await surface.click(surface.rendered()!.querySelector("h1")!);
 
-  expect(surface.field()?.value).toBe(TEXT);
+  expect(surface.field()?.value).toBe("# What this was about");
 });
 
 test("the caret lands in the block you clicked", async () => {
