@@ -355,11 +355,27 @@ export default function NoteSurface({
     setActive(index);
   };
 
+  /*
+    Which region the caret belongs in, for text that may parse to no blocks.
+
+    `blockAtOffset` answers null for an empty note, and it is right to: there is
+    no block to be in. The editor still needs somewhere to put the caret, and
+    with nothing parsed the field simply *is* the note — `blockText`, `above`,
+    `below` and `spliceBlock` all already fall back to exactly that. Index 0 is
+    the name of that one region.
+
+    Without this a note with no text in it cannot be written in at all, which is
+    every note the app makes: "New note", the workspace loader's first note, and
+    the note behind every conversation all start empty so that closing one
+    unwritten deletes it.
+  */
+  const regionAt = (list: Block[], offset: number) => blockAtOffset(list, offset) ?? 0;
+
   /** Resolve a clicked source line to the block holding it, caret at its start. */
   const startWriting = (line: number | null) => {
     const offset = line === null ? content.length : offsetOfLine(content, line);
-    const index = blockAtOffset(blocks, offset);
-    const found = index === null ? null : blocks[index];
+    const index = regionAt(blocks, offset);
+    const found = blocks[index];
     goTo(index, found ? Math.max(0, offset - found.start) : offset);
   };
 
@@ -373,8 +389,8 @@ export default function NoteSurface({
    */
   const settleAt = (next: string, offset: number) => {
     const nextBlocks = blocksOf(next);
-    const index = blockAtOffset(nextBlocks, offset);
-    const found = index === null ? null : nextBlocks[index];
+    const index = regionAt(nextBlocks, offset);
+    const found = nextBlocks[index];
     setContent(next);
     goTo(index, found ? Math.max(0, offset - found.start) : offset);
   };
@@ -384,8 +400,10 @@ export default function NoteSurface({
     const next = spliceBlock(typed);
     const offset = (block?.start ?? 0) + event.target.selectionStart;
     const nextBlocks = blocksOf(next);
-    const index = blockAtOffset(nextBlocks, offset);
-    const found = index === null ? null : nextBlocks[index];
+    // Deleting the last character leaves no blocks, and the field must not
+    // close under the caret that just emptied it.
+    const index = regionAt(nextBlocks, offset);
+    const found = nextBlocks[index];
 
     setContent(next);
     // Only when the field's value is about to change under the caret. A
@@ -476,7 +494,10 @@ export default function NoteSurface({
   const heading = /^#{1,6}\s/.test(blockText);
   const blockSpacing = {
     marginTop: active === 0 ? 0 : heading ? "1.15em" : "0.75em",
-    marginBottom: active === blocks.length - 1 ? 0 : heading ? "0.45em" : "0.75em",
+    // `>=` rather than `===` so a note that parses to no blocks — the field is
+    // then the whole note — has no neighbour below to leave a gap for either.
+    marginBottom:
+      (active ?? 0) >= blocks.length - 1 ? 0 : heading ? "0.45em" : "0.75em",
   };
 
   const boxed = mode === "boxed";
