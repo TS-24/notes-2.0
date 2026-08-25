@@ -53,11 +53,42 @@ export const conversationLayoutId = (chat: Chat) =>
   other would have nothing to tween from and would land in a single frame while
   everything around it glided.
 */
+/**
+ * The conversation's own ground: one step up from the page (DESIGN.md §5).
+ *
+ * Named rather than written inline because the answer's ground below has to be
+ * a step away from *this* value, and the two silently becoming the same colour
+ * is exactly what went wrong once already.
+ */
+export const SURFACE_TONE = "var(--color-paper-raised)";
+
+/**
+ * The ground under an answer, one step further from the paper.
+ *
+ * It used to be `--muted`, and that was right while the conversation had a
+ * full-page mode: that mode's ground was `--paper`, and every palette defines
+ * `--muted` as `--paper-raised`, so the answer sat one visible step above it.
+ * Deleting the page mode left the conversation always in its box — and the box
+ * is `--paper-raised`. The answer's ground and the surface's became the same
+ * colour on all seven palettes, so the replies stopped being marked out at all
+ * and the comment below claiming the answer is "lifted" stopped being true.
+ *
+ * Mixed rather than named because there is no third paper tone to reach for and
+ * inventing one means seven palettes and seven dark counterparts. Mixing toward
+ * the ink moves away from the paper in whichever direction that palette's paper
+ * lies: darker on a light theme, lighter on a dark one, without a branch.
+ *
+ * Still one step, not two — §5 allows the answer a ground and does not allow it
+ * a border as well.
+ */
+export const ANSWER_TONE =
+  "color-mix(in oklab, var(--color-ink) 5%, var(--color-paper-raised))";
+
 const SURFACE_STYLE = {
   borderRadius: 24,
   minHeight: "68vh",
   padding: "2.25rem 2.5rem",
-  backgroundColor: "var(--color-paper-raised)",
+  backgroundColor: SURFACE_TONE,
   boxShadow: "0px 25px 50px -12px rgb(56 56 90 / 0.15)",
 } as const;
 
@@ -478,7 +509,14 @@ export default function ChatSurface({
                                   in the middle of the answer. `remark-breaks`
                                   keeps the line breaks `whitespace-pre-line`
                                   used to carry. */}
-                              <BubbleContent className="max-w-[76ch] rounded-3xl px-7 py-5 text-lg leading-relaxed text-ink/85">
+                              {/* The variant carries the shape and the
+                                  padding; the ground is set here, because it
+                                  has to be a step from the surface rather than
+                                  whatever `--muted` happens to resolve to. */}
+                              <BubbleContent
+                                style={{ backgroundColor: ANSWER_TONE }}
+                                className="max-w-[76ch] rounded-3xl px-7 py-5 text-lg leading-relaxed text-ink/85"
+                              >
                                 <Markdown>{message.content}</Markdown>
                               </BubbleContent>
                             </Bubble>
