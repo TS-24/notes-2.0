@@ -309,3 +309,17 @@ test("clearing a note's text does not close the field under the caret", async ()
 
   expect(surface.field()).not.toBeNull();
 });
+
+test("Enter at the end of a block starts a new line", async () => {
+  // Enter is a paragraph break in the body, not a commit. The native newline
+  // lands in the field, and the field must still be holding it afterwards:
+  // remark ends a paragraph node *before* its trailing newline, so splicing
+  // the block back out of the note used to swallow the character the reader
+  // just typed and Enter appeared to do nothing at all.
+  const surface = mount();
+
+  await surface.click(paragraphSaying(surface, "Twice a day."));
+  await surface.type("Twice a day.\n");
+
+  expect(surface.field()?.value).toBe("Twice a day.\n");
+});

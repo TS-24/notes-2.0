@@ -319,6 +319,18 @@ export default function NoteSurface({
   const [active, setActive] = useState<number | null>(null);
   /** Block-relative, because it is applied to the field's own value. */
   const caretOnEnter = useRef<number | null>(null);
+  /*
+    Newlines past the end of the block that the field is holding anyway.
+
+    remark ends a paragraph *before* its trailing newline, so pressing Enter at
+    the end of a block put a character in the field that the block's own span
+    did not cover — splicing the block back out of the note swallowed it, and
+    Enter appeared to do nothing. The reader is standing in that whitespace, so
+    it belongs to the field until they leave: only as far as the caret, never
+    the whole blank line between two blocks, which would show as an empty line
+    under every paragraph you click.
+  */
+  const [overhang, setOverhang] = useState(0);
   const rendered = useRef<HTMLDivElement>(null);
 
   const blocks = useMemo(() => blocksOf(content), [content]);
@@ -330,15 +342,17 @@ export default function NoteSurface({
     none, and the field is then simply the note, which is what it was before
     any of this.
   */
-  const blockText = block ? content.slice(block.start, block.end) : content;
+  /** Where the field's text ends in the note, the reader's overhang included. */
+  const blockEnd = block ? Math.min(block.end + overhang, content.length) : 0;
+  const blockText = block ? content.slice(block.start, blockEnd) : content;
   const above = block ? content.slice(0, block.start) : "";
-  const below = block ? content.slice(block.end) : "";
+  const below = block ? content.slice(blockEnd) : "";
   /** How many lines of the note come before `below` starts. */
-  const belowBase = block ? content.slice(0, block.end).split("\n").length - 1 : 0;
+  const belowBase = block ? content.slice(0, blockEnd).split("\n").length - 1 : 0;
 
   /** Put `text` back where the active block was, giving the whole note. */
   const spliceBlock = (text: string) =>
-    block ? content.slice(0, block.start) + text + content.slice(block.end) : text;
+    block ? content.slice(0, block.start) + text + content.slice(blockEnd) : text;
 
   /*
     Move the caret to another block.
@@ -349,9 +363,10 @@ export default function NoteSurface({
     effect below, which runs after that blur whether or not it happened.
   */
   const switching = useRef(false);
-  const goTo = (index: number | null, caretInBlock: number) => {
+  const goTo = (index: number | null, caretInBlock: number, over = 0) => {
     switching.current = true;
     caretOnEnter.current = caretInBlock;
+    setOverhang(over);
     setActive(index);
   };
 
@@ -392,7 +407,11 @@ export default function NoteSurface({
     const index = regionAt(nextBlocks, offset);
     const found = nextBlocks[index];
     setContent(next);
-    goTo(index, found ? Math.max(0, offset - found.start) : offset);
+    goTo(
+      index,
+      found ? Math.max(0, offset - found.start) : offset,
+      found ? Math.max(0, offset - found.end) : 0,
+    );
   };
 
   const handleBlockChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -411,9 +430,10 @@ export default function NoteSurface({
     // (PROGRESS.md §12), and most keystrokes do not move a boundary — writing
     // the same string back leaves the DOM alone and the browser keeps the
     // caret where it put it.
-    const settled = found ? next.slice(found.start, found.end) : next;
-    if (index !== active || settled !== typed) {
-      goTo(index, found ? Math.max(0, offset - found.start) : offset);
+    const over = found ? Math.max(0, offset - found.end) : 0;
+    const settled = found ? next.slice(found.start, found.end + over) : next;
+    if (index !== active || over !== overhang || settled !== typed) {
+      goTo(index, found ? Math.max(0, offset - found.start) : offset, over);
     }
   };
 
@@ -472,8 +492,8 @@ export default function NoteSurface({
     ) {
       event.preventDefault();
       settleAt(
-        content.slice(0, block.end) + "\n" + content.slice(blocks[active + 1].start),
-        block.end,
+        content.slice(0, blockEnd) + "\n" + content.slice(blocks[active + 1].start),
+        blockEnd,
       );
     }
   };
