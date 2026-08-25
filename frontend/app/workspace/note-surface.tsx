@@ -39,6 +39,21 @@ export const conversationAt = (noteId: number, chatId: number) =>
   `/notes?open=${noteId}&chat=${chatId}`;
 
 /**
+ * Nothing was ever written here.
+ *
+ * "Untitled" is the placeholder below, never a value — so a note the reader has
+ * not named holds `""`, and one that says "Untitled" was either named that on
+ * purpose or predates the change and keeps its title either way. That is why
+ * there is no special case for the word: it would take those notes away.
+ *
+ * A copy of crud/note.py::is_blank, which is the authority. This one is only a
+ * gate on `leave()` below, so the two disagreeing costs a request the server
+ * declines rather than a note that vanishes when it should not have.
+ */
+export const isBlank = (title: string, content: string) =>
+  !title.trim() && !content.trim();
+
+/**
  * The measure every row in the note shares: the timestamp, the title and the
  * body all sit in a box of exactly this width, centred in the column.
  *
@@ -406,8 +421,40 @@ export default function NoteSurface({
       {
         intent: "update",
         id: String(note.id),
-        title: nextTitle || "Untitled",
+        // No "Untitled" fallback any more. The word is placeholder text, and
+        // writing it into the column is what made a note nobody touched
+        // indistinguishable from one somebody named.
+        title: nextTitle,
         content: nextContent,
+      },
+      { method: "post", action: "/notes" },
+    );
+    return true;
+  };
+
+  /**
+   * Stepping out of the note for good, as opposed to merely saving it.
+   *
+   * A note that was never written in does not survive this: `close` writes
+   * whatever is in the fields and then asks the server to drop the note if
+   * nothing came of it. One intent rather than a save followed by a close,
+   * because those are two fetcher submissions racing each other — and the case
+   * that matters is clearing an existing note and then leaving, where the
+   * emptied text has to land *before* anything judges whether it is empty.
+   *
+   * Only the paths that genuinely leave call this. Escape on the landing page
+   * opens the note in the library, which keeps the same note on screen.
+   */
+  const leave = () => {
+    if (!isBlank(title, content)) return save();
+
+    saved.current = { title: title.trim(), content: content.trim() };
+    fetcher.submit(
+      {
+        intent: "close",
+        id: String(note.id),
+        title: title.trim(),
+        content: content.trim(),
       },
       { method: "post", action: "/notes" },
     );
@@ -524,7 +571,7 @@ export default function NoteSurface({
   const handleDoubleClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("input, textarea, button")) return;
     if (boxed) {
-      save();
+      leave();
       onReturn();
       return;
     }
@@ -553,7 +600,11 @@ export default function NoteSurface({
   const commitAndLeave = (event: React.KeyboardEvent) => {
     event.preventDefault();
     (event.target as HTMLElement).blur();
-    if (boxed) onClose();
+    if (!boxed) return;
+    // After the blur, so `leave` sees the same text onBlur just saved and
+    // supersedes that submission on the shared fetcher rather than racing it.
+    leave();
+    onClose();
   };
 
   /*
@@ -580,13 +631,18 @@ export default function NoteSurface({
   const escape = useRef(() => {});
   useEffect(() => {
     escape.current = () => {
-      save();
-      // Boxed: collapse to the library. On the landing page the same key is the
-      // reliable way into the library, which the double-click gesture cannot be
-      // — the fields span the reading column, and a double click inside one
-      // means "select this word".
-      if (boxed) onClose();
-      else onOpen();
+      // Boxed: collapse to the library, which is leaving. On the landing page
+      // the same key is the reliable way *into* the library, which the
+      // double-click gesture cannot be — the fields span the reading column,
+      // and a double click inside one means "select this word". The note stays
+      // open across that trip, so it is saved rather than left.
+      if (boxed) {
+        leave();
+        onClose();
+      } else {
+        save();
+        onOpen();
+      }
     };
   });
   useEffect(() => {
@@ -609,7 +665,7 @@ export default function NoteSurface({
   const collapse = useRef(() => {});
   useEffect(() => {
     collapse.current = () => {
-      save();
+      leave();
       onClose();
     };
   });

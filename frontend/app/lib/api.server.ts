@@ -81,9 +81,12 @@ export const api = {
   /** The signed-in user. */
   getCurrentUser: (token: string) => request<User>("/api/users/me", token),
 
-  listNotes: (token: string, options: { search?: string } = {}) => {
+  listNotes: (token: string, options: { search?: string; archived?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (options.search) params.set("search", options.search);
+    // The library and the archive are one list under two filters, so this is a
+    // param rather than a route of its own.
+    if (options.archived) params.set("archived", "true");
     const query = params.toString();
     return request<Note[]>(`/api/notes${query ? `?${query}` : ""}`, token);
   },
@@ -109,6 +112,20 @@ export const api = {
   /** Records that a note was opened, moving it to the head of the list. */
   touchNote: (token: string, id: number) =>
     request<Note>(`/api/notes/${id}/touch`, token, { method: "POST" }),
+
+  archiveNote: (token: string, id: number) =>
+    request<Note>(`/api/notes/${id}/archive`, token, { method: "POST" }),
+
+  unarchiveNote: (token: string, id: number) =>
+    request<Note>(`/api/notes/${id}/unarchive`, token, { method: "POST" }),
+
+  /**
+   * The reader left this note. Answers 204 when it was blank and has been
+   * dropped, 200 with the note when it stays — see backend close_note for the
+   * three conditions, two of which this side cannot see.
+   */
+  closeNote: (token: string, id: number) =>
+    request<Note | void>(`/api/notes/${id}/close`, token, { method: "POST" }),
 
   deleteNote: (token: string, id: number) =>
     request<void>(`/api/notes/${id}`, token, { method: "DELETE" }),

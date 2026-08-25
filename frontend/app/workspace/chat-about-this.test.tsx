@@ -44,6 +44,7 @@ const note: Note = {
   is_pinned: false,
   created_at: NOW,
   updated_at: NOW,
+  archived_at: null,
   words: [],
 };
 

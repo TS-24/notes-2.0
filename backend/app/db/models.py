@@ -95,6 +95,13 @@ class Note(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    # Set when the note is put away, cleared when it is brought back. A
+    # timestamp rather than a flag beside is_pinned because it answers both
+    # questions the archive asks — whether, and when — and updated_at cannot
+    # answer the second: opening a note bumps that, archiving is not a visit.
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     author: Mapped["User"] = relationship(back_populates="notes")
     # Reserved for the hierarchy, and read by nothing yet. It is here so that

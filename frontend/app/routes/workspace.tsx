@@ -35,8 +35,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Chats and provider settings come from the same loader so the library has
   // one fetch and one revalidation for everything it shows — including which
   // provider and model an open conversation runs on.
-  const [notes, user, chats, provider] = await Promise.all([
+  // Both lists, in the same round of requests. The archive is a filter over
+  // the library rather than a page of its own, so toggling between them has to
+  // cost nothing — and with `shouldRevalidate` below refusing to refetch on a
+  // param change, the only way it can is if both are already here.
+  //
+  // Two lists rather than one partitioned on arrival, so every existing reader
+  // of `notes` — the hero, `focused`, the grid — keeps meaning exactly what it
+  // meant before.
+  const [notes, archived, user, chats, provider] = await Promise.all([
     api.listNotes(token),
+    api.listNotes(token, { archived: true }),
     api.getCurrentUser(token),
     api.listChats(token),
     api.getProviderSettings(token),
@@ -53,14 +62,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   // delete it. That is a better failure than the blank page it replaces.
   if (notes.length === 0) {
     return {
-      notes: [await api.createNote(token, { title: "Untitled", content: "" })],
+      notes: [await api.createNote(token, { title: "", content: "" })],
+      archived,
       user,
       chats,
       provider,
     };
   }
 
-  return { notes, user, chats, provider };
+  return { notes, archived, user, chats, provider };
 }
 
 /**
@@ -97,12 +107,18 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
   const onLanding = location.pathname === "/";
   const openId = Number(searchParams.get("open"));
   const openChatId = Number(searchParams.get("chat"));
+  /** Which half of the library the grid is showing. See notegrid.tsx. */
+  const inArchive = searchParams.get("archived") === "1";
 
   // Landing shows whatever note was touched last; the grid shows whichever the
   // URL points at. The URL is the single source of truth for "open".
+  //
+  // `?open=` reaches into the archive as well, because an archived note opens
+  // and reads like any other — but the hero never does. "Where you left off"
+  // means the library, and something you put away is not where you left off.
   const focused = onLanding
     ? (notes[0] ?? null)
-    : (notes.find(n => n.id === openId) ?? null);
+    : ([...notes, ...loaderData.archived].find(n => n.id === openId) ?? null);
 
   // The conversation this note is bound to, if it has one — which is both the
   // way back from a note a chat was summarised into and the way on from a note
@@ -206,7 +222,9 @@ export default function Workspace({ loaderData }: Route.ComponentProps) {
           mode={onLanding ? "page" : "boxed"}
           conversationId={boundChat}
           onOpen={() => navigate(`/notes?open=${focused.id}`)}
-          onClose={() => navigate("/notes", { replace: true })}
+          // Back to the half of the library it was opened from, so closing an
+          // archived note does not silently move the reader to the other view.
+          onClose={() => navigate(inArchive ? "/notes?archived=1" : "/notes", { replace: true })}
           onReturn={() => navigate("/")}
         />
       )}

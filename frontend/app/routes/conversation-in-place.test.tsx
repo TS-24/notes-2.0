@@ -51,6 +51,7 @@ const note: Note = {
   is_pinned: false,
   created_at: NOW,
   updated_at: NOW,
+  archived_at: null,
   words: [],
 };
 
@@ -67,7 +68,7 @@ const chat: Chat = {
 
 const user: User = { id: 1, username: "reader", email: "reader@example.com" };
 const provider = { available: [], configured: [], active: null };
-const loaderData = { notes: [note], user, chats: [chat], provider };
+const loaderData = { notes: [note], archived: [], user, chats: [chat], provider };
 const rootLoaderData = { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT };
 
 const params = {};

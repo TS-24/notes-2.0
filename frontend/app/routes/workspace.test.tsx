@@ -62,6 +62,7 @@ const note = (id: number, title: string): Note => ({
   is_pinned: false,
   created_at: NOW,
   updated_at: NOW,
+  archived_at: null,
   words: [],
 });
 
@@ -71,7 +72,7 @@ const notes = [note(1, "First"), note(2, "Second")];
 
 const provider = { available: [], configured: [], active: null };
 
-const loaderData = { notes, user, chats: [], provider };
+const loaderData = { notes, archived: [], user, chats: [], provider };
 
 /** Root now resolves the palette for `<html>`, so the match tree carries it. */
 const rootLoaderData = { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT };
