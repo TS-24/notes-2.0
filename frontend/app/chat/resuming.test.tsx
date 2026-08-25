@@ -49,10 +49,8 @@ const finished: Chat = {
     { id: 2, role: "assistant", content: "Sun and moon in line.", created_at: NOW },
   ],
   summary: {
-    general: "Tides and the moon.",
-    topics: ["tides"],
-    questions: "How they work.",
-    answers: "Sun and moon in line.",
+    notes: "A spring tide happens when the sun and moon line up.",
+    actions: [],
     summarized_at: NOW,
     note_id: 3,
   },

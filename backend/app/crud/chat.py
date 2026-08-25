@@ -172,14 +172,11 @@ def _bound_note(db: Session, chat: Chat) -> Note | None:
 def _forget_summary(chat: Chat) -> None:
     """Put a chat back to being unfinished. The inverse of `store_summary`.
 
-    All five columns together, as they are written — a chat holding a general
-    summary and no `summarized_at` is a state the schema permits and nothing
-    should create.
+    All three columns together, as they are written — a chat holding notes and
+    no `summarized_at` is a state the schema permits and nothing should create.
     """
-    chat.summary_general = None
-    chat.summary_topics = None
-    chat.summary_questions = None
-    chat.summary_answers = None
+    chat.summary_notes = None
+    chat.summary_actions = None
     chat.summarized_at = None
 
 
@@ -201,18 +198,20 @@ def title_from(question: str) -> str:
 
 def store_summary(db: Session, chat: Chat, summary) -> Chat:
     """
-    Write all three parts of the summary, or none of them.
+    Write the whole summary, or none of it.
 
-    One assignment block and one commit: a chat with a general summary and no
-    questions section is a state the schema permits and nothing should create.
+    One assignment block and one commit: a chat holding notes with no
+    `summarized_at` is a state the schema permits and nothing should create.
+
+    An empty `actions` list is stored as an empty list rather than as null. It
+    is the ordinary answer — most conversations imply nothing to do — and null
+    would make "no actions" indistinguishable from "never summarised".
 
     Nothing here touches `note_id`: the note this was written into was decided
     when the conversation started, not now.
     """
-    chat.summary_general = summary.general
-    chat.summary_topics = list(summary.topics)
-    chat.summary_questions = summary.questions
-    chat.summary_answers = summary.answers
+    chat.summary_notes = summary.notes
+    chat.summary_actions = list(summary.actions)
     chat.summarized_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(chat)

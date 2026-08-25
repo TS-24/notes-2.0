@@ -1,21 +1,19 @@
 """
-What a finished conversation was about, in three parts.
+What a finished conversation was about: notes, and anything to do.
 
-A chat is a long thing you will not reread. What survives it is a short account
-of what was covered, what you kept asking, and what you were told — so the
-summary is written once, when the chat is finished, and it is what the chat's
-card in the library shows afterwards.
+A chat is a long thing you will not reread. What survives it is what a student
+watching a discussion would actually write down — flowing prose about the
+subject, and a short list of things to go and do if the conversation implied
+any. The summary is written once, when the chat is finished, and it becomes the
+text of the note the conversation is bound to.
 
-Three parts, because they answer three different questions:
-
-    general + topics   what the conversation was about at all
-    questions          what *you* kept circling back to
-    answers            what the replies actually concentrated on
-
-Parts two and three only exist because the transcript says who spoke. A
-summariser handed an unlabelled block of text cannot separate the asking from
-the answering, so `transcript` below labels every turn and that labelling is
-what the two prompts point at.
+It used to be four fields: general, topics, questions, answers. Two of those
+were about the reader by construction — "the main focus of the reader's
+questions" — which invites the one sentence this must never produce: *the user
+strongly disagreed with the answer.* Notes are about the subject, not about the
+person taking them. The structure also bought nothing: no part of the interface
+ever read the four fields, because finishing redirects to the note and the note
+holds the prose.
 
 The shape comes back through `with_structured_output`, which is the one place
 LangChain genuinely earns its keep here: it turns each provider's tool-calling
@@ -32,41 +30,55 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import llm
 
+# The heading the actions go under, when there are any.
+ACTIONS_HEADING = "What to do"
+
 INSTRUCTION = (
     "Below is a finished conversation between a reader and an assistant. "
-    "Give it a short title, then summarise it in three parts:\n"
-    "1. What the conversation was about overall, plus the distinct topics it "
-    "covered.\n"
-    "2. The main focus of the reader's questions — what they were trying to "
-    "find out, taken across all of their turns.\n"
-    "3. The main focus of the answers — what the assistant's replies actually "
-    "concentrated on.\n"
-    "Write parts 1 to 3 as prose of a few sentences each. Describe the "
-    "conversation; do not continue it."
+    "Give it a short title, then write it up as notes.\n\n"
+    "Write the way a student takes notes on a discussion they watched: "
+    "flowing paragraphs about the subject matter, concise but specific, "
+    "covering everything that was actually established. Not a description of "
+    "the conversation, and not a continuation of it — the notes should be "
+    "useful to someone who never saw it.\n\n"
+    "Never describe the reader or the way they wrote. No remarks about their "
+    "tone, their agreement or disagreement, their confusion, their persistence, "
+    "or how many times they asked something. Write about the subject only.\n\n"
+    "Then list anything the reader should go and do as a result. Only real "
+    "actions that follow from what was said; leave the list empty if the "
+    "conversation implies none, which is the usual case."
 )
 
 
 class ConversationSummary(BaseModel):
-    """The three parts. Field docs are the prompt the provider actually sees."""
+    """What comes back. Field docs are the prompt the provider actually sees."""
 
     title: str = Field(
         description="A short name for the conversation, five words at most."
     )
-    general: str = Field(description="What the conversation was about overall.")
-    topics: list[str] = Field(description="The distinct topics it covered.")
-    questions: str = Field(
-        description="The main focus of the reader's questions across all their turns."
+    notes: str = Field(
+        description=(
+            "The subject matter written up as notes: flowing paragraphs, "
+            "concise, specific, and comprehensive, the way a student would "
+            "take notes on a discussion they watched. Never describe the "
+            "reader or how they wrote."
+        )
     )
-    answers: str = Field(
-        description="The main focus of the assistant's answers."
+    actions: list[str] = Field(
+        description=(
+            "Things the reader should go and do as a result of this "
+            "conversation, one per item. Empty when it implies none, which is "
+            "the usual case — do not invent an action to fill the list."
+        )
     )
 
 
 def transcript(turns: Sequence[tuple[str, str]]) -> str:
     """The conversation with its speakers named, in order.
 
-    "You" rather than "User" because the reader is the one being described back
-    to themselves, and the labels are what parts two and three are pointed at.
+    The labelling survived the reshaping even though nothing downstream is
+    organised around the two sides any more: notes written from a block of text
+    that cannot tell a question from an answer read as mush.
     """
     lines = []
     for role, content in turns:
@@ -88,7 +100,7 @@ def transcript(turns: Sequence[tuple[str, str]]) -> str:
 def summarize(
     provider: str, api_key: str, model: str | None, turns: Sequence[tuple[str, str]]
 ) -> ConversationSummary | None:
-    """The three parts, or None when they cannot be had.
+    """The summary, or None when it cannot be had.
 
     None rather than an exception so a provider having a bad minute costs the
     summary and not the conversation: the route refuses, and finishing the chat
@@ -110,39 +122,31 @@ def summarize(
     if isinstance(answer, ConversationSummary):
         return answer
     # Some integrations hand back the parsed dict rather than the model. A
-    # partial one is not a summary — three parts is the whole contract — so it
-    # fails the same way a refusal does rather than becoming a third of one.
+    # partial one is not a summary, so it fails the same way a refusal does.
+    # An *empty actions list* is not partial — it is the common answer.
     try:
         return ConversationSummary.model_validate(answer)
     except (ValidationError, TypeError):
         return None
 
 
-# The headings a summary becomes, paired with the field each one introduces.
-# Same words the chat surface used when it showed the summary in place, so a
-# conversation reads the same before and after it is finished.
-NOTE_SECTIONS = (
-    ("What this was about", "general"),
-    ("What you were asking", "questions"),
-    ("What the answers covered", "answers"),
-)
-
-
 def as_note(summary: ConversationSummary) -> str:
     """
     The summary as the text of a note.
 
-    Finishing a conversation leaves a note behind rather than a card that only
-    looks like one, so the three parts have to survive as prose the reader can
-    edit. A heading is a line of text with a blank line under it: the note body
-    is an unstyled textarea and there is no markdown renderer to make it more.
+    The notes come first with nothing above them: a page of notes opens on the
+    notes, and a heading reading "What this was about" over the only prose in
+    the document is a label for something that needs none.
 
-    Topics are appended only when the summariser found any — an empty heading
-    would be the note claiming a section it does not have.
+    Real markdown, unlike the version this replaces. The note renders markdown
+    at rest (PR #52), so `##` and `-` arrive as a heading and a list rather than
+    as punctuation the reader has to look past.
+
+    The title is not written into the body. It is the note's title; putting it
+    here as well says it twice.
     """
-    parts = [
-        f"{heading}\n\n{getattr(summary, field)}" for heading, field in NOTE_SECTIONS
-    ]
-    if summary.topics:
-        parts.append("Topics\n\n" + ", ".join(summary.topics))
-    return "\n\n".join(parts)
+    if not summary.actions:
+        return summary.notes
+
+    bullets = "\n".join(f"- {action}" for action in summary.actions)
+    return f"{summary.notes}\n\n## {ACTIONS_HEADING}\n\n{bullets}"

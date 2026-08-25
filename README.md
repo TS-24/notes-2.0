@@ -44,9 +44,11 @@ model ranks.**
   so the list shrinks as you work through it instead of showing you the same words forever.
 - **AI chats** — the twin of the `+` that starts a note sits beside it at the head of the
   library, and it opens a conversation in the same box an open note sits in. Finishing one asks
-  the model to summarise it in three parts: what it was about and its topics, what you kept
-  asking, and what the answers concentrated on. That summary becomes what the chat's card shows in
-  the library, because nobody rereads a transcript.
+  the model to write it up the way a student takes notes on a discussion they watched: flowing
+  prose about the subject, plus a short list of things to do when the conversation implies any.
+  That becomes the text of the note the conversation is bound to, because nobody rereads a
+  transcript. The prompt forbids describing *you* — your tone, your agreement, your confusion —
+  so the notes are about the subject and never about the person who asked.
 
   **This needs your own API key.** Add one on `/settings` for Anthropic, OpenAI, OpenRouter,
   OpenCode Zen or Fireworks AI. The key is sent to the provider *before* it is stored, so one that will not work
@@ -217,9 +219,14 @@ the reading path.
 Deleting a user cascades to their notes, known words, chats and every stored credential. Deleting a note
 or a word only removes the link between them, never the row on the other side.
 
-A chat holds its own summary in four columns written together, with `summarized_at` as the single
-test for "finished" — a separate status column would be a second fact to keep in step, and the two
-would eventually disagree.
+A chat holds its own summary in two columns written together — `summary_notes` and
+`summary_actions` — with `summarized_at` as the single test for "finished". A separate status
+column would be a second fact to keep in step, and the two would eventually disagree.
+
+Those two replaced four (`general`, `topics`, `questions`, `answers`), and the four were not
+backfilled. Nothing was lost: the durable copy of a summary has always been the prose written into
+the bound note, and nothing in the interface ever read the columns — finishing a chat redirects to
+its note.
 
 `ProviderCredential` is **one row per provider per user**. A reader holding keys for two services
 should not have to paste one of them again to go back to it, and the model picker in the chat is
@@ -277,7 +284,7 @@ directory of other people's writing.
 | `GET` | `/api/chats` | List conversations, newest-touched first |
 | `GET`/`DELETE` | `/api/chats/{id}` | Read one conversation with its turns and summary, or delete it and its turns |
 | `POST` | `/api/chats/{id}/messages` | Say something and get the reply. Returns the whole chat, so there is one shape for "here is the conversation now" rather than a delta to splice. **409** if no usable key is on file or the chat is already finished; **502** if the provider would not answer |
-| `POST` | `/api/chats/{id}/summarize` | Finish the conversation and write the three-part summary. **400** if nothing has been said. Running it again re-summarises, which is the retry path when the first attempt was poor |
+| `POST` | `/api/chats/{id}/summarize` | Finish the conversation: write the notes and any actions, and render both into the bound note. **400** if nothing has been said. Running it again re-summarises, which is the retry path when the first attempt was poor |
 
 `PATCH` bodies only need the fields being changed; omitted fields are left untouched.
 
@@ -571,7 +578,7 @@ end. What is not:
 
 - **No chat here has spoken to a real model.** There has never been a provider key on the machine
   this was built on, so everything up to the provider boundary is verified and nothing past it is:
-  an actual reply, and an actual three-part summary, have not been observed. What *was* seen is a
+  an actual reply, and an actual summary, have not been observed. What *was* seen is a
   genuine 401 from Anthropic with a deliberately invalid key, so decryption, client construction,
   the request and the error path all work. Saving a key now proves rather more than it used to —
   the provider has to answer with a model list before anything is written, and on the two gateways
@@ -581,8 +588,10 @@ end. What is not:
   but "Thinking…". LangChain's `.stream()` would fix it, but a React Router action returns once,
   so it needs a resource route serving a stream and a reader on the client: a real change, not a
   flag.
-- **A finished chat is closed.** Summarising it refuses further turns, because a summary that no
-  longer describes its conversation is worse than no summary.
+- **Finishing is a checkpoint, not an end.** Talking into a finished conversation takes it up
+  again and clears its summary columns, because a summary that no longer describes its
+  conversation is worse than none. Nothing is lost: the last finish already wrote its prose into
+  the note, and the note keeps that until the next finish rewrites it.
 - **Signing out of the web app does not revoke the token.** `POST /api/auth/logout` records the
   token's `jti` and refuses it from then on — but the app's own Sign out posts to the *frontend's*
   `/logout`, which only drops the session cookie this server set. Nothing in `app/lib/api.server.ts`

@@ -78,16 +78,14 @@ def _credential(db: Session, user: User) -> tuple[str, str, str]:
 def _read(chat: Chat) -> ChatRead:
     """A chat as the API describes it, with the summary nested when it exists.
 
-    `summarized_at` is the single test for "finished". The four summary columns
-    are written together and read together; none of them is consulted alone.
+    `summarized_at` is the single test for "finished". The summary columns are
+    written together and read together; neither is consulted alone.
     """
     body = ChatRead.model_validate(chat)
     if chat.summarized_at is not None:
         body.summary = ChatSummaryRead(
-            general=chat.summary_general or "",
-            topics=chat.summary_topics or [],
-            questions=chat.summary_questions or "",
-            answers=chat.summary_answers or "",
+            notes=chat.summary_notes or "",
+            actions=chat.summary_actions or [],
             summarized_at=chat.summarized_at,
             note_id=chat.note_id,
         )
