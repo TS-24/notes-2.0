@@ -616,9 +616,14 @@ class TestEveryChatHasANote:
 
 class TestTheBoundNoteTakesItsNameFromTheChat:
     """
-    "New AI chat" makes an Untitled note and drops you into its conversation, so
+    "New AI chat" makes a nameless note and drops you into its conversation, so
     closing that conversation would land you on a blank page with no name on it.
     The first thing said already names the *chat*; it names the note with it.
+
+    Two spellings of "unnamed" have to count. New notes hold "", but notes made
+    before that carry the literal string "Untitled" as a real title and are
+    deliberately not rewritten, so a conversation on one of those still has a
+    note worth naming.
     """
 
     def test_the_first_question_names_the_note(self, configured, answering):
@@ -628,6 +633,15 @@ class TestTheBoundNoteTakesItsNameFromTheChat:
 
         note = configured.get(f"/api/notes/{chat['note_id']}").json()
         assert note["title"] == "what makes a spring tide?"
+
+    def test_an_older_note_still_called_untitled_is_named_too(self, configured, answering):
+        note = configured.post("/api/notes", json={"title": "Untitled", "content": ""}).json()
+        chat = configured.post("/api/chats", json={"note_id": note["id"]}).json()
+
+        send(configured, chat["id"], "what makes a spring tide?")
+
+        named = configured.get(f"/api/notes/{note['id']}").json()
+        assert named["title"] == "what makes a spring tide?"
 
     def test_a_note_that_already_has_a_name_keeps_it(self, configured, answering):
         note = configured.post(

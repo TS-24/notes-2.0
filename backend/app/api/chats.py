@@ -134,11 +134,10 @@ def create_chat(
     """
     note_id = payload.note_id if payload else None
     if note_id is None:
-        # Nothing to be about yet, so it gets somewhere to end up. Untitled is
-        # the placeholder a new note gets from the library too.
-        note = crud_note.create_note(
-            db, user_id=current_user.id, title=crud_chat.UNTITLED, content=""
-        )
+        # Nothing to be about yet, so it gets somewhere to end up. Nameless,
+        # like every new note: `add_exchange` names it from the first question,
+        # and until then the interface shows its placeholder.
+        note = crud_note.create_note(db, user_id=current_user.id, title="", content="")
         return _read(crud_chat.create_chat(db, current_user.id, note.id))
 
     note = crud_note.get_note(db, note_id, current_user.id)

@@ -5,7 +5,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .word_definition import WordDefinitionRead
 
-Title = Annotated[str, Field(min_length=1, max_length=255)]
+# No minimum length. "Untitled" is placeholder text in the field, not a value:
+# a note the reader never named holds "", and the interface shows the word. The
+# old min_length=1 is what forced every caller to invent a title to satisfy it,
+# which is how the database ended up full of notes called "Untitled".
+Title = Annotated[str, Field(max_length=255)]
 
 
 class NoteBase(BaseModel):
@@ -33,4 +37,8 @@ class NoteRead(NoteBase):
     is_pinned: bool
     created_at: datetime
     updated_at: datetime
+    # Readable, never writable: archiving and restoring go through their own
+    # routes. NoteUpdate deliberately has no counterpart — see crud/note.py,
+    # where update_note skips None and so could never clear a column.
+    archived_at: datetime | None = None
     words: list[WordDefinitionRead] = []

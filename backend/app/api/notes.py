@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from ..crud import note as crud_note
@@ -45,11 +45,17 @@ def list_notes(
     search: str | None = Query(None, description="Case-insensitive match on note title"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    archived: bool = Query(False, description="Return what has been put away instead"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[NoteRead]:
     return crud_note.list_notes(
-        db, user_id=current_user.id, search=search, skip=skip, limit=limit
+        db,
+        user_id=current_user.id,
+        search=search,
+        skip=skip,
+        limit=limit,
+        archived=archived,
     )
 
 
@@ -87,6 +93,50 @@ def touch_note(
     note = crud_note.touch_note(db, note_id, current_user.id)
     if note is None:
         raise NOT_FOUND
+    return note
+
+
+@router.post("/{note_id}/archive", response_model=NoteRead)
+def archive_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NoteRead:
+    """Put a note away. It leaves the library and keeps everything it holds."""
+    _owned_note(db, note_id, current_user)
+    note = crud_note.archive_note(db, note_id, current_user.id)
+    assert note is not None
+    return note
+
+
+@router.post("/{note_id}/unarchive", response_model=NoteRead)
+def unarchive_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NoteRead:
+    """Bring an archived note back into the library."""
+    _owned_note(db, note_id, current_user)
+    note = crud_note.unarchive_note(db, note_id, current_user.id)
+    assert note is not None
+    return note
+
+
+@router.post("/{note_id}/close", response_model=NoteRead)
+def close_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The reader left this note; drop it if it was never written in.
+
+    204 when it is gone and 200 with the note when it stays, so the caller can
+    tell which happened without comparing the body to what it sent. The rule
+    itself is crud/note.py::close_note — this route only decides who is asking.
+    """
+    note = _owned_note(db, note_id, current_user)
+    if crud_note.close_note(db, note):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     return note
 
 

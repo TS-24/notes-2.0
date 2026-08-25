@@ -258,9 +258,12 @@ directory of other people's writing.
 | `GET` | `/api/users/me` | The signed-in account |
 | `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, known words, chats and stored keys with it |
 | `POST` | `/api/notes` | Create a note. The owner is the signed-in account, never a field in the body |
-| `GET` | `/api/notes` | List notes, newest-touched first. `?search=` matches the title; `?skip=` / `?limit=` page. Scope is always the signed-in account, never a parameter |
+| `GET` | `/api/notes` | List notes, newest-touched first. `?search=` matches the title; `?skip=` / `?limit=` page; `?archived=true` returns the archive instead, newest put away first. Scope is always the signed-in account, never a parameter |
 | `GET`/`PATCH`/`DELETE` | `/api/notes/{id}` | Read, partially update, or delete a note |
 | `POST` | `/api/notes/{id}/touch` | Bump `updated_at`. Needed because an empty `PATCH` changes no attributes, so SQLAlchemy's `onupdate` never fires — opening a note has to touch it explicitly |
+| `POST` | `/api/notes/{id}/archive` | Put a note away. It leaves the library and keeps everything it holds |
+| `POST` | `/api/notes/{id}/unarchive` | Bring it back |
+| `POST` | `/api/notes/{id}/close` | The reader left the note. `204` when it was blank and has been dropped, `200` with the note when it stays. Blank means no title and no body — see `crud/note.py::close_note`, which also spares your last note and any note whose conversation got somewhere |
 | `POST`/`DELETE` | `/api/notes/{id}/words/{word_id}` | Link or unlink a word and a note |
 | `POST` | `/api/words` | Create a word definition |
 | `GET` | `/api/words` | List definitions, or look one up with `?word=` |
@@ -601,9 +604,11 @@ end. What is not:
   rungs come back ("escape" for "run"). Ranking by embedding similarity is also a weaker signal
   than the masked language model it replaced: it asks whether a substitution preserves the
   sentence's meaning, not whether it is grammatical.
-- **Both ghost cards write a row on click**, before anything is typed. The `+` leaves an empty
-  `Untitled` note which, being the most recently touched, then takes over the landing page; its
-  chat twin leaves a card reading "Nothing said yet." that never leaves the grid.
+- **Both ghost cards still write a row on click**, before anything is typed — but the row no
+  longer outlives the visit. A new note is created nameless (`title = ""`; `Untitled` is
+  placeholder text in the field, never a value), and leaving one that was never written in
+  deletes it, along with a bound conversation that got nowhere. Two notes are spared on purpose:
+  your last one, because the app has no empty state, and any note whose chat has messages.
 - **`/analytics` has not been through the design pass.** It came onto the colour tokens with the
   themes, but it is still a bold sans heading over a `flex-wrap` cloud. The ornament layer in
   `DESIGN.md` §6 is likewise specified but unbuilt, and blocked on assets rather than on code.

@@ -42,6 +42,8 @@ export interface Note {
   created_at: string;
   /** Bumped by edits and by opening the note — drives "where you left off". */
   updated_at: string;
+  /** Set while the note is put away. Null is the library, non-null the archive. */
+  archived_at: string | null;
   words: WordDefinition[];
 }
 

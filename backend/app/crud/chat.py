@@ -14,8 +14,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..db.models import Chat, ChatMessage, Note
 
-# What a chat is called before anything has been said in it — the same
-# placeholder a new note gets, so the two read alike in the library.
+# What a chat is called before anything has been said in it.
+#
+# Notes no longer store this: theirs is placeholder text in the field and the
+# column holds "". A chat still writes it, because its title is shown in its
+# own surface rather than beside a note's. Both spellings of "unnamed" are
+# therefore live, which is why the checks below test for either.
 UNTITLED = "Untitled"
 
 
@@ -134,7 +138,7 @@ def add_exchange(db: Session, chat: Chat, question: str, answer: str) -> Chat:
         # conversation was started *from*, already says what it is and is left
         # alone.
         note = _bound_note(db, chat)
-        if note is not None and note.title == UNTITLED:
+        if note is not None and note.title.strip() in ("", UNTITLED):
             note.title = chat.title
 
     # Talking again takes a finished conversation up where it left off, so it is

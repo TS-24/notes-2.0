@@ -27,19 +27,43 @@ export async function action({ request }: Route.ActionArgs) {
       case "create": {
         const title = String(formData.get("title") ?? "").trim();
         const content = String(formData.get("content") ?? "").trim();
-        // The API requires a non-empty title, but the composer allows
-        // body-only notes, so fall back to a placeholder.
+        // No "Untitled" fallback. The API used to require a non-empty title,
+        // which is what made every note the app created on the reader's behalf
+        // arrive already named — and so indistinguishable from one they named.
         // The id comes back so the ghost card can open the note it just made.
-        const created = await api.createNote(token, { title: title || "Untitled", content });
+        const created = await api.createNote(token, { title, content });
         return { ok: true, id: created.id };
       }
       case "update": {
         const id = Number(formData.get("id"));
         const title = String(formData.get("title") ?? "").trim();
         const content = String(formData.get("content") ?? "").trim();
-        // Same fallback as create: the API rejects an empty title, but the
-        // expanded editor lets you clear the field.
-        await api.updateNote(token, id, { title: title || "Untitled", content });
+        await api.updateNote(token, id, { title, content });
+        return { ok: true };
+      }
+      case "close": {
+        /*
+          The reader stepped out of the note. Write what is in the fields, then
+          let the server decide whether anything came of it.
+
+          Two calls in sequence rather than two fetchers, and the order is the
+          whole point: clearing a note and then leaving it has to land the empty
+          text *before* anything judges whether the note is empty. In parallel
+          those race, and which one wins decides whether the note survives.
+        */
+        const id = Number(formData.get("id"));
+        const title = String(formData.get("title") ?? "").trim();
+        const content = String(formData.get("content") ?? "").trim();
+        await api.updateNote(token, id, { title, content });
+        await api.closeNote(token, id);
+        return { ok: true };
+      }
+      case "archive": {
+        await api.archiveNote(token, Number(formData.get("id")));
+        return { ok: true };
+      }
+      case "unarchive": {
+        await api.unarchiveNote(token, Number(formData.get("id")));
         return { ok: true };
       }
       case "togglePin": {
@@ -78,15 +102,23 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Notes() {
-  const workspace = useRouteLoaderData("routes/workspace") as { notes: Note[] };
+  const workspace = useRouteLoaderData("routes/workspace") as {
+    notes: Note[];
+    archived: Note[];
+  };
   const [searchParams] = useSearchParams();
   const open = Number(searchParams.get("open"));
 
   // No chats: the library is a list of notes, and a conversation is reached by
   // opening the note it belongs to. `?chat=` is the workspace layout's to read.
+  //
+  // Both halves of the library come from that layout's loader, so `?archived=1`
+  // picks between two lists already in hand rather than asking for one.
   return (
     <Notegrid
       notes={workspace.notes}
+      archived={workspace.archived}
+      showArchived={searchParams.get("archived") === "1"}
       openNoteId={Number.isFinite(open) && open > 0 ? open : null}
     />
   );

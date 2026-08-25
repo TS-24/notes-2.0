@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { motion } from "framer-motion";
-import { Pin, Trash2, Archive, Plus, MessagesSquare } from "lucide-react";
+import { Pin, Trash2, Archive, ArchiveRestore, Plus, MessagesSquare } from "lucide-react";
 import {
   noteLayoutId,
   NOTE_LAYOUT_TRANSITION,
@@ -28,9 +28,12 @@ const GHOST_ID = 0;
 function NoteCard({
   data,
   onExpand,
+  archived = false,
 }: {
   data: Note;
   onExpand: (note: Note) => void;
+  /** Drawn in the archive, where the one action that matters is coming back. */
+  archived?: boolean;
 }) {
   // Each card owns its fetcher so simultaneous pins/deletes don't clobber
   // each other's pending state.
@@ -201,15 +204,33 @@ function NoteCard({
                 </motion.button>
               </fetcher.Form>
 
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={(e) => e.stopPropagation()}
-                className="p-1.5 rounded-lg text-ink/35 hover:text-ink transition-colors cursor-pointer"
-                title="Archive"
-              >
-                <Archive className="size-3.5" />
-              </motion.button>
+              {/*
+                Put away, or bring back — the same button either way, because
+                the archive is this list under the other filter rather than
+                somewhere else the note has gone.
+              */}
+              <fetcher.Form method="post">
+                <input
+                  type="hidden"
+                  name="intent"
+                  value={archived ? "unarchive" : "archive"}
+                />
+                <input type="hidden" name="id" value={data.id} />
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 rounded-lg text-ink/35 hover:text-ink transition-colors cursor-pointer"
+                  title={archived ? "Restore" : "Archive"}
+                >
+                  {archived ? (
+                    <ArchiveRestore className="size-3.5" />
+                  ) : (
+                    <Archive className="size-3.5" />
+                  )}
+                </motion.button>
+              </fetcher.Form>
             </div>
 
             <button
@@ -315,9 +336,15 @@ function NoteCard({
 // of its own — the database is the single source of truth.
 export default function Notegrid({
   notes,
+  archived = [],
+  showArchived = false,
   openNoteId = null,
 }: {
   notes: Note[];
+  /** What has been put away. Loaded alongside `notes`, so the toggle is free. */
+  archived?: Note[];
+  /** Which of the two the grid is drawing — `?archived=1` in the URL. */
+  showArchived?: boolean;
   /** Set when the landing hero handed a note over to be opened on arrival. */
   openNoteId?: number | null;
 }) {
@@ -337,11 +364,16 @@ export default function Notegrid({
   const createFetcher = useFetcher<{ ok: boolean; id?: number }>();
   const chatFetcher = useFetcher<{ ok: boolean; id?: number; noteId?: number }>();
 
-  const gridNotes = notes.filter(n => n.id !== openNoteId);
-  const pinnedNotes = gridNotes.filter(n => n.is_pinned);
-  const rest = gridNotes
-    .filter(n => !n.is_pinned)
-    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  const gridNotes = (showArchived ? archived : notes).filter(n => n.id !== openNoteId);
+  // Pinning is a claim about the top of the library, and the archive is not the
+  // library — so in there the split collapses and the one flow is the archive's
+  // own order, newest put away first, which the server already sorted.
+  const pinnedNotes = showArchived ? [] : gridNotes.filter(n => n.is_pinned);
+  const rest = showArchived
+    ? gridNotes
+    : gridNotes
+        .filter(n => !n.is_pinned)
+        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 
   const handleExpand = useCallback(
     (note: Note) => navigate(`/notes?open=${note.id}`, { preventScrollReset: true }),
@@ -352,7 +384,9 @@ export default function Notegrid({
   // creates it and then opens it by id.
   const handleCompose = useCallback(() => {
     createFetcher.submit(
-      { intent: "create", title: "Untitled", content: "" },
+      // Nameless. "Untitled" is what the field shows when this is empty, and
+      // writing it here is what used to make an untouched note look named.
+      { intent: "create", title: "", content: "" },
       { method: "post", action: "/notes" },
     );
   }, [createFetcher]);
@@ -400,7 +434,42 @@ export default function Notegrid({
     ones asked for at the top, and "New note" under a heading reading "Pinned"
     would be claiming something that is not true.
   */
-  const starters = (
+  /*
+    The card that switches halves.
+
+    Not a place of its own: it changes one search param, and both lists came
+    down together in the workspace loader, so nothing is fetched and nothing
+    reflows in from a route change. That is what makes it read as a filter.
+
+    In the archive it is the only starter shown. Making a note from in there
+    would open it with `?archived=1` still set, which is the archive displaying
+    a note that is not in it — and there is no second way back out, so this card
+    has to be it (DESIGN.md §9: one quiet way back).
+  */
+  const archiveToggle = (
+    <div className="mb-6 break-inside-avoid">
+      <GhostCard
+        tone="ink"
+        label={showArchived ? "Back to your notes" : "Archived"}
+        icon={
+          showArchived ? (
+            <ArchiveRestore className="size-7" strokeWidth={1.5} />
+          ) : (
+            <Archive className="size-7" strokeWidth={1.5} />
+          )
+        }
+        onClick={() =>
+          navigate(showArchived ? "/notes" : "/notes?archived=1", {
+            preventScrollReset: true,
+          })
+        }
+      />
+    </div>
+  );
+
+  const starters = showArchived ? (
+    archiveToggle
+  ) : (
     <>
       <div className="mb-6 break-inside-avoid">
         <GhostCard
@@ -419,6 +488,7 @@ export default function Notegrid({
           onClick={handleNewChat}
         />
       </div>
+      {archiveToggle}
     </>
   );
 
@@ -433,7 +503,7 @@ export default function Notegrid({
       {lead}
       {items.map(item => (
         <div key={item.id} className="mb-6 break-inside-avoid">
-          <NoteCard data={item} onExpand={handleExpand} />
+          <NoteCard data={item} onExpand={handleExpand} archived={showArchived} />
         </div>
       ))}
     </div>
