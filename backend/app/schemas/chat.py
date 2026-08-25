@@ -59,18 +59,16 @@ class ChatMessageRead(BaseModel):
 
 class ChatSummaryRead(BaseModel):
     """
-    The three parts, as one object rather than four sibling fields.
+    What the conversation came to, as one object rather than sibling fields.
 
     Nesting is what lets the frontend ask "is this chat finished" by testing one
-    thing. Four nullable fields on the chat would let three of them be present
-    and one absent, which is a state the writer refuses to create and the
-    reader should not have to handle.
+    thing. Nullable fields on the chat would let one be present and another
+    absent, which is a state the writer refuses to create and the reader should
+    not have to handle.
     """
 
-    general: str
-    topics: list[str]
-    questions: str
-    answers: str
+    notes: str
+    actions: list[str]
     summarized_at: datetime
     # Kept alongside `ChatRead.note_id`, which is now where the binding lives.
     # A client mid-deploy may still be reading it, and the two are the same

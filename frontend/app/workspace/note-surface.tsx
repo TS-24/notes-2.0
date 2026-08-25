@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -10,6 +11,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { MessagesSquare } from "lucide-react";
 import WordRoller from "~/workspace/word-roller";
 import Markdown, { lineAt, offsetOfLine } from "~/notes/markdown";
+import { blockAtOffset, blocksOf, type Block } from "~/notes/blocks";
 import type { Note } from "~/lib/types";
 
 /**
@@ -299,22 +301,182 @@ export default function NoteSurface({
   const bodyField = useAutoHeight();
 
   /*
-    Rendered at rest, raw under the caret.
+    Rendered at rest, raw under the caret — one block at a time.
 
     A note that came out of a conversation has headings in it, and a textarea
     has no way to be one. So the body reads as a document until you write in
-    it, and is the same single textarea the moment you do — `fitToText`, the
-    word roller and save-on-blur all keep the contract they had, they simply
-    only apply while you are editing, which is when they mean anything.
+    it. It used to hand back the *whole* note the moment you did, which turned
+    every heading and list in the document back into `##` and `-` because you
+    clicked one paragraph. Now only the block you are in shows its source and
+    everything around it stays rendered.
+
+    `active` is the index of that block, and null is the resting state. There is
+    still exactly one textarea on the page, which is what lets `fitToText`,
+    `useAutoHeight`, `pendingCaret`, the word roller and save-on-blur all keep
+    working on the same `bodyField` ref they always used — none of this becomes
+    a list of components.
   */
-  const [writing, setWriting] = useState(false);
+  const [active, setActive] = useState<number | null>(null);
+  /** Block-relative, because it is applied to the field's own value. */
   const caretOnEnter = useRef<number | null>(null);
   const rendered = useRef<HTMLDivElement>(null);
 
+  const blocks = useMemo(() => blocksOf(content), [content]);
+  const block: Block | null = active === null ? null : (blocks[active] ?? null);
+  /*
+    The text the field is holding.
+
+    Falls back to the whole note when there is no block — an empty note has
+    none, and the field is then simply the note, which is what it was before
+    any of this.
+  */
+  const blockText = block ? content.slice(block.start, block.end) : content;
+  const above = block ? content.slice(0, block.start) : "";
+  const below = block ? content.slice(block.end) : "";
+  /** How many lines of the note come before `below` starts. */
+  const belowBase = block ? content.slice(0, block.end).split("\n").length - 1 : 0;
+
+  /** Put `text` back where the active block was, giving the whole note. */
+  const spliceBlock = (text: string) =>
+    block ? content.slice(0, block.start) + text + content.slice(block.end) : text;
+
+  /*
+    Move the caret to another block.
+
+    `switching` is what stops a programmatic move reading as leaving the note:
+    the field is torn out of one render region and put into another, which fires
+    a blur, and blur is how the reader says they are done. Cleared by the layout
+    effect below, which runs after that blur whether or not it happened.
+  */
+  const switching = useRef(false);
+  const goTo = (index: number | null, caretInBlock: number) => {
+    switching.current = true;
+    caretOnEnter.current = caretInBlock;
+    setActive(index);
+  };
+
+  /** Resolve a clicked source line to the block holding it, caret at its start. */
   const startWriting = (line: number | null) => {
-    caretOnEnter.current =
-      line === null ? content.length : offsetOfLine(content, line);
-    setWriting(true);
+    const offset = line === null ? content.length : offsetOfLine(content, line);
+    const index = blockAtOffset(blocks, offset);
+    const found = index === null ? null : blocks[index];
+    goTo(index, found ? Math.max(0, offset - found.start) : offset);
+  };
+
+  /**
+   * Put the caret at an absolute offset in `next`, whichever block that is in.
+   *
+   * The blocks have to be re-derived from the *new* text rather than read from
+   * the memo, which is still describing the text this is replacing. Typing a
+   * blank line therefore splits a block and the caret follows itself into the
+   * half it is in, with no special case for Enter.
+   */
+  const settleAt = (next: string, offset: number) => {
+    const nextBlocks = blocksOf(next);
+    const index = blockAtOffset(nextBlocks, offset);
+    const found = index === null ? null : nextBlocks[index];
+    setContent(next);
+    goTo(index, found ? Math.max(0, offset - found.start) : offset);
+  };
+
+  const handleBlockChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const typed = event.target.value;
+    const next = spliceBlock(typed);
+    const offset = (block?.start ?? 0) + event.target.selectionStart;
+    const nextBlocks = blocksOf(next);
+    const index = blockAtOffset(nextBlocks, offset);
+    const found = index === null ? null : nextBlocks[index];
+
+    setContent(next);
+    // Only when the field's value is about to change under the caret. A
+    // controlled textarea whose value changes drops the caret to the end
+    // (PROGRESS.md §12), and most keystrokes do not move a boundary — writing
+    // the same string back leaves the DOM alone and the browser keeps the
+    // caret where it put it.
+    const settled = found ? next.slice(found.start, found.end) : next;
+    if (index !== active || settled !== typed) {
+      goTo(index, found ? Math.max(0, offset - found.start) : offset);
+    }
+  };
+
+  /**
+   * The four edges, which separate render regions do not share a caret across.
+   *
+   * Everything else is the browser's: arrowing within a block, selecting,
+   * deleting a character. Only the crossings are arranged here, and each one
+   * goes through `goTo`, so the caret is restored by the layout effect above
+   * rather than dropped to the end of whatever mounts.
+   */
+  const handleBlockKeys = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (active === null || !block) return;
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    // A selection is a range to act on, not a caret to walk off the edge of.
+    if (field.selectionStart !== field.selectionEnd) return;
+
+    const onFirstLine = !blockText.slice(0, at).includes("\n");
+    const onLastLine = !blockText.slice(at).includes("\n");
+
+    if (event.key === "ArrowUp" && onFirstLine && active > 0) {
+      event.preventDefault();
+      const previous = blocks[active - 1];
+      goTo(active - 1, previous.end - previous.start);
+      return;
+    }
+
+    if (event.key === "ArrowDown" && onLastLine && active < blocks.length - 1) {
+      event.preventDefault();
+      goTo(active + 1, 0);
+      return;
+    }
+
+    /*
+      Backspace at the very start and Delete at the very end are the same
+      gesture from two sides: close the blank line between this block and its
+      neighbour. One newline is left rather than none, so two paragraphs become
+      one paragraph of two lines rather than one run-on line — `remark-breaks`
+      renders that as the reader wrote it.
+    */
+    if (event.key === "Backspace" && at === 0 && active > 0) {
+      event.preventDefault();
+      const previous = blocks[active - 1];
+      settleAt(
+        content.slice(0, previous.end) + "\n" + content.slice(block.start),
+        previous.end,
+      );
+      return;
+    }
+
+    if (
+      event.key === "Delete" &&
+      at === blockText.length &&
+      active < blocks.length - 1
+    ) {
+      event.preventDefault();
+      settleAt(
+        content.slice(0, block.end) + "\n" + content.slice(blocks[active + 1].start),
+        block.end,
+      );
+    }
+  };
+
+  /*
+    The gap the field leaves where its rendered self would have been.
+
+    `.markdown` gives a paragraph and a list `margin-block: 0.75em` and a
+    heading `1.15em 0.45em`, and zeroes the outer edge of the first and last
+    child. A field carrying none of that would close the gaps around itself
+    every time the caret crossed a boundary, which is the note nudging under the
+    reader — the one failure jsdom cannot see.
+
+    It cannot be perfect: a heading's source is body-sized text with `##` in
+    front of it, so its *height* differs from the rendered heading whatever the
+    margins are. Matching the margins is what keeps everything below it still.
+  */
+  const heading = /^#{1,6}\s/.test(blockText);
+  const blockSpacing = {
+    marginTop: active === 0 ? 0 : heading ? "1.15em" : "0.75em",
+    marginBottom: active === blocks.length - 1 ? 0 : heading ? "0.45em" : "0.75em",
   };
 
   const boxed = mode === "boxed";
@@ -367,11 +529,14 @@ export default function NoteSurface({
     because focusing after paint is a visible jump of the caret.
   */
   useMeasureEffect(() => {
-    if (!writing || caretOnEnter.current === null) return;
+    if (active === null || caretOnEnter.current === null) return;
     const field = bodyField.ref.current;
     if (!field) return;
     const at = Math.min(caretOnEnter.current, field.value.length);
     caretOnEnter.current = null;
+    // Here rather than in `goTo`, because this runs after the blur the move
+    // may have caused — clearing it any earlier would let that blur through.
+    switching.current = false;
     field.focus();
     field.setSelectionRange(at, at);
   });
@@ -530,11 +695,11 @@ export default function NoteSurface({
     if (event.button !== 0) return;
     if ((event.target as HTMLElement).closest("textarea, button, a")) return;
     const title = titleField.ref.current;
-    const body = bodyField.ref.current;
-    // Whichever of the two the note's text is currently in. At rest that is the
-    // rendered markdown, not a field — this handler runs for those clicks too,
-    // which is what keeps "the page is the note" true while it is being read.
-    const text = body ?? rendered.current;
+    // The body's whole extent, rendered blocks and open field together. It used
+    // to be the field when one existed, which was the same thing while the
+    // field *was* the note; now the field is one block of it, and measuring
+    // against that puts the boundary in the middle of the page.
+    const text = rendered.current;
     if (!title || !text) return;
     event.preventDefault();
     // Above the note's first line reads as the heading. Everything lower — very
@@ -544,14 +709,15 @@ export default function NoteSurface({
       title.setSelectionRange(title.value.length, title.value.length);
       return;
     }
-    if (body) {
-      body.focus();
-      body.setSelectionRange(body.value.length, body.value.length);
-      return;
-    }
-    // Rendered: the click resolves to the block it landed in, and the caret to
-    // the start of that block's line in the source. A click that hit no block
-    // at all — the margin below the text — means the end, as it always has.
+    /*
+      The click resolves to the block it landed in, and the caret to the start
+      of that block's line in the source. A click that hit no block at all — the
+      margin below the text — means the end, as it always has.
+
+      This runs whether or not a block is already open, which is the point: the
+      rest of the note stays rendered and stays clickable, so a click on it has
+      to mean *that* block rather than the end of the one being left.
+    */
     startWriting(lineAt(event.target));
   };
 
@@ -802,47 +968,80 @@ export default function NoteSurface({
           context: the word roller measures against its origin.
         */}
         <div className={`relative mt-8 ${MEASURE}`}>
-          {writing ? (
-            <>
-              <textarea
-                ref={bodyField.attach}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onBlur={() => setWriting(false)}
-                rows={1}
-                placeholder="Start writing…"
-                aria-label="Note text"
-                style={{ fontSize: type.body, transition: chromeTransition }}
-                className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
-              />
-              <WordRoller
-                fieldRef={bodyField.ref}
-                value={content}
-                background={surface}
-                onReplace={(start, end, word) => {
-                  setContent(prev => prev.slice(0, start) + word + prev.slice(end));
-                  pendingCaret.current = {
-                    field: bodyField.ref.current,
-                    at: start + word.length,
-                  };
-                }}
-              />
-            </>
+        <div
+          ref={rendered}
+          data-note-body
+          style={{ fontSize: type.body, transition: chromeTransition }}
+          className="block w-full font-sans leading-relaxed text-ink/85"
+        >
+          {active === null ? (
+            content.trim() ? (
+              <Markdown>{content}</Markdown>
+            ) : (
+              // The field's own placeholder, in the field's absence.
+              <span className="text-ink/25">Start writing…</span>
+            )
           ) : (
-            <div
-              ref={rendered}
-              data-note-body
-              style={{ fontSize: type.body, transition: chromeTransition }}
-              className="block w-full font-sans leading-relaxed text-ink/85"
-            >
-              {content.trim() ? (
-                <Markdown>{content}</Markdown>
-              ) : (
-                // The field's own placeholder, in the field's absence.
-                <span className="text-ink/25">Start writing…</span>
+            <>
+              {/*
+                Everything above the caret, still a document. `.markdown`'s own
+                `> :last-child { margin-bottom: 0 }` closes the gap under it,
+                which is why the field below supplies its own — see BLOCK_GAP.
+              */}
+              {above.trim() && <Markdown>{above}</Markdown>}
+              {/*
+                The wrapper has to fit the field exactly and be the positioning
+                context: the word roller measures against its origin.
+              */}
+              <div className="relative" style={blockSpacing}>
+                <textarea
+                  ref={bodyField.attach}
+                  value={blockText}
+                  onChange={handleBlockChange}
+                  onKeyDown={handleBlockKeys}
+                  onBlur={() => {
+                    // A move between blocks tears the field out of one render
+                    // region and into another, which blurs it. That is not the
+                    // reader leaving the note.
+                    if (switching.current) return;
+                    setActive(null);
+                  }}
+                  rows={1}
+                  placeholder="Start writing…"
+                  aria-label="Note text"
+                  style={{ fontSize: type.body, transition: chromeTransition }}
+                  className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
+                />
+                <WordRoller
+                  fieldRef={bodyField.ref}
+                  value={blockText}
+                  background={surface}
+                  onReplace={(start, end, word) => {
+                    // Block-relative offsets: the roller only ever saw the
+                    // field, and the field is one block now.
+                    setContent(
+                      spliceBlock(blockText.slice(0, start) + word + blockText.slice(end)),
+                    );
+                    pendingCaret.current = {
+                      field: bodyField.ref.current,
+                      at: start + word.length,
+                    };
+                  }}
+                />
+              </div>
+              {/*
+                Numbered from where it actually starts. This is its own markdown
+                document, so remark calls its first line 1; `lineAt` adds this
+                back on so a click down here resolves to the right block.
+              */}
+              {below.trim() && (
+                <div data-line-base={belowBase}>
+                  <Markdown>{below}</Markdown>
+                </div>
               )}
-            </div>
+            </>
           )}
+        </div>
         </div>
       </div>
 
