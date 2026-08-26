@@ -58,7 +58,7 @@ const note: Note = {
 let cleanup = () => {};
 afterEach(() => cleanup());
 
-function mount() {
+function mount(subject: Note = note) {
   const container = document.createElement("div");
   document.body.append(container);
   const saved: Array<Record<string, string>> = [];
@@ -72,7 +72,7 @@ function mount() {
         },
         Component: () => (
           <NoteSurface
-            note={note}
+            note={subject}
             mode="boxed"
             conversationId={null}
             onOpen={() => {}}
@@ -259,4 +259,53 @@ test("closing saves the whole note, not the block that was open", async () => {
   expect(sent?.content).toBe(
     "## Tides\n\nThe moon pulls.\n\nTwice a day, roughly.\n\n- spring\n- neap",
   );
+});
+
+/*
+  An empty note has no blocks, and a note you cannot click into is a note you
+  cannot write in.
+
+  This is the seam between two changes that were built on separate branches and
+  are both correct alone. #56 made every new note start genuinely empty — no
+  title, no body — so that closing one without writing deletes it. #57 made the
+  body open one *block* at a time, and blocks come from parsing the text: empty
+  text parses to none. `blockAtOffset` then has nothing to return but null,
+  `goTo(null)` is the resting state, and the field never opens.
+
+  So every note the app creates — "New note", the loader's first note, the one
+  behind every new conversation — cannot be typed into at all. The fixtures in
+  this file all have text in them, which is why nothing here saw it.
+*/
+const blank: Note = { ...note, title: "", content: "" };
+
+test("an empty note can be written in", async () => {
+  const surface = mount(blank);
+
+  await surface.click(surface.body());
+
+  expect(surface.field()).not.toBeNull();
+});
+
+test("the first thing typed into an empty note is kept", async () => {
+  const surface = mount(blank);
+
+  await surface.click(surface.body());
+  await surface.type("first words");
+
+  expect(surface.field()?.value).toBe("first words");
+});
+
+test("clearing a note's text does not close the field under the caret", async () => {
+  // The same seam from the other side: emptying the *whole* note mid-edit
+  // leaves no blocks to be in, and the reader is still writing. Losing the
+  // field here loses focus with it, so the next character goes nowhere.
+  //
+  // It has to be a note of one block. Clearing one of four leaves three, and
+  // `blockAtOffset` still has an answer.
+  const surface = mount({ ...note, content: "The moon pulls." });
+
+  await surface.click(paragraphSaying(surface, "The moon pulls."));
+  await surface.type("");
+
+  expect(surface.field()).not.toBeNull();
 });
