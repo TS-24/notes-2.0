@@ -9,7 +9,6 @@ import {
 import { useFetcher, useNavigate } from "react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import { MessagesSquare } from "lucide-react";
-import WordRoller from "~/workspace/word-roller";
 import Markdown, { lineAt, offsetOfLine } from "~/notes/markdown";
 import { blockAtOffset, blocksOf, type Block } from "~/notes/blocks";
 import type { Note } from "~/lib/types";
@@ -71,6 +70,18 @@ export const isBlank = (title: string, content: string) =>
  * to be written in.
  */
 const MEASURE = "mx-auto w-full max-w-[92ch]";
+
+/**
+ * What starts a list item: its indent, its bullet or its number, and the task
+ * box that may follow either.
+ *
+ * The gap after the marker is captured rather than assumed, because `-   three`
+ * lines its text up under something and repeating the marker has to repeat that
+ * too. What is *not* here is any attempt to read the list itself — remark has
+ * already said this block is one (`Block.kind`), and this only has to take the
+ * line apart.
+ */
+const LIST_ITEM = /^(\s*)([-*+]|(\d+)([.)]))( +)(\[[ xX]\] +)?/;
 
 /** Shared by the surface and by the cards reflowing around it. */
 /*
@@ -312,9 +323,12 @@ export default function NoteSurface({
 
     `active` is the index of that block, and null is the resting state. There is
     still exactly one textarea on the page, which is what lets `fitToText`,
-    `useAutoHeight`, `pendingCaret`, the word roller and save-on-blur all keep
-    working on the same `bodyField` ref they always used — none of this becomes
-    a list of components.
+    `useAutoHeight`, `caretOnEnter` and save-on-blur all keep working on the
+    same `bodyField` ref they always used — none of this becomes a list of
+    components. What the block *is* — heading, list, fence — is a fact about the
+    text, and it comes from `Block.kind` rather than from a second opinion here;
+    app.css typesets the field from it so the note does not move when the caret
+    crosses in.
   */
   const [active, setActive] = useState<number | null>(null);
   /** Block-relative, because it is applied to the field's own value. */
@@ -437,8 +451,56 @@ export default function NoteSurface({
     }
   };
 
+  /*
+    Enter, in a list.
+
+    A newline alone leaves the reader to type `- ` again for every item — and
+    the line they forget it on is not a plain line, it is a lazy continuation of
+    the item above, so it renders as part of that bullet. The note renders live,
+    so they see it happen and undo it by hand.
+
+    Pressing Enter on an item with nothing in it is the other half: it means
+    they are done with the list, so the marker comes off and the caret stays
+    where it is. That is what GitHub and Obsidian both do with it, and it is the
+    only way out that does not involve deleting characters backwards.
+
+    A line with no marker at all — the second line of an item, wrapped by hand —
+    falls through untouched, because Enter there means what Enter means
+    everywhere else in the body.
+  */
+  const continueList = (event: React.KeyboardEvent, at: number) => {
+    if (!block) return;
+    const lineStart = blockText.lastIndexOf("\n", at - 1) + 1;
+    const broken = blockText.indexOf("\n", at);
+    const lineEnd = broken === -1 ? blockText.length : broken;
+    const marker = LIST_ITEM.exec(blockText.slice(lineStart, lineEnd));
+    if (!marker) return;
+
+    event.preventDefault();
+    const [whole, indent, bullet, ordinal, delimiter, gap, task] = marker;
+
+    if (!blockText.slice(lineStart + whole.length, lineEnd).trim()) {
+      const from = block.start + lineStart;
+      settleAt(content.slice(0, from) + content.slice(block.start + at), from);
+      return;
+    }
+
+    // A new task starts undone; repeating the tick would repeat the wrong half.
+    // An ordered list counts on — and the items below it keep their own old
+    // numbers, which markdown renumbers on the way out anyway.
+    const next =
+      indent + (ordinal ? `${Number(ordinal) + 1}${delimiter}` : bullet) + gap + (task ? "[ ] " : "");
+    const from = block.start + at;
+    settleAt(
+      content.slice(0, from) + "\n" + next + content.slice(from),
+      from + 1 + next.length,
+    );
+  };
+
   /**
-   * The four edges, which separate render regions do not share a caret across.
+   * The four edges, which separate render regions do not share a caret across —
+   * and Enter, which is the one key inside a block that means something more
+   * than the character it types.
    *
    * Everything else is the browser's: arrowing within a block, selecting,
    * deleting a character. Only the crossings are arranged here, and each one
@@ -451,6 +513,11 @@ export default function NoteSurface({
     const at = field.selectionStart;
     // A selection is a range to act on, not a caret to walk off the edge of.
     if (field.selectionStart !== field.selectionEnd) return;
+
+    if (event.key === "Enter" && !event.shiftKey && block.kind === "list") {
+      continueList(event, at);
+      return;
+    }
 
     const onFirstLine = !blockText.slice(0, at).includes("\n");
     const onLastLine = !blockText.slice(at).includes("\n");
@@ -499,25 +566,21 @@ export default function NoteSurface({
   };
 
   /*
-    The gap the field leaves where its rendered self would have been.
+    The two edges of the note, where the field has no neighbour to leave a gap
+    for.
 
-    `.markdown` gives a paragraph and a list `margin-block: 0.75em` and a
-    heading `1.15em 0.45em`, and zeroes the outer edge of the first and last
-    child. A field carrying none of that would close the gaps around itself
-    every time the caret crossed a boundary, which is the note nudging under the
-    reader — the one failure jsdom cannot see.
+    `.markdown` zeroes the outer margin of its own first and last child, so the
+    field standing in for either has to do the same or the note gains a gap it
+    did not have. Only the zeroing is here: the rhythm itself is a margin per
+    kind in app.css, written in the same rule as the rendered block's, because
+    the whole point is that the two agree.
 
-    It cannot be perfect: a heading's source is body-sized text with `##` in
-    front of it, so its *height* differs from the rendered heading whatever the
-    margins are. Matching the margins is what keeps everything below it still.
+    `>=` rather than `===` so a note that parses to no blocks — the field is
+    then the whole note — has no neighbour below either.
   */
-  const heading = /^#{1,6}\s/.test(blockText);
-  const blockSpacing = {
-    marginTop: active === 0 ? 0 : heading ? "1.15em" : "0.75em",
-    // `>=` rather than `===` so a note that parses to no blocks — the field is
-    // then the whole note — has no neighbour below to leave a gap for either.
-    marginBottom:
-      (active ?? 0) >= blocks.length - 1 ? 0 : heading ? "0.45em" : "0.75em",
+  const sourceEdges = {
+    marginTop: active === 0 ? 0 : undefined,
+    marginBottom: (active ?? 0) >= blocks.length - 1 ? 0 : undefined,
   };
 
   const boxed = mode === "boxed";
@@ -533,41 +596,13 @@ export default function NoteSurface({
     ? { ...NOTE_LAYOUT_TRANSITION, duration: 0 }
     : NOTE_LAYOUT_TRANSITION;
   const chromeTransition = reduced ? "none" : CHROME_TRANSITION;
-  // What the fields actually sit on. The box is transparent on the landing
-  // page, so there the surface is the page's own paper, not paper-raised —
-  // the word roller masks against this and looked like a patch without it.
-  const surface = boxed
-    ? "var(--color-paper-raised)"
-    : "var(--color-paper)";
-
-  /*
-    Where to put the caret after the word roller swaps a word out.
-
-    It has to land just past the replacement, or the caret is no longer inside
-    the word and the chevrons vanish mid-climb. Restoring it has to wait for
-    React to commit the new text: a controlled textarea whose value changes puts
-    the caret at the very end, so anything set before the commit — in the
-    handler, or in a requestAnimationFrame, which is what this used to do — is
-    immediately undone. A layout effect runs after the DOM is updated and before
-    the browser paints, so the caret never visibly jumps.
-  */
-  const pendingCaret = useRef<{ field: HTMLTextAreaElement | null; at: number } | null>(
-    null,
-  );
-  useMeasureEffect(() => {
-    const pending = pendingCaret.current;
-    if (!pending?.field) return;
-    pendingCaret.current = null;
-    pending.field.setSelectionRange(pending.at, pending.at);
-  });
 
   /*
     Landing the caret in the block that was clicked.
 
-    Same shape as `pendingCaret` above and for the same reason: the field does
-    not exist yet when the click happens, so the position is recorded and
-    applied once React has put the textarea on the page. A layout effect,
-    because focusing after paint is a visible jump of the caret.
+    The field does not exist yet when the click happens, so the position is
+    recorded and applied once React has put the textarea on the page. A layout
+    effect, because focusing after paint is a visible jump of the caret.
   */
   useMeasureEffect(() => {
     if (active === null || caretOnEnter.current === null) return;
@@ -600,12 +635,12 @@ export default function NoteSurface({
 
     The type animates for MORPH_MS, so the fields' heights have to animate with
     it. Nothing else reports that frame by frame: each field sits in a wrapper
-    that fits it exactly (the word roller measures against it), so the parent
-    the ResizeObserver watches is only as tall as the height we ourselves just
-    wrote, and its width does not change during the tween at all — it fires
-    once, not per frame. Measuring only at `transitionend` lets the height
-    arrive in one step after the type has already moved, which reads as a blip
-    in the heading.
+    that fits it exactly, so the parent the ResizeObserver watches is only as
+    tall as the height we ourselves just wrote, and its width does not change
+    during the tween at all — it fires once, not per frame. `transitionend` no
+    longer helps either: the body field carries no transition of its own now, so
+    the only event was the parent's, and that does not reach a listener on the
+    child. This loop is the whole of it.
   */
   useEffect(() => {
     // A little past the tween, so the last frame is the settled value. Every
@@ -618,10 +653,16 @@ export default function NoteSurface({
   }, [boxed, titleField.track, bodyField.track]);
 
   const saved = useRef({ title: note.title, content: note.content ?? "" });
-  /** True when this actually sent something, so a caller can wait for it. */
-  const save = () => {
-    const nextTitle = title.trim();
-    const nextContent = content.trim();
+  /**
+   * Write this text, if it is not the text already written.
+   *
+   * Takes what to save rather than reading the state itself, because a tick in
+   * a task box has to save the note *it* just produced and `setContent` has not
+   * committed by then. `save` is that with today's state filled in.
+   *
+   * True when this actually sent something, so a caller can wait for it.
+   */
+  const persist = (nextTitle: string, nextContent: string) => {
     if (
       nextTitle === saved.current.title.trim() &&
       nextContent === saved.current.content.trim()
@@ -642,6 +683,30 @@ export default function NoteSurface({
       { method: "post", action: "/notes" },
     );
     return true;
+  };
+
+  const save = () => persist(title.trim(), content.trim());
+
+  /**
+   * Tick, or un-tick, the task box on a source line.
+   *
+   * The only edit in the app that is not typing, and it goes straight into the
+   * text like any other: `[ ]` for `[x]`, one character for one character. That
+   * exactness is worth having — nothing in the note moves by so much as an
+   * offset, so a block open under the caret somewhere else is undisturbed.
+   */
+  const toggleTask = (line: number) => {
+    const from = offsetOfLine(content, line);
+    const breakAt = content.indexOf("\n", from);
+    const box = /\[[ xX]\]/.exec(
+      content.slice(from, breakAt === -1 ? content.length : breakAt),
+    );
+    if (!box) return;
+    const at = from + box.index + 1;
+    const next =
+      content.slice(0, at) + (content[at] === " " ? "x" : " ") + content.slice(at + 1);
+    setContent(next);
+    persist(title.trim(), next.trim());
   };
 
   /**
@@ -740,7 +805,10 @@ export default function NoteSurface({
     // Left button only: a right click is asking for the context menu, not for
     // the caret.
     if (event.button !== 0) return;
-    if ((event.target as HTMLElement).closest("textarea, button, a")) return;
+    // `input` is the task box: it is the one thing in a note you can click that
+    // is not a place to put the caret, and without it here the same click would
+    // tick the box and open the list it is in for editing.
+    if ((event.target as HTMLElement).closest("textarea, button, a, input")) return;
     const title = titleField.ref.current;
     // The body's whole extent, rendered blocks and open field together. It used
     // to be the field when one existed, which was the same thing while the
@@ -987,9 +1055,10 @@ export default function NoteSurface({
           {lastTouched}
         </p>
 
-        {/* Same contract as the body below: a wrapper that fits the field
-            exactly, so the roller can measure against its origin — and the same
-            measure, so the two share both edges at every alignment. */}
+        {/* Same measure as the body below, so the two share both edges at every
+            alignment. `relative`, and the box fitting the field exactly, is
+            what the word roller needs back — it is out of the UI for now, not
+            gone, and this is the whole of what it asks of the markup. */}
         <div className={`relative mt-6 ${MEASURE}`}>
           <textarea
             ref={titleField.attach}
@@ -1006,24 +1075,8 @@ export default function NoteSurface({
             style={{ fontSize: type.title, transition: chromeTransition }}
             className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-display font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
           />
-          <WordRoller
-            fieldRef={titleField.ref}
-            value={title}
-            background={surface}
-            onReplace={(start, end, word) => {
-              setTitle(prev => prev.slice(0, start) + word + prev.slice(end));
-              pendingCaret.current = {
-                field: titleField.ref.current,
-                at: start + word.length,
-              };
-            }}
-          />
         </div>
 
-        {/*
-          The wrapper has to fit the field exactly and be the positioning
-          context: the word roller measures against its origin.
-        */}
         <div className={`relative mt-8 ${MEASURE}`}>
         <div
           ref={rendered}
@@ -1033,7 +1086,7 @@ export default function NoteSurface({
         >
           {active === null ? (
             content.trim() ? (
-              <Markdown>{content}</Markdown>
+              <Markdown onToggleTask={toggleTask}>{content}</Markdown>
             ) : (
               // The field's own placeholder, in the field's absence.
               <span className="text-ink/25">Start writing…</span>
@@ -1041,16 +1094,31 @@ export default function NoteSurface({
           ) : (
             <>
               {/*
-                Everything above the caret, still a document. `.markdown`'s own
-                `> :last-child { margin-bottom: 0 }` closes the gap under it,
-                which is why the field below supplies its own — see BLOCK_GAP.
+                Everything above the caret, still a document — and `continues`
+                is what says it is only half of one, so `.markdown` leaves the
+                margin on its last block instead of zeroing it as an ending.
+                Without that the gap under this half collapses to the field's
+                own, which is the smaller of the two whenever a heading is
+                involved. See the `:not(.continued)` pair in app.css.
               */}
-              {above.trim() && <Markdown>{above}</Markdown>}
+              {above.trim() && (
+                <Markdown className="continues" onToggleTask={toggleTask}>
+                  {above}
+                </Markdown>
+              )}
               {/*
-                The wrapper has to fit the field exactly and be the positioning
-                context: the word roller measures against its origin.
+                `.note-source` and the kind it is standing in for. Everything
+                that makes this field look like the block it replaced is written
+                in app.css, in the same rule as the rendered block's own type —
+                see the `.note-source` comment there for why it is written that
+                way rather than here.
               */}
-              <div className="relative" style={blockSpacing}>
+              <div
+                className="note-source relative"
+                data-block={block?.kind ?? "paragraph"}
+                data-level={block?.depth}
+                style={sourceEdges}
+              >
                 <textarea
                   ref={bodyField.attach}
                   value={blockText}
@@ -1066,24 +1134,22 @@ export default function NoteSurface({
                   rows={1}
                   placeholder="Start writing…"
                   aria-label="Note text"
-                  style={{ fontSize: type.body, transition: chromeTransition }}
+                  /*
+                    No font-size of its own, and no transition either.
+
+                    Both for the same reason: the size a block's source is set
+                    in is a fact about the block, and it comes from app.css as a
+                    multiple of the body's own size. That makes the morph free —
+                    `em` re-resolves against the parent's tweening size on every
+                    frame, so the source rides the tween without being told to.
+
+                    A transition here would be the other kind of size change,
+                    the wrong one: moving the caret from a paragraph to a
+                    heading changes what the field is, not how big the page is,
+                    and tweening that spends 550ms smearing one block's type
+                    into another's under a caret that has already moved.
+                  */
                   className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-sans leading-relaxed text-ink/85 caret-accent-ink outline-none placeholder:text-ink/25"
-                />
-                <WordRoller
-                  fieldRef={bodyField.ref}
-                  value={blockText}
-                  background={surface}
-                  onReplace={(start, end, word) => {
-                    // Block-relative offsets: the roller only ever saw the
-                    // field, and the field is one block now.
-                    setContent(
-                      spliceBlock(blockText.slice(0, start) + word + blockText.slice(end)),
-                    );
-                    pendingCaret.current = {
-                      field: bodyField.ref.current,
-                      at: start + word.length,
-                    };
-                  }}
                 />
               </div>
               {/*
@@ -1093,7 +1159,9 @@ export default function NoteSurface({
               */}
               {below.trim() && (
                 <div data-line-base={belowBase}>
-                  <Markdown>{below}</Markdown>
+                  <Markdown className="continued" onToggleTask={toggleTask}>
+                    {below}
+                  </Markdown>
                 </div>
               )}
             </>

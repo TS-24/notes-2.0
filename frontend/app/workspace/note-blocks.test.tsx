@@ -10,8 +10,8 @@
  * is source.
  *
  * There is still exactly one textarea on the page, which is what lets
- * `fitToText`, `useAutoHeight`, `pendingCaret`, the word roller and
- * save-on-blur all keep working on the same ref they always used.
+ * `fitToText`, `useAutoHeight`, `caretOnEnter` and save-on-blur all keep
+ * working on the same ref they always used.
  *
  * The four edge crossings are the part that needs pinning: separate render
  * regions do not share a caret, so arrowing off the top of a block and deleting

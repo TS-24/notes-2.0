@@ -35,6 +35,32 @@ import { unified } from "unified";
  * happens to be there transitively is one dependency bump away from breaking.
  */
 
+/**
+ * What a block renders as, which is what its source has to be typeset as.
+ *
+ * The names are remark's own apart from `rule`, which is `thematicBreak` said
+ * shorter, and `paragraph`, which everything without a shape of its own folds
+ * into — an HTML block and a link definition both read as the prose they look
+ * like.
+ */
+export type BlockKind =
+  | "paragraph"
+  | "heading"
+  | "list"
+  | "code"
+  | "blockquote"
+  | "table"
+  | "rule";
+
+const KINDS: Record<string, BlockKind> = {
+  heading: "heading",
+  list: "list",
+  code: "code",
+  blockquote: "blockquote",
+  table: "table",
+  thematicBreak: "rule",
+};
+
 export type Block = {
   /** Character offset of the block's first character in the whole text. */
   start: number;
@@ -42,11 +68,17 @@ export type Block = {
   end: number;
   /** 1-based source line it starts on — what `data-line` in markdown.tsx holds. */
   startLine: number;
+  /** What it renders as — see `.note-source` in app.css. */
+  kind: BlockKind;
+  /** A heading's level, and nothing else's. */
+  depth?: number;
 };
 
 const parser = unified().use(remarkParse).use(remarkGfm);
 
 type PositionedNode = {
+  type?: string;
+  depth?: number;
   position?: {
     start?: { offset?: number; line?: number };
     end?: { offset?: number };
@@ -66,7 +98,12 @@ export function blocksOf(text: string): Block[] {
     // Every node remark produces from a string carries a position; the guard is
     // for the type, not for a case that happens.
     if (start === undefined || end === undefined || startLine === undefined) continue;
-    blocks.push({ start, end, startLine });
+    const kind = KINDS[node.type ?? ""] ?? "paragraph";
+    blocks.push(
+      kind === "heading"
+        ? { start, end, startLine, kind, depth: node.depth }
+        : { start, end, startLine, kind },
+    );
   }
 
   return blocks;
