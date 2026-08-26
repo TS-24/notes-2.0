@@ -7,7 +7,7 @@
  * those landed as flat lines because the body is an unstyled textarea with no
  * renderer behind it. The body now renders its markdown at rest and hands back
  * the raw text the moment you write in it — one editing surface, not two, so
- * `fitToText`, the word roller and save-on-blur are all unchanged.
+ * `fitToText` and save-on-blur are all unchanged.
  *
  * The caret is the part worth pinning. Clicking rendered markdown has to land
  * you somewhere sensible in the *source*, and mapping a click to a character
