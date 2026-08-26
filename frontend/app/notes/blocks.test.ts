@@ -81,6 +81,71 @@ describe("blocksOf", () => {
   });
 });
 
+/**
+ * What each block *is*, which is what the editor has to typeset its source as.
+ *
+ * The surface used to sniff this itself with `/^#{1,6}\s/` over the block's
+ * text. remark has already parsed the same string, so that was a second opinion
+ * about a settled question — and a wrong one for a setext heading, which has no
+ * `#` in it at all.
+ */
+describe("a block's kind", () => {
+  const kindsOf = (text: string) => blocksOf(text).map(b => b.kind);
+
+  test("the six block shapes a note is made of", () => {
+    const text = [
+      "# Heading",
+      "",
+      "A paragraph.",
+      "",
+      "- a list",
+      "",
+      "> a quote",
+      "",
+      "```js\ncode\n```",
+      "",
+      "| a | b |\n| - | - |\n| 1 | 2 |",
+      "",
+      "---",
+    ].join("\n");
+
+    expect(kindsOf(text)).toEqual([
+      "heading",
+      "paragraph",
+      "list",
+      "blockquote",
+      "code",
+      "table",
+      "rule",
+    ]);
+  });
+
+  test("a heading carries the level it renders at", () => {
+    expect(blocksOf("### Third")[0].depth).toBe(3);
+  });
+
+  test("a setext heading is a heading too, `#` or no `#`", () => {
+    // The regex this replaces could not see one.
+    const [block] = blocksOf("Underlined\n==========");
+
+    expect(block.kind).toBe("heading");
+    expect(block.depth).toBe(1);
+  });
+
+  test("only a heading has a level", () => {
+    expect(blocksOf("A paragraph.")[0].depth).toBeUndefined();
+  });
+
+  test("anything else reads as prose, because its source does", () => {
+    // An HTML block, a link definition. Neither has a rendered shape of its own
+    // worth typesetting the source as.
+    expect(kindsOf("<div>raw</div>\n\n[ref]: https://example.com")).toEqual([
+      "paragraph",
+      "paragraph",
+    ]);
+  });
+});
+
 describe("blockAtOffset", () => {
   const text = "# Title\n\nA paragraph.\n\n- a list";
   const blocks = blocksOf(text);

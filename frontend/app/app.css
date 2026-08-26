@@ -151,53 +151,119 @@ html {
 }
 
 /*
-  A note's markdown, rendered.
+  A note's markdown, rendered — and `.note-source`, the raw text of the one
+  block the caret is in, which has to look like it.
 
-  Deliberately close to the textarea it swaps with. This appears and disappears
-  under the caret — rendered at rest, raw while you write — so a type scale that
-  disagreed with the raw text would make the note jump on every click into it.
-  Headings are one modest step each rather than the usual octave, and the block
-  rhythm is the field's own line height.
+  **Every rule below that both halves need is written once, with both
+  selectors.** That is the whole design of this block. The note is rendered at
+  rest and hands back one block's source the moment you write in it, so the two
+  are the same words in the same place a frame apart: any value they disagree on
+  is the note moving under the reader's hands. They were separate before, and
+  they disagreed about nearly everything — clicking a heading swapped 29px of
+  Playfair for 20px of Garamond and dragged the rest of the note up 9px behind
+  it; clicking a fenced block lost its ground and its monospace at once, grew
+  29px, and pushed the document 32px taller. Paired like this, changing one puts
+  you in the rule that has to change with it.
+
+  **The wrapper is the block and the field is its text**, which is the division
+  that makes the pairing work at all. Every length here is an `em`, and an `em`
+  resolves against the font-size of the element carrying it — so a heading's
+  `margin-block: 0.45em` is 13px on a 29px `<h1>` and 9px on a 20px wrapper
+  around it. Sizing the *wrapper* is what puts those back in agreement: it takes
+  the block's own size, the box properties (margin, padding, border, ground)
+  land on it exactly as they land on the rendered element, and the field inherits
+  the size through Tailwind's `font: inherit` and carries only the glyph
+  properties — family, weight, line height, colour.
+
+  So the field sets no `font-size` of its own except where the rendered block's
+  text does either, which is code: `<pre>` is 1em and the `<code>` inside it is
+  0.9em, and the wrapper/field pair is the same two elements. It rides the morph
+  for free — `em` re-resolves against the parent's tweening size every frame.
+
+  The outer margin at the top and bottom of the note is zeroed inline; see
+  `sourceEdges` in note-surface.tsx. When the word roller comes back it will
+  want the field's origin, and on a code block that is now the wrapper's padding
+  box rather than its border box — its mirror parks at `top: 0` of the parent.
+
+  Two shapes cannot be made to hold still and are not pretended into it: a
+  table's source is pipes where the rendered one is bordered cells, and a `---`
+  is a line of text standing in for a 1px rule. Both get their margins, so the
+  blocks around them stay put, and nothing else.
 
   Alignment is not decided here. Prose follows `--note-align` from the block
   above, and the structured blocks keep their contents flush and move as a
   whole — `width: fit-content` is what gives their inline margins something to
-  push against. What is left in this block is what holds true wherever a note's
-  markdown is rendered, the library cards included.
+  push against, and a full-width field has nothing to give it, so in a centred
+  note a list's source sits left where the rendered list sits centred. What is
+  left in this block is what holds true wherever a note's markdown is rendered,
+  the library cards included.
 */
-.markdown > :first-child {
+/*
+  Only the note's real outer edges lose their margin.
+
+  The halves above and below the open block are fragments of one document, not
+  two documents, and `:first-child` / `:last-child` cannot tell the difference —
+  so the inner edge of each was being zeroed as if the note ended there. That
+  costs a gap rather than closing one, because two adjacent margins collapse to
+  the *larger* of the pair: a paragraph's 15px under a heading's 27px was
+  already 27px, and zeroing the heading's left 15px. Measured on the landing
+  page: 12-13px, every time the caret crossed into a block whose neighbour had
+  the bigger margin.
+
+  `continues` says there is more of this document below the fragment, and
+  `continued` that it began above — set in note-surface.tsx where the split is
+  made, which is the only place that knows.
+*/
+.markdown:not(.continued) > :first-child {
   margin-top: 0;
 }
 
-.markdown > :last-child {
+.markdown:not(.continues) > :last-child {
   margin-bottom: 0;
 }
 
-.markdown p {
+.markdown p,
+.note-source[data-block="paragraph"] {
   margin-block: 0.75em;
 }
 
-.markdown :is(h1, h2, h3, h4, h5, h6) {
-  @apply font-display font-medium tracking-tight text-ink;
-  line-height: 1.25;
+.markdown :is(h1, h2, h3, h4, h5, h6),
+.note-source[data-block="heading"] {
   margin-block: 1.15em 0.45em;
 }
 
-.markdown h1 {
+.markdown :is(h1, h2, h3, h4, h5, h6),
+.note-source[data-block="heading"] textarea {
+  @apply font-display font-medium tracking-tight text-ink;
+  line-height: 1.25;
+}
+
+.markdown h1,
+.note-source[data-level="1"] {
   font-size: 1.45em;
 }
 
-.markdown h2 {
+.markdown h2,
+.note-source[data-level="2"] {
   font-size: 1.2em;
 }
 
-.markdown h3 {
+.markdown h3,
+.note-source[data-level="3"] {
   font-size: 1.05em;
 }
 
-.markdown :is(ul, ol) {
+.markdown :is(ul, ol),
+.note-source[data-block="list"] {
   margin-block: 0.75em;
+  /* The indent the marker hangs off. Keeping it on the source too is not only
+     about the left edge: a field 28px wider than the list it replaced wraps its
+     lines somewhere else, and a different number of lines is a different
+     height. */
   padding-inline-start: 1.4em;
+}
+
+.markdown :is(ul, ol) {
   text-align: start;
   width: fit-content;
 }
@@ -210,28 +276,65 @@ html {
   list-style: decimal;
 }
 
-.markdown li {
-  margin-block: 0.25em;
+/*
+  No per-item margin, and this one is a deletion rather than a value.
+
+  A list's source is n plain lines and its rendered self was n lines plus a
+  0.25em gap between each — so opening a three-item list took 9px out of the
+  note and a ten-item one would have taken 45. There is no line-height that
+  fixes it either: the gaps number one fewer than the lines, so any per-line
+  value is out by exactly one item. The body already sets its lines 1.625 apart,
+  which is enough air for a list; the extra gap was buying nothing that the
+  leading was not already providing.
+*/
+
+/*
+  A task box is the one piece of markdown that is an instruction rather than
+  type. `accent-color` is what stops it being a stock grey square in a serif
+  document; the pointer is what says it can be clicked, which until now it
+  could not — see `onToggleTask` in markdown.tsx.
+*/
+.markdown input[type="checkbox"] {
+  accent-color: var(--color-accent-ink);
+  margin-inline-end: 0.15em;
+}
+
+.markdown input[type="checkbox"]:not(:disabled) {
+  cursor: pointer;
 }
 
 .markdown a {
   @apply text-accent-ink underline underline-offset-2;
 }
 
+/* The text inside the block, both times: `<code>` in its `<pre>`, the field in
+   its wrapper. Inline code is the same 0.9em wherever it sits. */
+.markdown code,
+.note-source[data-block="code"] textarea {
+  @apply font-mono;
+  font-size: 0.9em;
+}
+
 .markdown code {
   @apply bg-paper-raised;
   border-radius: 0.35em;
   padding: 0.1em 0.35em;
-  font-size: 0.9em;
 }
 
-.markdown pre {
+.markdown pre,
+.note-source[data-block="code"] {
   @apply bg-paper-raised;
   border-radius: 0.75em;
   padding: 0.9em 1.1em;
   margin-block: 0.9em;
-  overflow-x: auto;
+}
+
+.markdown pre {
   text-align: start;
+  /* Only the rendered half scrolls. A field wraps instead: a long line is
+     easier to edit wrapped than dragged sideways, and a textarea that scrolled
+     sideways could not be measured to its text the way `fitToText` does. */
+  overflow-x: auto;
 }
 
 .markdown pre code {
@@ -239,23 +342,49 @@ html {
   padding: 0;
 }
 
-.markdown blockquote {
-  @apply text-ink/70;
+.markdown blockquote,
+.note-source[data-block="blockquote"] {
   border-inline-start: 2px solid var(--color-hairline);
   padding-inline-start: 1em;
   margin-block: 0.9em;
+}
+
+.markdown blockquote,
+.note-source[data-block="blockquote"] textarea {
+  @apply text-ink/70;
+}
+
+.markdown blockquote {
   text-align: start;
   width: fit-content;
+}
+
+/*
+  A form control does not inherit `text-align`, and `.note-text textarea` hands
+  every field the reader's own setting — so the structured kinds, whose rendered
+  twins keep their contents flush whatever that setting is, have to say so here.
+*/
+.note-source:is([data-block="list"], [data-block="blockquote"], [data-block="code"], [data-block="table"])
+  textarea {
+  text-align: start;
+}
+
+.markdown hr,
+.note-source[data-block="rule"] {
+  margin-block: 1.4em;
 }
 
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--color-hairline);
-  margin-block: 1.4em;
+}
+
+.markdown table,
+.note-source[data-block="table"] {
+  margin-block: 0.9em;
 }
 
 .markdown table {
-  margin-block: 0.9em;
   border-collapse: collapse;
   text-align: start;
 }
