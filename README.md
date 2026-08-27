@@ -1,43 +1,26 @@
 # Restyle ✍️
 
-**Restyle** is a note-taking app built around one idea: **the words in your notes should be able
-to move.**
+**Restyle** is a note-taking app built around one idea: **a note should never stop being the
+thing you are looking at.**
 
-You write a note the way you would in any notes app. Then, standing on any word, you press a
-chevron and roll it up or down a *difficulty ladder* — `going` → `running` → `leading` →
-`passing` → `extending` — and the word is replaced in place. Up is rarer and more formal, down
-is plainer. It is vocabulary practice on your own writing rather than on someone else's flashcards.
+The landing page *is* your most recently touched note, live and editable, rendered as markdown
+and handing back raw source one block at a time as you write in it. Double-click and a box
+animates in around text that never moves, revealing the library of every other note beneath.
+Double-click again to go back. That gesture is the whole of the navigation: there is no sidebar
+and no nav bar, and the note you were reading is the note you are still reading.
 
-Making that work is most of what this repo is. A dictionary (WordNet) knows what a word's
-synonyms are but not which one belongs in the sentence in front of it. A language model knows
-the opposite. So neither one does the job alone: **the dictionary proposes and an embedding
-model ranks.**
+Around that sit the things a note can be asked for once it exists: which of its words are worth
+learning, and a conversation about it that writes itself up as a note of its own.
 
 ## 🌟 Features
 
 **Working today**
 
-- **The word ladder** — put the caret in any word and chevrons appear above and below it. Click
-  one and the word rolls like a slot reel to the next rung. The climb is anchored to the word you
-  started from, so pressing down walks back exactly the way you came.
-- **Units, not words** — what gets replaced is not always the word under the caret. `give up` has
-  a ladder neither of its words can reach, and an article travels with the word it attaches to so
-  `an example` becomes `a model` rather than `an model`. The API resolves a caret to a span.
-- **Sense disambiguation in context** — the same word in two sentences gets two different ladders:
-
-  ```
-  "She was running through the park."      → going, running, leading, passing
-  "We were running through the supplies."  → using up, eating up, wiping out
-  ```
-
-  **This needs `HF_TOKEN`.** It is the one feature here that does not work out of the box: with
-  no credentials the ranker is skipped and both sentences return the same dictionary-ordered
-  ladder. See [Environment switches](#the-ladder-endpoint).
-
-- **One continuous note surface** — the landing page *is* your most recently touched note, live
-  and editable. Double-click it and a box animates in around text that never moves, revealing the
-  library of every other note beneath. Double-click again to go back. That gesture is the only
-  navigation: there is no sidebar and no nav bar.
+- **Markdown that holds still** — a note reads as rendered markdown and edits as raw text, one
+  block at a time: click a heading and you get `## heading` typeset as the heading it is, at its
+  size and in its face, so nothing on the page moves under your hands. Task boxes tick and write
+  themselves back into the source, links open beside the note rather than over it, and Enter
+  carries a list forward.
 - **Vocabulary analysis** — the words worth learning in one note, as flashcards on its card in
   the library, or in every note at once as the word cloud at `/analytics`, where clicking a word
   opens its definition in a sheet. Dismissing a flashcard records that word as known, per reader,
@@ -71,7 +54,7 @@ model ranks.**
   of the surface's modes on purpose, because `text-align` cannot be tweened and an alignment that
   differed between them would snap the words sideways the instant the box arrived.
 - **Persistence** — notes, pinning, chats and word definitions are stored in PostgreSQL through a
-  FastAPI backend, with the whole ladder computation cached so a repeat lookup costs no model time.
+  FastAPI backend.
 
 See [Project status](#-project-status) for what does not work yet.
 
@@ -89,9 +72,8 @@ restyle/
 │       │                      #   login / register / logout, menu.tsx (served
 │       │                      #   at /settings), and five action- or loader-only
 │       │                      #   routes with no component of their own: chats,
-│       │                      #   chat, api.word-ladder, api.vocabulary,
-│       │                      #   api.active-model
-│       ├── workspace/         # note-surface.tsx, word-roller.tsx
+│       │                      #   chat, api.vocabulary, api.active-model
+│       ├── workspace/         # note-surface.tsx
 │       ├── chat/              # chat-surface.tsx, model-picker.tsx
 │       ├── notes/             # notegrid.tsx — the library grid — plus chat-card,
 │       │                      #   ghost-card and account-bubble
@@ -113,11 +95,10 @@ restyle/
 │   │   │                      #   deps.py holds the current user
 │   │   ├── cli.py             # Invites, accounts, housekeeping
 │   │   ├── core/              # config, security (argon2 + JWT), secrets (Fernet)
-│   │   ├── crud/              # Database operations, incl. the ladder cache
+│   │   ├── crud/              # Database operations
 │   │   ├── db/                # SQLAlchemy models and the session factory
 │   │   ├── schemas/           # Pydantic request/response models
-│   │   └── services/          # vocab.py (the ladder), ranker.py (the judge),
-│   │                          #   analysis.py (difficult-word extraction),
+│   │   └── services/          # analysis.py (difficult-word extraction),
 │   │                          #   llm.py (the provider registry),
 │   │                          #   conversation_summary.py
 │   ├── alembic/               # Database migrations
@@ -156,15 +137,12 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 - **Framework:** FastAPI (Python 3.12)
 - **Database:** Neon (hosted PostgreSQL 18) via SQLAlchemy 2.0 ORM, migrations with Alembic. The migrations
   are also SQLite-safe (batch mode), which is what the test suite runs against
-- **Lexicon:** NLTK's WordNet (synonyms, senses, adjective satellites), `lemminflect`
-  (lemmatisation and re-inflection), `wordfreq` (the difficulty axis)
-- **Ranking:** a hosted sentence-embedding model via `huggingface_hub`, used to pick the sense
-  that belongs in the sentence. Optional — without credentials the ladder falls back to the
-  dictionary's own ordering
+- **Lexicon:** NLTK's WordNet (definitions), `wordfreq` (the difficulty axis), `pyphen`
+  (syllables, which break ties between words used about equally often)
 - **Chats:** LangChain (`langchain-anthropic`, `langchain-openai`) against a key the reader
   supplies, with each provider's own SDK used directly for the one thing LangChain has no notion
   of — asking a key which models it can reach
-- **Tests:** pytest, against SQLite with the ranker and every provider call mocked
+- **Tests:** pytest, against SQLite with every provider call mocked
 
 ### Themes
 
@@ -202,12 +180,11 @@ class; written against that, the setting would swing the whole grid around too.
 
 A user owns many notes; notes and word definitions are linked many-to-many through a
 `note_word` association table, so one definition is shared across every note that uses the word.
-`word_ladders` is a standalone cache, keyed on the surface form and a hash of the sentence.
 `known_words` is per user rather than global, because "difficult" is a fact about a reader and not
 about a word.
 
 ```
-User ──< Note >──note_word──< WordDefinition          WordLadder
+User ──< Note >──note_word──< WordDefinition
  ├──< KnownWord
  ├──< Chat ──< ChatMessage
  └──< ProviderCredential
@@ -256,7 +233,6 @@ directory of other people's writing.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check (not under `/api`) |
-| `GET` | `/api/vocab/ladder` | **The ladder.** Takes `sentence` and `caret`; returns the rungs plus the `start`/`end` of the unit it resolved to |
 | `POST` | `/api/analyze/vocabulary` | The words worth learning in a body of text, with definitions. Takes `title` and `content` (capped at 1,000,000 characters, since the analytics page sends every note joined together). Words the user has marked known are left out |
 | `POST` | `/api/words/known` | Mark words as already known, up to 500 per request. Returns 204 with no body — the caller has already removed the card and has nothing to do with a response |
 | `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, 409 if the email is taken |
@@ -327,37 +303,6 @@ so an in-flight call holds a FastAPI threadpool slot shared with every other rou
 generous enough for a long summarisation, short enough that one hung provider cannot take the
 whole app down.
 
-### The ladder endpoint
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "localhost:8700/api/vocab/ladder?sentence=She%20was%20running%20through%20the%20park.&caret=10"
-```
-```json
-{ "word": "running through", "pos": "v",
-  "rungs": ["going through", "working through", "using up", "running through", "eating up",
-            "eating", "wiping out"],
-  "origin_index": 3, "start": 8, "end": 23, "id": 52 }
-```
-
-That is the response with no `HF_TOKEN` set, so the rungs are in the dictionary's own order and
-`running through` has been resolved as a single phrasal unit — note that `start`/`end` span 8–23,
-not just the word under the caret at 10. With a token the same call returns the rungs re-ranked
-for the sentence.
-
-The caller sends a **caret**, not a word, because the unit to replace is not always the word under
-it. The resolved span comes back as `start`/`end` so the caller knows what to swap. The whole
-ladder arrives in one response rather than a rung at a time: the roller's animation is 460ms, and
-a network round trip inside it would stall the reel.
-
-Environment switches:
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `LADDER_RANKING` | `on` | `off` skips the model entirely: dictionary-only ladders, cached per word |
-| `HF_TOKEN` | unset | Credentials for the hosted ranker. Unset behaves like `LADDER_RANKING=off`, and is checked before any request so a token-less install never pays a timeout to discover it |
-| `HF_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | The embedding model the ranker calls |
-
 ## 🚀 Getting Started
 
 ### Docker (the supported path)
@@ -385,11 +330,13 @@ fallback signing key is not a convenience but a skeleton key for every deploymen
 set one. `JWT_SECRET` must also be at least 32 bytes, or the backend refuses to import.
 
 It sets `DATABASE_URL`, the two host ports, the two secrets (`JWT_SECRET` and `SESSION_SECRET`,
-both required, neither with a default), `ENVIRONMENT`, `DOMAIN` for the production overlay, and
-the three optional ranker switches (`HF_TOKEN`, `HF_MODEL`, `LADDER_RANKING`). Those last three
-have to go in this file to reach the container: `docker-compose.yml` forwards exactly the
-variables it names into the backend's environment, and nothing else in `.env` crosses that
-boundary. Setting `HF_TOKEN` only in your shell does nothing under compose.
+both required, neither with a default), `ENVIRONMENT`, and `DOMAIN` for the production overlay.
+Anything you add has to go in this file to reach the container: `docker-compose.yml` forwards
+exactly the variables it names into the backend's environment, and nothing else in `.env` crosses
+that boundary. Setting one only in your shell does nothing under compose.
+
+No variable here is a credential this deployment spends. Every model call the app makes runs on a
+key the reader supplied on `/settings`.
 
 Inside the compose network the frontend reaches the API at `http://backend:8000`. The database is
 reached over the internet at the Neon host in `DATABASE_URL`, so the same URL works inside and
@@ -515,8 +462,8 @@ docker compose exec backend python -m pytest tests/ -q
 296 passed, 2 warnings in 28.34s
 ```
 
-The suite runs against SQLite, so it needs neither Postgres nor any API key: the ranker is mocked,
-and so is every provider call the chat feature makes. That is also why it is fast. For the same
+The suite runs against SQLite, so it needs neither Postgres nor any API key: every provider call
+the chat feature makes is mocked. That is also why it is fast. For the same
 reason it runs fine outside Docker, from any virtualenv with `requirements.txt` installed — it
 wants only `DATABASE_URL` and a `JWT_SECRET` of at least 32 bytes, and `conftest.py` will
 `setdefault` both:
@@ -558,10 +505,10 @@ uvicorn main:app --reload --port 8700
 ```
 
 The corpus download is not optional. `nltk.corpus.wordnet` is a lazy loader, so importing
-`services/vocab.py` succeeds without it and the failure arrives later, as a `LookupError` on the
-first ladder built — which is a confusing way to be told your install is incomplete. The
+`services/analysis.py` succeeds without it and the failure arrives later, as a `LookupError` on
+the first note analysed — which is a confusing way to be told your install is incomplete. The
 Dockerfile does the same fetch at build time, which is why the container needs no network on its
-first roll.
+first analysis.
 
 ```bash
 cd frontend && npm install && npm run dev     # http://localhost:5173
@@ -573,8 +520,8 @@ never calls the backend directly, there is no CORS to configure for this path.
 
 ## 📌 Project status
 
-The ladder, the note surface, persistence, vocabulary analysis, chats and themes are wired end to
-end. What is not:
+The note surface, markdown editing, persistence, vocabulary analysis, chats and themes are wired
+end to end. What is not:
 
 - **No chat here has spoken to a real model.** There has never been a provider key on the machine
   this was built on, so everything up to the provider boundary is verified and nothing past it is:
@@ -603,16 +550,6 @@ end. What is not:
 - **There is no refresh flow.** A token nobody revokes stays valid for its full seven days.
   Rotating `JWT_SECRET` invalidates every session at once — and, because the credential cipher is
   derived from it, orphans every stored provider key along with them.
-- **Acronyms and jargon have no ladder.** `ML` resolves to *millilitre*; `API` and `GPU` have no
-  WordNet entry at all. This is a lexicon gap, not a ranking one, so nothing downstream can fix
-  it — it needs either a guard that declines on unknown tokens or an open-vocabulary fallback.
-- **Noun senses still discriminate poorly.** Verbs are reliable; `model` returns the
-  *example/exemplar* reading in both "a ML model" and "a model in Paris".
-- **The ranker needs the network.** It calls a hosted model, so a cache miss costs a round
-  trip and an offline install has no ranking at all — the ladder still works, but wrong-sense
-  rungs come back ("escape" for "run"). Ranking by embedding similarity is also a weaker signal
-  than the masked language model it replaced: it asks whether a substitution preserves the
-  sentence's meaning, not whether it is grammatical.
 - **Both ghost cards still write a row on click**, before anything is typed — but the row no
   longer outlives the visit. A new note is created nameless (`title = ""`; `Untitled` is
   placeholder text in the field, never a value), and leaving one that was never written in

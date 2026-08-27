@@ -30,9 +30,8 @@ export default [
     route("chats", "routes/chats.tsx"),
     route("chats/:chatId", "routes/chat.tsx"),
     // Resource route (loader only, no component). Deliberately outside the
-    // layout: the word roller reads from it constantly, and a lookup inside the
-    // workspace would drag the note list's revalidation along with it.
-    route("api/word-ladder", "routes/api.word-ladder.tsx"),
+    // layout: a submission inside the workspace would drag the note list's
+    // revalidation along with it.
     route("api/vocabulary", "routes/api.vocabulary.tsx"),
     route("api/active-model", "routes/api.active-model.tsx"),
 ] satisfies RouteConfig;

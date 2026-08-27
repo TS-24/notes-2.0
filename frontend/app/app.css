@@ -181,9 +181,7 @@ html {
   for free — `em` re-resolves against the parent's tweening size every frame.
 
   The outer margin at the top and bottom of the note is zeroed inline; see
-  `sourceEdges` in note-surface.tsx. When the word roller comes back it will
-  want the field's origin, and on a code block that is now the wrapper's padding
-  box rather than its border box — its mirror parks at `top: 0` of the parent.
+  `sourceEdges` in note-surface.tsx.
 
   Two shapes cannot be made to hold still and are not pretended into it: a
   table's source is pipes where the rendered one is bordered cells, and a `---`

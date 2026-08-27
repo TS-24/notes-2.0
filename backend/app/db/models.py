@@ -129,42 +129,6 @@ class WordDefinition(Base):
     )
 
 
-class WordLadder(Base):
-    """
-    A cached word ladder — see app/services/vocab.py.
-
-    Building one means walking WordNet and scoring every candidate, which is
-    the same answer every time for the same word, so it is worth computing once
-    for everybody rather than once per keystroke.
-
-    Keyed on the *surface* form, not the lemma: the rungs are inflected to match
-    what was asked about, so "run" and "running" are legitimately separate rows.
-    """
-
-    # `pos` is the part of speech the ladder was *resolved* to, not a lookup
-    # key — the caller does not say which one they meant, so the service picks.
-
-    __tablename__ = "word_ladders"
-    __table_args__ = (
-        UniqueConstraint("word", "context_hash", name="uq_word_ladders_word_context"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    word: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    # Which sentence the ladder was built for, hashed — empty when the ranker is
-    # off, since a dictionary ladder depends on nothing but the word. This is
-    # the price of context: the answer stops being a property of the word, so
-    # the cache converges on sentences rather than on vocabulary.
-    context_hash: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
-    pos: Mapped[str] = mapped_column(String(2), nullable=False, server_default="")
-    # The rungs in order, plainest first.
-    rungs: Mapped[list] = mapped_column(JSON, nullable=False)
-    origin_index: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-
 class KnownWord(Base):
     """
     A word the user has said they already know.
@@ -250,11 +214,12 @@ class ProviderCredential(Base):
     """
     The API key a reader lent us, and which provider it is for.
 
-    The first credential this app holds on a *user's* behalf rather than the
-    deployment's — the word ladder's model runs on the deployment's own token,
-    this runs on somebody's paid account. So it is encrypted at rest
-    (`core/secrets.py`), it never leaves through the API, and it is released
-    when the account is.
+    The only credential this app holds, and it is held on a *user's* behalf
+    rather than the deployment's: it runs on somebody's paid account. So it
+    is encrypted at rest (`core/secrets.py`), it never leaves through the
+    API, and it is released when the account is. Nothing here runs on a token
+    belonging to whoever deployed this — the one thing that did was the word
+    ladder's ranker, and it is gone.
 
     One row per provider per user. A reader who holds keys for two services
     should not have to paste one of them again to go back to it, and the model

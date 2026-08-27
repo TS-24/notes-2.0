@@ -5,7 +5,6 @@ from . import (
     revoked_token,
     user,
     word_definition,
-    word_ladder,
 )
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "revoked_token",
     "user",
     "word_definition",
-    "word_ladder",
 ]

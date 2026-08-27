@@ -12,6 +12,7 @@ the cap is not a nicety: without it the response grows with the corpus.
 from wordfreq import zipf_frequency
 
 from app.services import analysis as analysis_service
+from app.services.analysis import difficulty
 
 PLAIN = "The dog sat on the mat and looked at the door."
 HARD = "The perspicacious archivist enumerated every recondite marginalium."
@@ -95,3 +96,34 @@ class TestKnownWords:
         after = analyse(client, HARD)
         assert first not in after["definitions"]
         assert after["total_difficult_words"] == before["total_difficult_words"] - 1
+
+
+class TestDifficulty:
+    """
+    The sort key itself, rather than its effect through the endpoint.
+
+    It is the one thing this module borrows from elsewhere, and the borrowing
+    is about to change: the ladder that used to own `difficulty` is going, so
+    these pin the behaviour across the move rather than describing anything
+    new. Ascending, plainest first.
+    """
+
+    def test_frequency_decides(self):
+        assert difficulty("dog") < difficulty("recondite")
+
+    def test_a_phrase_scores_by_its_rarest_word(self):
+        # Not by the phrase as a whole: multiplying the parts' probabilities
+        # would make every phrase look vanishingly rare.
+        assert difficulty("give up") < difficulty("relinquish")
+
+    def test_a_phrase_loses_a_tie_to_a_single_word(self):
+        rarest, phrase, _, _ = difficulty("give up")
+
+        assert phrase == 0
+        assert difficulty("relinquish")[1] == 1
+
+    def test_syllables_break_a_tie_before_length_does(self):
+        _, _, syllables, length = difficulty("archivist")
+
+        assert syllables == 3
+        assert length == len("archivist")

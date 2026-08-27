@@ -4,18 +4,19 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# WordNet is not bundled with the nltk package, and the word ladder is useless
-# without it. Fetch it at build time: downloading on first use would make the
-# first roll take seconds and would need network from a running container.
+# WordNet is not bundled with the nltk package, and the vocabulary analysis is
+# useless without it — it is what turns a difficult word into a definition.
+# Fetch it at build time: downloading on first use would make the first
+# analysis take seconds and would need network from a running container.
 ENV NLTK_DATA=/usr/share/nltk_data
 RUN python -m nltk.downloader -d $NLTK_DATA wordnet omw-1.4
 
-# Nothing is baked in for the ranker any more. It used to load a local masked
-# language model, which meant a torch install and ~265MB of weights in the
-# image; it now calls a hosted embedding model instead. Without HF_TOKEN set at
-# run time the ranker simply reports itself unavailable and the ladder falls
-# back to the dictionary's own ordering, which is the intended offline state
-# rather than a failure.
+# No model weights and no model calls are baked in. This image once carried a
+# local masked language model for the word ladder's ranker — a torch install
+# and ~265MB of weights — then a hosted one behind HF_TOKEN. The ladder is gone
+# and so is the token: nothing here reaches a model on the deployment's own
+# credentials, and the only model calls left run on a key the reader supplies
+# at run time.
 
 COPY . .
 RUN chmod +x ./entrypoint.sh

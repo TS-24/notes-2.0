@@ -42,10 +42,4 @@ services:
       # No default: a fallback signing key would be a skeleton key for every
       # deployment that forgot to set one. Compose refuses to start without it.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      # Without these the ranker can never run under compose, whatever .env
-      # says: the container only sees what is forwarded here. Unset is fine —
-      # the ladder falls back to the dictionary's own ordering.
-      HF_TOKEN: ${HF_TOKEN:-}
-      HF_MODEL: ${HF_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
-      LADDER_RANKING: ${LADDER_RANKING:-on}
     restart: unless-stopped
