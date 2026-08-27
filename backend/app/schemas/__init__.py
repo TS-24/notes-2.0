@@ -1,11 +1,6 @@
 from .auth import LoginRequest, RegisterRequest, TokenResponse
 from .note import NoteCreate, NoteRead, NoteUpdate
 from .user import UserRead, UserUpdate
-from .word_definition import (
-    WordDefinitionCreate,
-    WordDefinitionRead,
-    WordDefinitionUpdate,
-)
 
 __all__ = [
     "LoginRequest",
@@ -16,7 +11,4 @@ __all__ = [
     "TokenResponse",
     "UserRead",
     "UserUpdate",
-    "WordDefinitionCreate",
-    "WordDefinitionRead",
-    "WordDefinitionUpdate",
 ]

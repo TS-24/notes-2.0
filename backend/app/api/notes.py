@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from ..crud import note as crud_note
-from ..crud import word_definition as crud_word
 from ..db.database import get_db
 from ..db.models import Note, User
 from ..schemas.note import NoteCreate, NoteRead, NoteUpdate
@@ -148,39 +147,3 @@ def delete_note(
 ) -> None:
     if not crud_note.delete_note(db, note_id, current_user.id):
         raise NOT_FOUND
-
-
-@router.post("/{note_id}/words/{word_id}", response_model=NoteRead)
-def add_word_to_note(
-    note_id: int,
-    word_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> NoteRead:
-    _assert_word_exists(db, word_id)
-    _owned_note(db, note_id, current_user)
-    note = crud_note.add_word_to_note(db, note_id, word_id, current_user.id)
-    assert note is not None
-    return note
-
-
-@router.delete("/{note_id}/words/{word_id}", response_model=NoteRead)
-def remove_word_from_note(
-    note_id: int,
-    word_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> NoteRead:
-    _assert_word_exists(db, word_id)
-    _owned_note(db, note_id, current_user)
-    note = crud_note.remove_word_from_note(db, note_id, word_id, current_user.id)
-    assert note is not None
-    return note
-
-
-def _assert_word_exists(db: Session, word_id: int) -> None:
-    """Word definitions are shared across every note, so they have no owner."""
-    if crud_word.get_word_definition(db, word_id) is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Word definition not found"
-        )

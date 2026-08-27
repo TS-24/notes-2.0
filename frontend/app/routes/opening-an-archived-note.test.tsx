@@ -45,7 +45,6 @@ const note = (id: number, title: string, archived_at: string | null = null): Not
   created_at: NOW,
   updated_at: NOW,
   archived_at,
-  words: [],
 });
 
 const user: User = { id: 1, username: "reader", email: "reader@example.com" };

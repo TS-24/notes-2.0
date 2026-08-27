@@ -9,14 +9,7 @@ import {
 import GhostCard from "~/notes/ghost-card";
 import Markdown from "~/notes/markdown";
 import LocalTime from "~/lib/local-time";
-import type { Note, VocabularyAnalysis } from "~/lib/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "~/components/ui/dialog";
+import type { Note } from "~/lib/types";
 
 /**
  * The id the new-note ghost morphs from. No real note has 0, and the surface
@@ -38,20 +31,6 @@ function NoteCard({
   // Each card owns its fetcher so simultaneous pins/deletes don't clobber
   // each other's pending state.
   const fetcher = useFetcher();
-  const knownFetcher = useFetcher();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  // The analysis comes back through a resource route, so the request carries
-  // the session cookie and works wherever the app is served from. It used to
-  // be a browser fetch to a hardcoded 127.0.0.1.
-  const vocabFetcher = useFetcher<VocabularyAnalysis>();
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  const loading = vocabFetcher.state !== "idle";
-  const vocabData = vocabFetcher.data ?? null;
-
-  // Flashcard State
-  const [isQuizMode, setIsQuizMode] = useState(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-
   // Optimistic UI: while a mutation is in flight, render what the user asked
   // for rather than the stale server value.
   const isPinned = fetcher.formData
@@ -67,50 +46,6 @@ function NoteCard({
   const handleCardClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
     onExpand(data);
-  };
-
-  const handleQuizClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsQuizMode(true);
-    setCurrentWordIndex(0);
-    setIsDialogOpen(true);
-    if (!vocabData && vocabFetcher.state === "idle") {
-      vocabFetcher.submit(
-        { title: data.title, content: data.content ?? "" },
-        {
-          method: "post",
-          action: "/api/vocabulary",
-          encType: "application/json",
-        },
-      );
-    }
-  };
-
-  // Dismissed words are filtered out here rather than edited out of the
-  // fetcher's data, which is not ours to mutate.
-  const words = vocabData
-    ? Object.keys(vocabData.definitions).filter((w) => !dismissed.includes(w))
-    : [];
-  const currentWord = words[currentWordIndex];
-
-  const handleNext = () => {
-    setCurrentWordIndex((prev) => (prev + 1) % words.length);
-  };
-
-  const markAsKnown = (word: string) => {
-    // The card goes first and the request follows; the endpoint returns no
-    // body and there is nothing to wait for. It is idempotent by design, so a
-    // resend on retry is harmless.
-    const remaining = words.filter((w) => w !== word);
-    setDismissed((prev) => [...prev, word]);
-    if (currentWordIndex >= remaining.length) {
-      setCurrentWordIndex(Math.max(0, remaining.length - 1));
-    }
-
-    knownFetcher.submit(
-      { intent: "markKnown", word },
-      { method: "post", action: "/notes" },
-    );
   };
 
   // Remove the card immediately on delete instead of waiting for the round trip.
@@ -232,101 +167,9 @@ function NoteCard({
                 </motion.button>
               </fetcher.Form>
             </div>
-
-            <button
-              onClick={handleQuizClick}
-              className="px-4 py-1.5 text-sm rounded-lg bg-accent text-on-accent hover:opacity-90 transition-opacity cursor-pointer"
-            >
-              Review Words
-            </button>
           </div>
         </motion.div>
       </motion.div>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 flex flex-row items-start justify-between">
-            <div>
-              <DialogTitle>Vocabulary Analysis</DialogTitle>
-              <DialogDescription>
-                Difficult words found in "{title || 'this note'}".
-              </DialogDescription>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 mt-2">
-            {loading ? (
-              <p className="text-sm text-ink/60">Analyzing vocabulary...</p>
-            ) : vocabData ? (
-              words.length > 0 ? (
-                isQuizMode ? (
-                  <div className="flex flex-col items-center justify-center min-h-[250px] p-6 bg-paper-raised border border-hairline rounded-xl shadow-sm relative">
-                    <button 
-                      onClick={() => setIsQuizMode(false)}
-                      className="absolute top-4 left-4 text-xs font-medium text-ink/60 hover:text-ink cursor-pointer"
-                    >
-                      &larr; Back to List
-                    </button>
-                    
-                    <div className="flex flex-col items-center justify-center w-full mt-6">
-                      <h2 className="text-3xl font-bold capitalize text-accent-ink mb-2">
-                        {currentWord}
-                      </h2>
-                      <p className="text-base text-center font-medium text-ink/85 mb-6">
-                        {vocabData.definitions[currentWord]}
-                      </p>
-                      
-                      <div className="w-full text-center space-y-4">
-                        <p className="text-sm text-ink/60">Keep this word in your difficult words list?</p>
-                        <div className="flex items-center justify-center gap-3">
-                          {words.length > 1 && (
-                            <button
-                              onClick={handleNext}
-                              className="px-4 py-2 text-sm font-medium border border-ink/15 text-ink hover:bg-paper rounded-lg transition-colors cursor-pointer"
-                            >
-                              Keep
-                            </button>
-                          )}
-                          <button
-                            onClick={() => markAsKnown(currentWord)}
-                            className="px-4 py-2 text-sm font-medium bg-danger/10 text-danger hover:bg-danger/20 rounded-lg transition-colors cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="absolute bottom-4 text-xs text-ink/45 font-medium">
-                      Word {currentWordIndex + 1} of {words.length}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4 pr-2">
-                    {Object.entries(vocabData.definitions).map(([word, def]) => (
-                      <div key={word} className="border-b border-hairline pb-2 last:border-0">
-                        <h4 className="font-semibold capitalize text-accent-ink">{word}</h4>
-                        <p className="text-sm text-ink/70 mt-1">{def}</p>
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
-                  <div className="p-3 bg-success/10 rounded-full text-success">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <p className="text-sm font-medium text-ink/85">You know all the words here!</p>
-                  <p className="text-xs text-ink/60">No complex vocabulary remaining in this note.</p>
-                </div>
-              )
-            ) : (
-              <p className="text-sm text-danger">Failed to load vocabulary analysis.</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

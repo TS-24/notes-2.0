@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from ..db.models import Chat, Note, WordDefinition
+from ..db.models import Chat, Note
 
 # A note's owner is fixed at creation time, so user_id is intentionally not updatable.
 # archived_at is missing on purpose: update_note skips None values, so the one
@@ -47,7 +47,6 @@ def get_note(db: Session, note_id: int, user_id: int) -> Note | None:
     stmt = (
         select(Note)
         .where(Note.id == note_id, Note.user_id == user_id)
-        .options(selectinload(Note.words))
     )
     return db.scalars(stmt).first()
 
@@ -67,7 +66,7 @@ def list_notes(
     into the archive, or a listing that quietly included it, would be the same
     bug in opposite directions.
     """
-    stmt = select(Note).options(selectinload(Note.words)).where(Note.user_id == user_id)
+    stmt = select(Note).where(Note.user_id == user_id)
     if search:
         stmt = stmt.where(Note.title.ilike(f"%{search}%"))
 
@@ -225,31 +224,3 @@ def _delete(db: Session, note: Note, chat: Chat | None) -> None:
         db.delete(chat)
     db.delete(note)
     db.commit()
-
-
-def add_word_to_note(db: Session, note_id: int, word_id: int, user_id: int) -> Note | None:
-    """Associate an existing word definition with one of this user's notes."""
-    note = get_note(db, note_id, user_id)
-    word = db.get(WordDefinition, word_id)
-    if note is None or word is None:
-        return None
-
-    if word not in note.words:
-        note.words.append(word)
-        db.commit()
-        db.refresh(note)
-    return note
-
-
-def remove_word_from_note(db: Session, note_id: int, word_id: int, user_id: int) -> Note | None:
-    """Remove the association between a word definition and this user's note."""
-    note = get_note(db, note_id, user_id)
-    word = db.get(WordDefinition, word_id)
-    if note is None or word is None:
-        return None
-
-    if word in note.words:
-        note.words.remove(word)
-        db.commit()
-        db.refresh(note)
-    return note

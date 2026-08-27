@@ -6,13 +6,6 @@
  * with the Pydantic schemas in backend/app/schemas/.
  */
 
-/** Mirrors backend/app/schemas/word_definition.py::WordDefinitionRead */
-export interface WordDefinition {
-  id: number;
-  word: string;
-  definition: string | null;
-}
-
 /** Mirrors backend/app/schemas/note.py::NoteRead */
 export interface Note {
   id: number;
@@ -25,7 +18,6 @@ export interface Note {
   updated_at: string;
   /** Set while the note is put away. Null is the library, non-null the archive. */
   archived_at: string | null;
-  words: WordDefinition[];
 }
 
 /** Mirrors backend/app/schemas/user.py::UserRead */
@@ -33,17 +25,6 @@ export interface User {
   id: number;
   username: string;
   email: string;
-}
-
-/** Mirrors backend/app/schemas/analyze.py::VocabularyAnalysis */
-export interface VocabularyAnalysis {
-  total_difficult_words: number;
-  definitions: Record<string, string>;
-}
-
-/** The envelope the analyze endpoint returns it in. */
-export interface VocabularyAnalysisResponse {
-  vocabulary_analysis: VocabularyAnalysis;
 }
 
 /** Mirrors backend/app/schemas/chat.py::ChatMessageRead */

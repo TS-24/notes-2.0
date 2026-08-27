@@ -38,7 +38,6 @@ const note = (id: number, title: string): Note => ({
   created_at: NOW,
   updated_at: NOW,
   archived_at: null,
-  words: [],
 });
 
 let cleanup = () => {};

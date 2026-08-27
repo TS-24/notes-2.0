@@ -11,7 +11,7 @@ invisible to a suite that only runs the second one.
 from sqlalchemy import select
 
 from app.core.security import hash_password
-from app.db.models import InviteCode, KnownWord, Note, User
+from app.db.models import InviteCode, Note, User
 
 
 def make_user(db, email: str = "reader@example.com") -> User:
@@ -36,34 +36,6 @@ class TestUserDeletion:
         db.commit()
 
         assert db.scalars(select(Note)).all() == []
-
-    def test_deleting_a_user_removes_their_known_words(self, db):
-        # Without a cascade this leaves a row pointing at a missing user, which
-        # DELETE /api/users/{id} would hit as a foreign key error on Postgres.
-        user = make_user(db)
-        db.add(KnownWord(user_id=user.id, word="felicitous"))
-        db.commit()
-
-        db.delete(user)
-        db.commit()
-
-        assert db.scalars(select(KnownWord)).all() == []
-
-    def test_one_users_deletion_leaves_another_users_words(self, db):
-        keeper = make_user(db, "keeper@example.com")
-        leaver = make_user(db, "leaver@example.com")
-        db.add_all(
-            [
-                KnownWord(user_id=keeper.id, word="arduous"),
-                KnownWord(user_id=leaver.id, word="brevity"),
-            ]
-        )
-        db.commit()
-
-        db.delete(leaver)
-        db.commit()
-
-        assert [w.word for w in db.scalars(select(KnownWord))] == ["arduous"]
 
 
 class TestInviteCodes:

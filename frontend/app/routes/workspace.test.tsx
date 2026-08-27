@@ -63,7 +63,6 @@ const note = (id: number, title: string): Note => ({
   created_at: NOW,
   updated_at: NOW,
   archived_at: null,
-  words: [],
 });
 
 const user: User = { id: 1, username: "reader", email: "reader@example.com" };

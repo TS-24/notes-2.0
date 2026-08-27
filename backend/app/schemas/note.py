@@ -3,8 +3,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .word_definition import WordDefinitionRead
-
 # No minimum length. "Untitled" is placeholder text in the field, not a value:
 # a note the reader never named holds "", and the interface shows the word. The
 # old min_length=1 is what forced every caller to invent a title to satisfy it,
@@ -41,4 +39,3 @@ class NoteRead(NoteBase):
     # routes. NoteUpdate deliberately has no counterpart — see crud/note.py,
     # where update_note skips None and so could never clear a column.
     archived_at: datetime | None = None
-    words: list[WordDefinitionRead] = []
