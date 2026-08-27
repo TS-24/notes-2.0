@@ -1,0 +1,28 @@
+# The deploy user's ~/.ssh/authorized_keys on the server.
+#
+# One line, and every option on it is doing work. Copy it, replace the key with
+# the public half of the pair whose private half goes into GitHub secrets as
+# DEPLOY_SSH_KEY, and put nothing else in this file.
+#
+#   command="/srv/restyle/deploy.sh"
+#       The key runs this and only this. Whatever the client asks to run is
+#       discarded and turns up in SSH_ORIGINAL_COMMAND instead, which is where
+#       deploy.sh reads the sha from. This is the line that turns "a shell on
+#       production, in a web UI" into "a button that ships one named image".
+#
+#   restrict
+#       Turns off port forwarding, agent forwarding, X11, and PTY allocation in
+#       one word, and keeps turning off anything added in a later OpenSSH. The
+#       forwarding ones matter most: without them the key is a tunnel into
+#       whatever the box can reach, which includes Neon.
+#
+#   from="..."
+#       Optional and coarse. GitHub's runners come from a wide, published, and
+#       changing set of ranges (https://api.github.com/meta), so this is not a
+#       serious control unless you run a self-hosted runner with a fixed
+#       address. Leave it off rather than maintain a list you will forget.
+#
+# The deploy user needs to be in the docker group and to own /srv/restyle. It
+# does not need sudo, and should not have it.
+
+command="/srv/restyle/deploy.sh",restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_REPLACE_THIS_WITH_YOUR_DEPLOY_PUBLIC_KEY deploy@github-actions

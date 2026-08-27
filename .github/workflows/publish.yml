@@ -6,10 +6,21 @@ on:
   push:
     branches: [dev]
   workflow_dispatch:
+    inputs:
+      # This is the rollback. The deploy key is a forced command that takes a
+      # sha and nothing else, so there is no shell to go and type the old one
+      # into; naming it here is the way back, and it is a button rather than a
+      # procedure to remember at the worst moment.
+      deploy_sha:
+        description: "Commit sha to deploy instead of this run's (rollback)"
+        required: false
+        type: string
 
 concurrency:
   group: publish-dev
-  # Not cancel-in-progress: a half-pushed image is worse than a redundant one.
+  # Not cancel-in-progress: a half-pushed image is worse than a redundant one,
+  # and a half-finished deploy is worse than both. Serialising here is what
+  # stops two deploys racing to `up -d` on the same host.
   cancel-in-progress: false
 
 env:
@@ -73,3 +84,67 @@ jobs:
           # code does not reinstall dependencies.
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to the server
+    needs: publish
+    runs-on: ubuntu-latest
+    # Skipped rather than failed when the host is not configured yet, so
+    # publishing keeps working on a repo that has no server behind it.
+    if: vars.DEPLOY_HOST != ''
+    # Gives the deploy somewhere to hang a protection rule and keeps the URL in
+    # one place. Set DEPLOY_HOST and DEPLOY_USER as environment variables, and
+    # DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS as environment secrets.
+    environment: production
+    steps:
+      - name: Work out which sha to ship
+        id: which
+        env:
+          # Through the environment, never interpolated into the script body.
+          # `${{ }}` is substituted before the shell ever sees it, so an input
+          # containing a quote would not be a bad value here, it would be a
+          # second command. Only a collaborator can dispatch this, which lowers
+          # the odds and not the consequence.
+          REQUESTED: ${{ inputs.deploy_sha }}
+          PUSHED: ${{ github.sha }}
+        run: |
+          SHA="${REQUESTED:-$PUSHED}"
+          # The server checks this too, and refuses anything that is not a sha.
+          # Checking here as well is not redundant: it fails in the log the
+          # operator is already looking at, before a connection is opened.
+          # Enumerated rather than a-f: the range is collation-dependent and
+          # matches A-F under most locales, and the published tags are lower.
+          if ! printf '%s' "$SHA" | LC_ALL=C grep -Eq '^[0123456789abcdef]{40}$'; then
+            echo "::error::'$SHA' is not a 40-character commit sha"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Deploying $SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          SHA: ${{ steps.which.outputs.sha }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+          # StrictHostKeyChecking=yes, with the key pinned above. The default
+          # accept-new would take whatever answers on the first connection,
+          # which is the one connection worth being sure about: a deploy hands
+          # a chosen image to whatever is at the other end.
+          ssh -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o BatchMode=yes \
+              -o ConnectTimeout=15 \
+              -i ~/.ssh/id_ed25519 \
+              "$USER@$HOST" "$SHA"
+
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
