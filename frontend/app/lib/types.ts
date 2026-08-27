@@ -41,6 +41,18 @@ export interface ChatMessage {
   created_at: string;
 }
 
+/**
+ * Mirrors backend/app/schemas/chat.py::AsideTurn — one turn of a "btw".
+ *
+ * No id and no timestamp because there is no row: an aside is held in the
+ * browser for as long as its panel is open and stored nowhere else, which is
+ * why the client hands the whole of one back on every question.
+ */
+export interface AsideTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 /** Mirrors backend/app/schemas/chat.py::ChatSummaryRead */
 export interface ChatSummary {
   /** The subject matter written up as notes — prose, and the durable half. */

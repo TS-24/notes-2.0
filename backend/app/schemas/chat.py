@@ -23,6 +23,37 @@ class ChatMessageCreate(BaseModel):
     content: Content
 
 
+class AsideTurn(BaseModel):
+    """One turn of an aside, as the client holds it.
+
+    No id and no timestamp, because there is no row: an aside lives in the
+    reader's browser for as long as the window is open and nowhere else. Only
+    the two roles somebody actually took — the note's context comes from the
+    chat this is an aside from, so a client cannot inject a system prompt here.
+    """
+
+    role: Literal["user", "assistant"]
+    content: Content
+
+
+class AsideCreate(BaseModel):
+    """A question asked beside the conversation, with whatever preceded it.
+
+    `history` is the aside's own turns. The server keeps none of them, so the
+    client hands them back on every question or the second "btw" would be
+    answered with no memory of the first.
+    """
+
+    content: Content
+    history: list[AsideTurn] = []
+
+
+class AsideReply(BaseModel):
+    """Just the answer. There is no chat to return: nothing was written."""
+
+    content: str
+
+
 class ChatCreate(BaseModel):
     """Which note the conversation is about, when the reader started from one.
 

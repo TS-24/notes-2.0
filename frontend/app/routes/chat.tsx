@@ -29,6 +29,24 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
         return { ok: true as const, chat };
       }
+      case "aside": {
+        /*
+          A "btw", answered and then forgotten. Nothing is written, so nothing
+          comes back but the answer — no chat, because the chat did not change.
+
+          The aside's own turns arrive as JSON because the server keeps none of
+          them: the browser is the only thing holding this conversation, and it
+          hands the whole of it back on every question.
+        */
+        const history = JSON.parse(String(formData.get("history") ?? "[]"));
+        const { content } = await api.askAside(
+          token,
+          id,
+          String(formData.get("content") ?? ""),
+          history,
+        );
+        return { ok: true as const, content };
+      }
       case "finish": {
         return { ok: true as const, chat: await api.summarizeChat(token, id) };
       }

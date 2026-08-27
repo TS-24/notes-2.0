@@ -26,6 +26,8 @@ from ..crud import provider_credential as crud_credential
 from ..db.database import get_db
 from ..db.models import Chat, User
 from ..schemas.chat import (
+    AsideCreate,
+    AsideReply,
     ChatCreate,
     ChatMessageCreate,
     ChatRead,
@@ -251,6 +253,52 @@ def send_message(
         raise NO_CREDENTIAL
 
     return _read(crud_chat.add_exchange(db, chat, payload.content, answer))
+
+
+@router.post("/{chat_id}/aside", response_model=AsideReply)
+def ask_aside(
+    chat_id: int,
+    payload: AsideCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AsideReply:
+    """
+    A "btw": answered in this conversation's context, and kept out of it.
+
+    Everything else here writes. This does not, and that is the whole feature —
+    the transcript is what gets summarised into the note, so a question you
+    asked in passing would otherwise end up as part of what the note says the
+    conversation was about. There is one thread per note and no way to start a
+    second, so without this the only place to put an aside is the record.
+
+    It still sees the transcript, because "by the way" is asked *of* something.
+    Stripped of that context it would be a general chat window that happens to
+    be drawn over this one.
+
+    Nothing is stored, so nothing is returned but the answer: no turn to append,
+    no title to derive from a first question that was not really the first, and
+    no summary to clear. A finished conversation takes an aside and stays
+    finished.
+    """
+    chat = _owned_chat(db, chat_id, current_user)
+    provider, api_key, model = _credential(db, current_user)
+    turns = (
+        [(m.role, m.content) for m in chat.messages]
+        + [(t.role, t.content) for t in payload.history]
+        + [("user", payload.content)]
+    )
+
+    try:
+        answer = llm.reply(provider, api_key, model, turns)
+    except llm.ProviderError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{PROVIDER_REFUSED} {llm.scrub(str(error), api_key)}",
+        )
+    except llm.UnknownProvider:
+        raise NO_CREDENTIAL
+
+    return AsideReply(content=answer)
 
 
 def _named_by(summary, note, chat: Chat) -> str:

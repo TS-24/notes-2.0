@@ -11,6 +11,7 @@ import { redirect } from "react-router";
 
 import { destroyToken } from "./session.server";
 import type {
+  AsideTurn,
   Chat,
   Note,
   ProviderSettings,
@@ -167,6 +168,24 @@ export const api = {
     request<Chat>(`/api/chats/${id}/messages`, token, {
       method: "POST",
       body: JSON.stringify({ content }),
+    }),
+
+  /**
+   * Asks beside the conversation without joining it.
+   *
+   * Answered with the transcript as context and stored nowhere, so the reply is
+   * all that comes back. `history` is the aside's own turns, which only the
+   * caller has — see backend/app/api/chats.py::ask_aside.
+   */
+  askAside: (
+    token: string,
+    id: number,
+    content: string,
+    history: AsideTurn[],
+  ) =>
+    request<{ content: string }>(`/api/chats/${id}/aside`, token, {
+      method: "POST",
+      body: JSON.stringify({ content, history }),
     }),
 
   /** Finishes a conversation and writes the three-part summary. */

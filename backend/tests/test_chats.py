@@ -742,3 +742,117 @@ class TestFinishingWritesIntoTheBoundNote:
         assert configured.get(f"/api/notes/{note['id']}").json()["title"] == (
             "My own name for this"
         )
+
+
+def aside(client, chat_id, content="btw, what is a gerund?", history=None):
+    return client.post(
+        f"/api/chats/{chat_id}/aside",
+        json={"content": content, "history": history or []},
+    )
+
+
+class TestAnAside:
+    """
+    The "btw" question: answered in the conversation's context, kept out of it.
+
+    The whole point is what it does *not* do — nothing it says reaches the
+    transcript, so nothing it says can reach the summary or the note. Most of
+    what is checked here is therefore an absence.
+    """
+
+    def test_it_answers(self, configured, answering):
+        chat = new_chat(configured)
+
+        assert aside(configured, chat).json()["content"] == "a verb acting as a noun"
+
+    def test_it_stores_nothing(self, configured, answering):
+        chat = new_chat(configured)
+        aside(configured, chat)
+
+        assert configured.get(f"/api/chats/{chat}").json()["messages"] == []
+
+    def test_it_does_not_name_an_unnamed_chat(self, configured, answering):
+        """
+        The transcript's first question is what titles a conversation. An aside
+        is not that question, so a chat asked only asides is still nameless.
+        """
+        chat = new_chat(configured)
+        aside(configured, chat)
+
+        assert configured.get(f"/api/chats/{chat}").json()["title"] == "Untitled"
+
+    def test_the_conversation_is_the_context(self, configured, answering):
+        """
+        A "btw" is asked *of* the conversation you are in — it is an aside from
+        something, and without that something it is a different chat window.
+        """
+        chat = new_chat(configured)
+        send(configured, chat, "the real question")
+        aside(configured, chat)
+
+        assert [role for role, _ in answering[-1]["turns"]] == [
+            "user",
+            "assistant",
+            "user",
+        ]
+        assert answering[-1]["turns"][-1][1] == "btw, what is a gerund?"
+
+    def test_the_aside_s_own_turns_come_back_with_it(self, configured, answering):
+        """
+        The client holds the aside, because the server does not. So it hands
+        back what has been said in it, or a second "btw" would be answered with
+        no memory of the first.
+        """
+        chat = new_chat(configured)
+        aside(
+            configured,
+            chat,
+            "and the one after",
+            history=[
+                {"role": "user", "content": "the first aside"},
+                {"role": "assistant", "content": "an answer to it"},
+            ],
+        )
+
+        assert [c for _, c in answering[-1]["turns"]] == [
+            "the first aside",
+            "an answer to it",
+            "and the one after",
+        ]
+
+    def test_it_leaves_a_summary_standing(self, configured, answering, monkeypatch):
+        """
+        Sending into a finished chat takes it up again and clears the summary.
+        An aside must not, or a "btw" would quietly undo the checkpoint.
+        """
+        monkeypatch.setattr(
+            "app.api.chats.conversation_summary.summarize",
+            lambda *a: summary.ConversationSummary(title="t", notes="n", actions=["a"]),
+        )
+        chat = new_chat(configured)
+        send(configured, chat)
+        configured.post(f"/api/chats/{chat}/summarize")
+        aside(configured, chat)
+
+        assert configured.get(f"/api/chats/{chat}").json()["summary"] is not None
+
+    def test_somebody_else_s_chat_is_a_404(self, configured, answering, other_client):
+        chat = new_chat(configured)
+
+        assert aside(other_client, chat).status_code == 404
+
+    def test_no_key_on_file_is_the_same_refusal(self, client):
+        assert aside(client, new_chat(client)).status_code == 409
+
+    def test_a_provider_failure_is_a_bad_gateway(self, configured, monkeypatch):
+        from app.services.llm import ProviderError
+
+        monkeypatch.setattr(
+            "app.api.chats.llm.reply",
+            lambda *a: (_ for _ in ()).throw(ProviderError("nope")),
+        )
+
+        assert aside(configured, new_chat(configured)).status_code == 502
+
+    def test_an_empty_aside_is_refused(self, configured, answering):
+        assert aside(configured, new_chat(configured), "   ").status_code == 422
