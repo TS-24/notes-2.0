@@ -381,8 +381,11 @@ by one row per sign-out forever.
 
 ### Deploying
 
-There is a production overlay. It is applied on top of the base file, never
-instead of it:
+There are two overlays, and which of them you want depends on whether you are
+hardening a machine that has the source on it or running one that does not.
+
+On a machine with a checkout — your own, or a staging box you build on —
+the production overlay on top of the base file:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -402,11 +405,44 @@ session cookie `Secure`. That flag is why the TLS is not optional: browsers
 silently drop a `Secure` cookie sent over plain http, so without https login
 appears to succeed and no session ever exists.
 
+#### On the server, where there is no source
+
+The base file builds from `./frontend` and `./backend`. A deployed host has no
+checkout — only the three compose files, the `Caddyfile` and `.env` — so
+`build` there is not merely wasteful, it is a context compose cannot resolve.
+`docker-compose.deploy.yml` removes it and runs published images instead:
+
+```bash
+TAG=<commit sha> docker compose \
+  -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml \
+  up -d
+```
+
+`TAG` has no default, on purpose. `dev` moves under you: pulling it twice on
+consecutive days gives two different images with no way to name which one is
+running, and **an image you cannot name is an image you cannot roll back to.**
+So a rollback is the same command with the previous sha, and nothing else:
+
+```bash
+TAG=<the sha that worked> docker compose -f ... up -d
+```
+
+The images are private, so the host needs `docker login ghcr.io` once with a
+token scoped to `read:packages` and nothing else.
+
+#### What publishes them
+
 Nothing deploys automatically. `publish.yml` builds images on pushes to `dev`
 — and only after the whole of CI has passed — pushing them to
 `ghcr.io/ts-24/restyle-{backend,frontend}`, tagged `dev` and by commit sha. The
 sha tag is the one worth pulling, since `dev` moves. `master` publishes
 nothing.
+
+> **Careful with migrations.** `entrypoint.sh` runs `alembic upgrade head` on
+> every container start, against whatever `DATABASE_URL` is in that machine's
+> `.env`. The deployed host must therefore point at a *different Neon branch*
+> from the one you develop against, or every deploy migrates the database you
+> are working in.
 
 ### Frontend checks
 

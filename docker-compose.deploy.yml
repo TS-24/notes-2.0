@@ -1,0 +1,35 @@
+# Deploy overlay: run published images instead of building from source.
+#
+# Applied on top of both other files, never instead of them:
+#
+#   TAG=<sha> docker compose \
+#     -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.deploy.yml \
+#     up -d
+#
+# The base file builds from ./frontend and ./backend. On the server those
+# directories do not exist — there is no checkout, only this file, the prod
+# overlay, the Caddyfile and .env — so `build` is not merely wasteful here, it
+# is a context compose cannot resolve. `!reset` removes it rather than leaving
+# it to be ignored, because a `build` beside an `image` is a rule about when
+# compose decides to build, and the server should never build at all.
+#
+# TAG has no default. `dev` moves under you: pulling it twice on consecutive
+# days gives two different images with no way to name which one is running, and
+# an image you cannot name is an image you cannot roll back to. publish.yml tags
+# every image by long commit sha for exactly this, so a deploy names one and a
+# rollback names the previous one:
+#
+#   TAG=$(git rev-parse HEAD) ...   # deploy what just landed
+#   TAG=<the sha that worked> ...   # go back
+#
+# The images are private. The host needs `docker login ghcr.io` once, with a
+# token scoped to read:packages and nothing else.
+
+services:
+  frontend:
+    build: !reset null
+    image: ghcr.io/ts-24/restyle-frontend:${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
+
+  backend:
+    build: !reset null
+    image: ghcr.io/ts-24/restyle-backend:${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
