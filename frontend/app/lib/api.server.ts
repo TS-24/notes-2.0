@@ -11,8 +11,10 @@ import { redirect } from "react-router";
 
 import { destroyToken } from "./session.server";
 import type {
+  AdminInvite,
   AsideTurn,
   Chat,
+  Invite,
   Note,
   ProviderSettings,
   User,
@@ -228,6 +230,29 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ provider, model }),
     }),
+
+  /**
+   * Issues a single-use code bound to one address, and hands it back.
+   *
+   * Nothing is emailed. The code comes back to whoever asked for it and passing
+   * it on is their business, which is what keeps this app off the end of a mail
+   * provider and stops any signed-in user making the server send mail to an
+   * address of their choosing.
+   */
+  issueInvite: (token: string, email: string) =>
+    request<Invite>("/api/invites", token, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  /** The codes this account issued, newest first. */
+  listInvites: (token: string) => request<Invite[]>("/api/invites", token),
+
+  /** Every code in the system. 403 for anyone but the superuser. */
+  listAllInvites: (token: string) => request<AdminInvite[]>("/api/invites/all", token),
+
+  /** Every account. 403 for anyone but the superuser. */
+  listUsers: (token: string) => request<User[]>("/api/users", token),
 
   /** Exchanges credentials for a token. The only call with no token of its own. */
   login: (email: string, password: string) =>

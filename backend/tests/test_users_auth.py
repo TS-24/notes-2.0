@@ -2,10 +2,13 @@
 Tests that an account can only act on itself (app/api/users.py).
 
 The routes here used to take a user id from the path and never compare it to
-the caller, so any account could rename or delete any other. Two of them are
-gone entirely rather than guarded: listing every user has no caller now that
-there is no admin role, and creating one bypassed the invite that registration
-exists to enforce.
+the caller, so any account could rename or delete any other. Two of them were
+deleted rather than guarded: listing every user had no caller, and creating one
+bypassed the invite that registration exists to enforce.
+
+The listing has since come back for the superuser, which is why the test below
+now checks for a 403 rather than a missing route. Creating one is still gone,
+and the id-in-the-path routes are still gone for good.
 """
 
 from datetime import datetime, timezone
@@ -82,9 +85,12 @@ class TestSelf:
         assert response.status_code in (404, 405)
         assert db.get(User, other_user.id) is not None
 
-    def test_the_roster_of_every_account_is_gone(self, client):
-        # It listed every registered email to anyone who asked.
-        assert client.get("/api/users").status_code in (404, 405)
+    def test_the_roster_of_every_account_is_not_mine_to_read(self, client):
+        # It used to list every registered email to anyone who asked, and was
+        # deleted for it. It is back, behind the superuser flag, so what this
+        # asserts is no longer that the route is missing but that an ordinary
+        # account is refused by it. The property being protected is the same.
+        assert client.get("/api/users").status_code == 403
 
     def test_open_user_creation_is_gone(self, anon_client):
         # It sat next to invite-only registration and ignored the invite.

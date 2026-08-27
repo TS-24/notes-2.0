@@ -19,8 +19,8 @@ from app.db.models import InviteCode, User
 PASSWORD = "correct horse battery staple"
 
 
-def issue_code(db, code: str = "invite-me") -> InviteCode:
-    row = InviteCode(code=code)
+def issue_code(db, code: str = "invite-me", invited_email: str | None = None) -> InviteCode:
+    row = InviteCode(code=code, invited_email=invited_email)
     db.add(row)
     db.commit()
     return row
@@ -115,6 +115,68 @@ class TestRegister:
 
         assert response.status_code == 422
         assert db.scalars(select(User)).all() == []
+
+
+class TestACodeBoundToAnEmail:
+    """
+    A code issued from the account page names the address it is for.
+
+    That is what makes a leaked code worthless: whoever finds it cannot spend it
+    on themselves. Codes issued from the CLI carry no address and still work for
+    anyone, which is the behaviour every code had before this existed.
+    """
+
+    def test_the_address_it_was_issued_for_can_spend_it(self, anon_client, db):
+        issue_code(db, invited_email="reader@example.com")
+
+        assert register(anon_client).status_code == 201
+
+    def test_case_is_not_what_decides_it(self, anon_client, db):
+        # Stored folded, so the comparison has to fold the incoming address too.
+        # Nobody types their own email the same way twice.
+        issue_code(db, invited_email="reader@example.com")
+
+        assert register(anon_client, email="Reader@Example.COM").status_code == 201
+
+    def test_another_address_cannot_spend_it(self, anon_client, db):
+        issue_code(db, invited_email="friend@example.com")
+
+        response = register(anon_client)
+
+        assert response.status_code == 400
+        assert db.scalars(select(User)).all() == []
+
+    def test_the_wrong_address_and_an_unknown_code_are_refused_identically(
+        self, anon_client, db
+    ):
+        # Same reason as the spent-code case above. A distinct reply here would
+        # answer "which address is this code for?" for anyone holding one.
+        issue_code(db, invited_email="friend@example.com")
+
+        mismatch = register(anon_client)
+        unknown = register(anon_client, invite_code="nope")
+
+        assert mismatch.json()["detail"] == unknown.json()["detail"]
+
+    def test_a_code_without_an_address_still_works_for_anyone(self, anon_client, db):
+        issue_code(db)
+
+        assert register(anon_client, email="whoever@example.com").status_code == 201
+
+
+class TestTheFirstAccount:
+    def test_the_first_account_is_a_superuser_and_the_second_is_not(self, anon_client, db):
+        # Nothing else appoints one. On an empty production database the owner
+        # registers first, and that has to be enough to reach the admin views.
+        issue_code(db, "one", invited_email="reader@example.com")
+        issue_code(db, "two", invited_email="second@example.com")
+
+        register(anon_client, invite_code="one")
+        register(anon_client, invite_code="two", email="second@example.com", username="second")
+
+        first, second = db.scalars(select(User).order_by(User.id)).all()
+        assert first.is_superuser is True
+        assert second.is_superuser is False
 
 
 class TestLogin:

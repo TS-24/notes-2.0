@@ -1,10 +1,14 @@
 """
 Administrative commands, run as `python -m app.cli <command>`.
 
-Registration is invite-only and there is no admin role, so this is how the
-first account and every invite come into being. It talks to the database
-directly rather than to the API, because it has to work before any account
-exists to authenticate as.
+Registration is invite-only, so this is how the first account comes into being.
+It talks to the database directly rather than to the API, because it has to work
+before any account exists to authenticate as.
+
+Invites no longer have to come from here: any signed-in user can issue one from
+their account page, and those are bound to the address they were issued for. The
+command below still issues an unbound one, which is what you want for the first
+account, when there is nobody to attribute it to and no form to reach.
 """
 
 import argparse
@@ -26,7 +30,7 @@ DEV_USER_EMAIL = "dev@example.com"
 
 
 def issue_invite(db: Session, args: argparse.Namespace) -> int:
-    invite = crud_invite.create_invite_code(db)
+    invite = crud_invite.create_invite_code(db, invited_email=args.email)
     print(invite.code)
     return 0
 
@@ -38,7 +42,32 @@ def list_invites(db: Session, args: argparse.Namespace) -> int:
         return 0
     for row in rows:
         state = f"used {row.used_at:%Y-%m-%d}" if row.used_at else "unused"
-        print(f"{row.code}\t{state}")
+        # A code bound to nobody works for anyone, which is the thing worth
+        # seeing at a glance in a list of outstanding codes.
+        print(f"{row.code}\t{state}\t{row.invited_email or 'anyone'}")
+    return 0
+
+
+def promote_user(db: Session, args: argparse.Namespace) -> int:
+    """Grant the superuser flag to an existing account.
+
+    Not the ordinary path: the first account created gets the flag on its own.
+    This is the way back if that account is deleted, which would otherwise leave
+    a database with nobody able to read the admin listings and no way to appoint
+    anyone short of a psql shell.
+    """
+    user = crud_user.get_user_by_email(db, args.email)
+    if user is None:
+        print(f"No account for {args.email}.", file=sys.stderr)
+        return 1
+
+    if user.is_superuser:
+        print(f"{args.email} is already a superuser.")
+        return 0
+
+    user.is_superuser = True
+    db.commit()
+    print(f"{args.email} is now a superuser.")
     return 0
 
 
@@ -119,9 +148,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    commands.add_parser("issue-invite", help="Issue a single-use invite code").set_defaults(
-        func=issue_invite
+    invite = commands.add_parser("issue-invite", help="Issue a single-use invite code")
+    invite.add_argument(
+        "--email",
+        help="Bind the code to this address. Without it the code works for anyone.",
     )
+    invite.set_defaults(func=issue_invite)
     commands.add_parser("list-invites", help="Show every invite code").set_defaults(
         func=list_invites
     )
@@ -130,6 +162,12 @@ def build_parser() -> argparse.ArgumentParser:
     new_user.add_argument("--email", required=True)
     new_user.add_argument("--username", help="Defaults to the part before the @")
     new_user.set_defaults(func=create_user)
+
+    promote = commands.add_parser(
+        "promote", help="Make an existing account a superuser"
+    )
+    promote.add_argument("--email", required=True)
+    promote.set_defaults(func=promote_user)
 
     commands.add_parser(
         "prune-tokens", help="Forget revoked tokens that have expired anyway"

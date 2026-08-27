@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -38,7 +39,21 @@ class User(Base):
     # true after the account it made is gone; only the pointer to that account
     # is released. Without the relationship at all, the leftover foreign key
     # makes deleting any account that registered through the front door a 500.
-    invites_used: Mapped[List["InviteCode"]] = relationship(back_populates="used_by")
+    invites_used: Mapped[List["InviteCode"]] = relationship(
+        back_populates="used_by", foreign_keys="InviteCode.used_by_user_id"
+    )
+    # The codes this account handed out, and not a cascade either, for the same
+    # reason: who let someone in stays true after the person who did it leaves.
+    invites_issued: Mapped[List["InviteCode"]] = relationship(
+        back_populates="issued_by", foreign_keys="InviteCode.issued_by_user_id"
+    )
+    # There is no role table and no permission model. This is one flag for the
+    # one account that can read the whole invite list and the whole user list,
+    # set on the first account created (crud/user.py) because on an empty
+    # production database nothing else is in a position to appoint it.
+    is_superuser: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
     # Both cascades because a foreign key on its own leaves rows pointing at a
     # missing user, which Postgres rejects and SQLite quietly keeps. Deleting an account has to take its conversations and its
     # borrowed credential with it — especially the credential.
@@ -99,10 +114,11 @@ class InviteCode(Base):
     """
     A single-use code that permits one registration.
 
-    Registration is invite-only, and these are issued by hand from the CLI:
-    there is no self-service. Redemption is the act of stamping `used_at`, so
-    the column doubles as the record of when the code was spent and as the
-    thing that stops it being spent twice.
+    Registration is invite-only. Codes come from two places: any signed-in user
+    can issue one from their account page, and the CLI can still issue one for
+    the case where nobody has an account yet. Redemption is the act of stamping
+    `used_at`, so the column doubles as the record of when the code was spent
+    and as the thing that stops it being spent twice.
     """
 
     __tablename__ = "invite_codes"
@@ -112,9 +128,21 @@ class InviteCode(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # The address this code was issued for, folded to lower case, and the
+    # account that issued it. Both nullable, and null means the same thing in
+    # each: the CLI made this one, before there was anybody to attribute it to
+    # or any form to name an address in. A null email is an unbound code that
+    # anyone can spend, which is what every code was before this column.
+    invited_email: Mapped[Optional[str]] = mapped_column(String(255))
+    issued_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    issued_by: Mapped[Optional["User"]] = relationship(
+        back_populates="invites_issued", foreign_keys=[issued_by_user_id]
+    )
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     used_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
-    used_by: Mapped[Optional["User"]] = relationship(back_populates="invites_used")
+    used_by: Mapped[Optional["User"]] = relationship(
+        back_populates="invites_used", foreign_keys=[used_by_user_id]
+    )
 
 
 class RevokedToken(Base):

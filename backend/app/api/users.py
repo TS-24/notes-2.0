@@ -7,7 +7,7 @@ from ..crud import user as crud_user
 from ..db.database import get_db
 from ..db.models import User
 from ..schemas.user import UserRead, UserUpdate
-from .deps import get_current_user
+from .deps import get_current_superuser, get_current_user
 
 # Every route here is about the signed-in account, so none of them takes an id.
 #
@@ -17,7 +17,28 @@ from .deps import get_current_user
 # POST that created accounts beside the invite-only registration it ignored.
 # Both are gone rather than guarded, because a route that should never be
 # reachable is better deleted than defended.
+#
+# The listing is now back, as `GET ""`, and the difference is the whole point:
+# it is behind `get_current_superuser` rather than open, and it still takes no
+# id. The rule that was worth keeping was never "no route may return more than
+# one user" — it was that no route decides whose data to hand over by reading
+# an id out of the path. This one does not; it hands over everything, to the
+# one account allowed to ask.
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("", response_model=list[UserRead])
+def list_all_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_superuser),
+) -> list[User]:
+    """Every account. The superuser's view of who is here.
+
+    `UserRead` is what makes this safe to return in bulk: it carries the id,
+    username, email and flag, and there is no field on it for a password hash
+    to arrive in by accident.
+    """
+    return crud_user.list_users(db)
 
 
 @router.get("/me", response_model=UserRead)

@@ -22,3 +22,8 @@ class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # Sent to the account's own client so the settings page knows whether to
+    # render the two listings only a superuser can load. It is not a secret:
+    # the endpoints enforce it, and this only saves the reader being shown a
+    # panel that would 403.
+    is_superuser: bool = False
