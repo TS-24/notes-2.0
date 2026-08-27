@@ -17,7 +17,6 @@ import type {
   User,
   VocabularyAnalysisResponse,
   WordDefinition,
-  WordLadder,
 } from "./types";
 
 const API_URL = process.env.API_URL ?? "http://localhost:8700";
@@ -131,20 +130,6 @@ export const api = {
     request<void>(`/api/notes/${id}`, token, { method: "DELETE" }),
 
   listWords: (token: string) => request<WordDefinition[]>("/api/words", token),
-
-  /**
-   * The ladder for whatever the caret is standing in, plainest to rarest.
-   *
-   * A caret rather than a word, because the unit is not always the word under
-   * it: "give up" has a ladder neither of its words can reach, and an article
-   * travels with the word it attaches to. The response says which span it
-   * resolved to.
-   */
-  getWordLadder: (token: string, sentence: string, caret: number) =>
-    request<WordLadder>(
-      `/api/vocab/ladder?${new URLSearchParams({ sentence, caret: String(caret) })}`,
-      token,
-    ),
 
   attachWord: (token: string, noteId: number, wordId: number) =>
     request<Note>(`/api/notes/${noteId}/words/${wordId}`, token, { method: "POST" }),

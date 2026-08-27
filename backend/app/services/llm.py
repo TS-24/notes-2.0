@@ -1,9 +1,10 @@
 """
 The chat itself — LangChain, talking to whichever provider the reader configured.
 
-Unlike the word ladder's ranker, which calls a hosted model with the
-deployment's own token, everything here runs on a credential the reader supplied
-on /settings. So the provider is data, not a deployment decision, and this
+Everything here runs on a credential the reader supplied on /settings, and
+since the word ladder's ranker was removed there is no longer anything that
+runs on the deployment's own token. So the provider is data rather than a
+deployment decision, and this
 module's job is to turn a row in `provider_credentials` plus a transcript into
 one reply.
 
@@ -22,8 +23,8 @@ leave here as `ProviderError`, carrying the provider's own words, because those
 words are the only thing that distinguishes a bad key from a rate limit from a
 model name that does not exist.
 
-The provider packages are imported lazily, like `ranker._client`, so an install
-where nobody ever chats never pays for them.
+The provider packages are imported lazily, so an install where nobody ever
+chats never pays for them.
 """
 
 from dataclasses import dataclass

@@ -1,22 +1,49 @@
 """
 Which words in a note are worth learning?
 
-The word ladder in `vocab.py` answers "what could this word be instead"; this
-answers the prior question of which words are worth asking that about at all.
-Both lean on the same signal — how often a word is actually used — so the
-difficulty ordering is imported rather than re-derived.
-
 Difficulty is a threshold on frequency, not a model. A word is hard because
 readers rarely meet it, and `wordfreq` measures exactly that. Anything more
 elaborate would be guessing at a reader this app knows nothing about, which is
 what the known-words list is for instead.
+
+`difficulty` used to live in the word ladder's service and be imported from
+here, since both leaned on the same signal. The ladder is gone and this is the
+only caller left, so the ordering lives here now rather than in a module kept
+alive to hold it.
 """
 
+import pyphen
 import regex
 from nltk.corpus import wordnet
 from wordfreq import zipf_frequency
 
-from .vocab import difficulty
+
+_HYPHENATOR = pyphen.Pyphen(lang="en_US")
+
+
+def _syllables(word: str) -> int:
+    return len(_HYPHENATOR.positions(word)) + 1
+
+
+def difficulty(unit: str) -> tuple[float, int, int, int]:
+    """
+    Sort key, ascending — plainest first.
+
+    Frequency does the real work. Syllable count and length only break ties
+    between units used about equally often, where the longer, knottier one is
+    the one that reads as harder.
+
+    A phrase is scored by its *rarest* word rather than by the phrase as a
+    whole. Scoring the whole thing would multiply the parts' probabilities and
+    make every phrase look vanishingly rare — which is backwards, since English
+    phrases the plain way round: "give up" is the casual form and "relinquish"
+    the formal one. The rarest-word rule gets that right, and the phrase flag
+    settles ties in the same direction.
+    """
+    words = unit.replace("_", " ").split()
+    rarest = min(zipf_frequency(word, "en") for word in words) if words else 0.0
+    return (-rarest, 0 if len(words) > 1 else 1, _syllables(unit), len(unit))
+
 
 # Zipf frequency at or below which a word counts as difficult.
 #
@@ -76,10 +103,9 @@ def difficult_words(content: str, known: set[str] = frozenset()) -> dict[str, st
             continue
         seen[word] = frequency
 
-    # Hardest first, which is the reverse of the ladder's ordering — it climbs
-    # from plain to rare, and this is a list of what to learn. The direction
-    # matters because of the cap below: truncating a plainest-first list would
-    # throw away exactly the words worth showing.
+    # Hardest first, which is the reverse of what `difficulty` sorts to on its
+    # own. The direction matters because of the cap below: truncating a
+    # plainest-first list would throw away exactly the words worth showing.
     definitions: dict[str, str] = {}
     for word in sorted(seen, key=difficulty, reverse=True):
         gloss = _definition(word)

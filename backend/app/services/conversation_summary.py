@@ -20,8 +20,8 @@ LangChain genuinely earns its keep here: it turns each provider's tool-calling
 into the same typed object, so Anthropic and OpenAI need no separate parsing and
 there is no JSON to coax out of prose.
 
-Every failure returns None, the same contract as `ranker.py`. A chat that could
-not be summarised keeps its transcript and can be finished again later.
+Every failure returns None rather than raising. A chat that could not be
+summarised keeps its transcript and can be finished again later.
 """
 
 from typing import Sequence

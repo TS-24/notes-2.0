@@ -1055,11 +1055,9 @@ export default function NoteSurface({
           {lastTouched}
         </p>
 
-        {/* Same measure as the body below, so the two share both edges at every
-            alignment. `relative`, and the box fitting the field exactly, is
-            what the word roller needs back — it is out of the UI for now, not
-            gone, and this is the whole of what it asks of the markup. */}
-        <div className={`relative mt-6 ${MEASURE}`}>
+        {/* Same measure as the body below, so the two share both edges at
+            every alignment. */}
+        <div className={`mt-6 ${MEASURE}`}>
           <textarea
             ref={titleField.attach}
             value={title}
@@ -1077,7 +1075,7 @@ export default function NoteSurface({
           />
         </div>
 
-        <div className={`relative mt-8 ${MEASURE}`}>
+        <div className={`mt-8 ${MEASURE}`}>
         <div
           ref={rendered}
           data-note-body
@@ -1114,7 +1112,7 @@ export default function NoteSurface({
                 way rather than here.
               */}
               <div
-                className="note-source relative"
+                className="note-source"
                 data-block={block?.kind ?? "paragraph"}
                 data-level={block?.depth}
                 style={sourceEdges}

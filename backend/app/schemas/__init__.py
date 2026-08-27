@@ -6,7 +6,6 @@ from .word_definition import (
     WordDefinitionRead,
     WordDefinitionUpdate,
 )
-from .word_ladder import WordLadderRead
 
 __all__ = [
     "LoginRequest",
@@ -20,5 +19,4 @@ __all__ = [
     "WordDefinitionCreate",
     "WordDefinitionRead",
     "WordDefinitionUpdate",
-    "WordLadderRead",
 ]

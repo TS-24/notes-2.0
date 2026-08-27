@@ -8,7 +8,6 @@ from . import (
     notes,
     settings,
     users,
-    vocab,
     word_definitions,
 )
 
@@ -23,7 +22,6 @@ api_router.include_router(chats.router)
 # the id route before ever reaching the one that handles it.
 api_router.include_router(known_words.router)
 api_router.include_router(word_definitions.router)
-api_router.include_router(vocab.router)
 api_router.include_router(analyze.router)
 
 __all__ = ["api_router"]
