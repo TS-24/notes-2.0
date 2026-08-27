@@ -444,6 +444,60 @@ nothing.
 > from the one you develop against, or every deploy migrates the database you
 > are working in.
 
+#### Shipping automatically
+
+A push to `dev` runs CI, publishes both images, and then deploys — the `deploy`
+job in `publish.yml` opens an SSH session and hands the server one commit sha.
+
+The key that does this **cannot open a shell.** It is named as a forced command
+in the deploy user's `authorized_keys`, so whatever the client asks to run is
+discarded and only `/srv/restyle/deploy.sh` runs, with the sha arriving in
+`SSH_ORIGINAL_COMMAND`. That is the difference between a deploy button and a
+root-adjacent credential sitting in a web UI. `deploy/authorized_keys.example`
+is the line to copy, and every option on it is explained there.
+
+The sha is validated on both ends, because it is the one value from outside
+that reaches a command line. Note the enumeration rather than `[a-f]`: that
+range is collation-dependent and matches `A-F` under most locales.
+
+Setting it up on the server:
+
+```bash
+# A user that can drive docker and owns the directory, with no sudo.
+sudo adduser --disabled-password --gecos "" deploy
+sudo usermod -aG docker deploy
+sudo install -d -o deploy -g deploy /srv/restyle
+
+# The three compose files, the Caddyfile, .env, and the script.
+sudo install -o deploy -g deploy -m 750 deploy.sh /srv/restyle/deploy.sh
+
+# The key pair. The private half goes into GitHub, the public half here.
+ssh-keygen -t ed25519 -f ./deploy_key -N "" -C "deploy@github-actions"
+# then write authorized_keys from deploy/authorized_keys.example
+```
+
+And in the repo, under Settings → Environments → `production`:
+
+| | Name | What |
+| --- | --- | --- |
+| Variable | `DEPLOY_HOST` | The server's hostname or static IP |
+| Variable | `DEPLOY_USER` | `deploy` |
+| Secret | `DEPLOY_SSH_KEY` | The private half of the pair above |
+| Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <host>`, so the runner pins what it connects to |
+
+The `deploy` job is skipped, not failed, while `DEPLOY_HOST` is unset — so
+publishing keeps working until the box exists.
+
+**Rolling back** is the `Publish images` workflow run by hand with
+`deploy_sha` set to the sha that worked. There is no shell to type the old
+command into, by design, so the button is the way back. `deploy.sh` writes the
+sha it deployed to `/srv/restyle/DEPLOYED` and names the previous one when a
+deploy fails its health check, which is where you find the sha to put in.
+
+It does **not** roll back on its own. Rolling back automatically would hide
+which deploy broke and could flap between two bad images; what an operator
+needs at that moment is to be told, loudly, with the sha that was working.
+
 ### Frontend checks
 
 They run on the host, and these three are exactly what CI runs:
