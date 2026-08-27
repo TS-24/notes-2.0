@@ -210,8 +210,9 @@ All routes are prefixed with `/api`. Interactive docs are served at `/docs` once
 development only — `ENVIRONMENT=production` removes them along with `/redoc` and `/openapi.json`.
 
 Every route under `/api` requires a signed-in account. Send `Authorization: Bearer <token>` from a script, or
-let the cookie the API sets carry it in a browser. Registration is invite-only, so the way in is
-a code issued from the CLI — see [Your first account](#your-first-account).
+let the cookie the API sets carry it in a browser. Registration is invite-only. Any signed-in
+account can issue a code from `/settings`; the very first one comes from the CLI, because there is
+nobody to issue it yet — see [Your first account](#your-first-account).
 
 Anything owned by a user answers **404 rather than 403** when it belongs to someone else. 403
 would be more precise and worse: it confirms the row exists, which turns the id space into a
@@ -220,9 +221,13 @@ directory of other people's writing.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check (not under `/api`) |
-| `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, 409 if the email is taken |
+| `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, **or on an email the code was not issued for** — one message for all three, so a code cannot be used to find out which address it belongs to. 409 if the email is taken |
 | `POST` | `/api/auth/login` | Exchange an email and password for a token. One message for a wrong password and an unknown email alike, so the endpoint cannot be used to find out who has an account |
 | `POST` | `/api/auth/logout` | Record this token's `jti` as revoked and clear the API's cookie. Only this token, so other sessions on the same account keep working. Deliberately unauthenticated: someone holding a token they cannot use is still entitled to retire it. **The web app's own Sign out does not call this** — see [Project status](#-project-status) |
+| `POST` | `/api/invites` | Issue a single-use code bound to one email address. No quota. 409 if that address already has an account, since a code it can never redeem is a dead end |
+| `GET` | `/api/invites` | The codes this account issued, newest first, each with its code still readable — that is where you go back for one you have not sent yet |
+| `GET` | `/api/invites/all` | Every code in the system, with who issued it and who spent it. Superuser only |
+| `GET` | `/api/users` | Every account. Superuser only |
 | `GET` | `/api/users/me` | The signed-in account |
 | `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, chats and stored keys with it |
 | `POST` | `/api/notes` | Create a note. The owner is the signed-in account, never a field in the body |
@@ -333,11 +338,19 @@ PgBouncer's transaction pooling. Point dev and prod at different Neon **branches
 
 ### Your first account
 
-Registration is invite-only and there is no admin UI, so the first code comes from the CLI:
+Registration is invite-only, so the first code has to come from the CLI — there is no account yet
+to issue one from:
 
 ```bash
 docker compose exec backend python -m app.cli issue-invite     # prints a code
 ```
+
+That code is bound to nobody and works for whoever holds it, which is what you want for the first
+account and nowhere else. Pass `--email` to bind one.
+
+**The first account created becomes the superuser**, by any route: the CLI, or registering at
+`/register`. That is the only thing that appoints one, so on a fresh deployment make sure the first
+person through the door is you. `promote --email` is the way back if that account is ever deleted.
 
 Then register at `/register` with that code, or skip the invite entirely and create the account
 from the same CLI, which is already the privileged path — it prompts for the password rather than
@@ -355,7 +368,14 @@ it is gone (and the command is a no-op if there was never one):
 docker compose exec backend python -m app.cli adopt-dev-data --email you@example.com
 ```
 
-`list-invites` shows every code and whether it has been spent. `prune-tokens` drops revocation
+After that, nobody needs the CLI to invite anyone: **any signed-in account can issue a code from
+`/settings`**, naming the address it is for. Those codes work only for that address, so one that
+leaks or gets forwarded is worth nothing to whoever finds it. Nothing is emailed — the code stays
+readable in the issuer's list and sending it on is their business. The superuser additionally sees
+every account and every code anyone has issued, on the same page.
+
+`list-invites` shows every code, whether it has been spent, and the address it is bound to
+(`anyone` for the unbound ones). `prune-tokens` drops revocation
 records for tokens that have expired anyway, which is the only thing stopping that table growing
 by one row per sign-out forever.
 

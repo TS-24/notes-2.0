@@ -65,7 +65,12 @@ const chat: Chat = {
   summary: null,
 };
 
-const user: User = { id: 1, username: "reader", email: "reader@example.com" };
+const user: User = {
+  id: 1,
+  username: "reader",
+  email: "reader@example.com",
+  is_superuser: false,
+};
 const provider = { available: [], configured: [], active: null };
 const loaderData = { notes: [note], archived: [], user, chats: [chat], provider };
 const rootLoaderData = { theme: DEFAULT_THEME, alignment: DEFAULT_ALIGNMENT };

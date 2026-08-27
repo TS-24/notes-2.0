@@ -59,6 +59,14 @@ def register(
     if invite is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_INVITE)
 
+    # A code issued from an account page names the address it is for; one issued
+    # from the CLI names nobody and still works for anyone. The refusal reuses
+    # INVALID_INVITE for the same reason the two cases above share it: a reply
+    # that said "wrong email for this code" would answer, for anyone holding a
+    # code, which address it was meant for.
+    if invite.invited_email is not None and invite.invited_email != payload.email.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_INVITE)
+
     if crud_user.get_user_by_email(db, payload.email) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"

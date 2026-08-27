@@ -71,3 +71,23 @@ def get_current_user(user: User | None = Depends(get_current_user_optional)) -> 
     if user is None:
         raise UNAUTHENTICATED
     return user
+
+
+def get_current_superuser(user: User = Depends(get_current_user)) -> User:
+    """The user that owns the current request, if they are the superuser.
+
+    Layered on `get_current_user` so an anonymous caller still gets a 401 and
+    only a signed-in one gets the 403: the distinction is worth making here,
+    because "sign in" and "you may not" are different things for the reader to
+    do about it, and neither reveals anything a signed-in user cannot already
+    work out about their own account.
+
+    There is one flag and no role table. If this ever gates more than the two
+    listings it was written for, that is the point to reach for something with
+    named permissions rather than adding a second boolean.
+    """
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted"
+        )
+    return user

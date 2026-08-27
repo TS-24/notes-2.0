@@ -19,7 +19,14 @@ import { commitAlignment, getAlignment } from "~/lib/alignment.server";
 import { requireToken } from "~/lib/session.server";
 import { commitTheme, getTheme } from "~/lib/theme.server";
 import { applyTheme, resolveTheme, THEMES, type Theme } from "~/lib/themes";
-import type { ConfiguredProvider, ProviderOption, ProviderSettings } from "~/lib/types";
+import type {
+  AdminInvite,
+  ConfiguredProvider,
+  Invite,
+  ProviderOption,
+  ProviderSettings,
+  User,
+} from "~/lib/types";
 import type { Route } from "./+types/menu";
 
 export function meta() {
@@ -28,13 +35,30 @@ export function meta() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const token = await requireToken(request);
-  const [user, provider] = await Promise.all([
+  const [user, provider, invites] = await Promise.all([
     api.getCurrentUser(token),
     api.getProviderSettings(token),
+    api.listInvites(token),
   ]);
+
+  /*
+    The two system-wide listings, or null. One field rather than two arrays and
+    a boolean: "may this account see everything" and "here is everything" are
+    the same fact, and split across three fields they could contradict each
+    other. The flag on `user` decides whether to ask at all — the endpoints
+    refuse on their own, so this only avoids a 403 the page has no use for.
+  */
+  const everyone = user.is_superuser
+    ? await Promise.all([api.listAllInvites(token), api.listUsers(token)]).then(
+        ([invites, users]) => ({ invites, users }),
+      )
+    : null;
+
   return {
     user,
     provider,
+    invites,
+    everyone,
     theme: await getTheme(request),
     alignment: await getAlignment(request),
   };
@@ -79,6 +103,17 @@ export async function action({ request }: Route.ActionArgs) {
 
   try {
     switch (formData.get("intent")) {
+      /*
+        Issuing a code returns only whether it worked. The code itself arrives
+        on the page through the loader, which this submission revalidates — so
+        there is one place it is rendered from, and it is a place that still has
+        it on the next render. An action result is gone as soon as anything else
+        is submitted, and a code that vanishes is a code reissued.
+      */
+      case "invite": {
+        await api.issueInvite(token, String(formData.get("email") ?? ""));
+        return { ok: true as const, message: "Code ready to send." };
+      }
       case "forget": {
         await api.forgetProviderKey(token, provider);
         return { ok: true as const, message: "Key forgotten." };
@@ -373,8 +408,174 @@ function AlignmentPicker({ current }: { current: Alignment }) {
   );
 }
 
+/** A code, set in the mono face and selectable, beside who it is for. */
+function InviteRow({ invite }: { invite: Invite }) {
+  const spent = invite.used_at !== null;
+
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
+      <div className="min-w-0 space-y-0.5">
+        {/*
+          `select-all` rather than a copy button alone: the clipboard API needs a
+          secure context and a user gesture, and neither is guaranteed. One click
+          selects the whole code, which works everywhere and is what someone
+          reaching for it actually does.
+        */}
+        <code
+          data-invite-code
+          className={`select-all font-mono text-sm ${spent ? "text-ink/35 line-through" : "text-ink"}`}
+        >
+          {invite.code}
+        </code>
+        <p className="truncate text-xs text-ink/50">
+          {invite.invited_email ?? "Anyone with the code"}
+        </p>
+      </div>
+      <span className="text-xs text-ink/45">{spent ? "Used" : "Unused"}</span>
+    </div>
+  );
+}
+
+/**
+ * Issuing a code, and the codes already issued.
+ *
+ * Unlimited on purpose: the people with accounts are the people already trusted
+ * to be here, and a quota raised by hand is a support request waiting to happen.
+ * What limits the damage instead is that a code names one address and works for
+ * no other, so one that leaks is worth nothing to whoever finds it.
+ */
+function Invites({ invites }: { invites: Invite[] }) {
+  const fetcher = useFetcher<{ ok: boolean; message: string }>();
+  const sending = fetcher.state !== "idle";
+
+  return (
+    <section className={`${PANEL} space-y-6`}>
+      <div className="space-y-2">
+        <p className={EYEBROW}>Invites</p>
+        <h2 className="font-display text-2xl tracking-tight">Invite someone</h2>
+        <p className="text-sm leading-relaxed text-ink/60">
+          Registration is invite-only. A code works once, and only for the
+          address you issue it to. Nothing is emailed — send the code on
+          yourself.
+        </p>
+      </div>
+
+      <fetcher.Form method="post" data-invite-form className="space-y-3">
+        <input type="hidden" name="intent" value="invite" />
+        <label className="block">
+          <span className="text-sm text-ink/60">Their email</span>
+          <input
+            type="email"
+            name="email"
+            required
+            autoComplete="off"
+            placeholder="friend@example.com"
+            className={FIELD}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={sending}
+          className="rounded-xl bg-accent px-5 py-2 text-sm text-on-accent transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {sending ? "Creating…" : "Create invite"}
+        </button>
+        {fetcher.data ? (
+          <p
+            data-invite-status
+            role={fetcher.data.ok ? "status" : "alert"}
+            className={`text-sm ${fetcher.data.ok ? "text-ink/60" : "text-danger"}`}
+          >
+            {fetcher.data.message}
+          </p>
+        ) : null}
+      </fetcher.Form>
+
+      <div className="rounded-xl bg-paper px-4 py-2">
+        {invites.length ? (
+          <div className="divide-y divide-ink/10">
+            {invites.map(invite => (
+              <InviteRow key={invite.id} invite={invite} />
+            ))}
+          </div>
+        ) : (
+          <p className="py-2 text-sm italic text-ink/60">
+            You have not invited anyone yet.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The two listings that cover everybody, for the one account that holds the
+ * flag. Read-only: there is nothing to revoke here and nothing to promote,
+ * because neither has been asked for and both are easy to add later.
+ */
+function Everyone({
+  invites,
+  users,
+}: {
+  invites: AdminInvite[];
+  users: User[];
+}) {
+  return (
+    <section className={`${PANEL} space-y-6`}>
+      <div className="space-y-2">
+        <p className={EYEBROW}>Everyone</p>
+        <h2 className="font-display text-2xl tracking-tight">The whole system</h2>
+        <p className="text-sm leading-relaxed text-ink/60">
+          Every account, and every code anyone has issued. Only you can see
+          this.
+        </p>
+      </div>
+
+      <div data-every-account className="space-y-2">
+        <p className={EYEBROW}>Accounts</p>
+        <div className="divide-y divide-ink/10 rounded-xl bg-paper px-4 py-2">
+          {users.map(each => (
+            <div
+              key={each.id}
+              className="flex flex-wrap items-baseline justify-between gap-x-4 py-2.5"
+            >
+              <span className="truncate text-sm text-ink">{each.email}</span>
+              <span className="text-xs text-ink/45">
+                {each.is_superuser ? "Superuser" : each.username}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div data-every-invite className="space-y-2">
+        <p className={EYEBROW}>Invites</p>
+        <div className="divide-y divide-ink/10 rounded-xl bg-paper px-4 py-2">
+          {invites.length ? (
+            invites.map(invite => (
+              <div key={invite.id} className="space-y-0.5 py-2.5">
+                <p className="truncate text-sm text-ink">
+                  {invite.invited_email ?? "Anyone with the code"}
+                </p>
+                <p className="text-xs text-ink/50">
+                  {/* Who issued it, and who spent it. A code from the CLI has
+                      no issuer, which is what "the command line" says here. */}
+                  from {invite.issued_by_email ?? "the command line"}
+                  {invite.used_by_email ? ` · used by ${invite.used_by_email}` : " · unused"}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="py-2 text-sm italic text-ink/60">No codes issued.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Menu({ loaderData }: Route.ComponentProps) {
-  const { user, provider, theme, alignment } = loaderData;
+  const { user, provider, invites, everyone, theme, alignment } = loaderData;
   const [adding, setAdding] = useState(false);
   const initial = (user.username || user.email).trim().charAt(0).toUpperCase();
 
@@ -488,6 +689,12 @@ export default function Menu({ loaderData }: Route.ComponentProps) {
           onOpenChange={setAdding}
         />
       </section>
+
+      <Invites invites={invites} />
+
+      {everyone ? (
+        <Everyone invites={everyone.invites} users={everyone.users} />
+      ) : null}
 
       {/* A form rather than a link: signing out is a POST so that a prefetch
           or a crawler cannot end the session. */}

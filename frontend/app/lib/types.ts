@@ -25,6 +25,34 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  /**
+   * Whether this account may read the two listings on the settings page that
+   * cover everybody. Not a secret and not what enforces anything: the endpoints
+   * refuse on their own, and this only keeps the page from rendering a panel
+   * whose loader would 403.
+   */
+  is_superuser: boolean;
+}
+
+/** Mirrors backend/app/schemas/invite.py::InviteRead */
+export interface Invite {
+  id: number;
+  /**
+   * The code itself. It is in the listing on purpose: the person who issued it
+   * did so in order to pass it on, and this is the only place it can be read
+   * again once the response that created it is gone.
+   */
+  code: string;
+  /** Null on codes the CLI issued, which are bound to no address. */
+  invited_email: string | null;
+  created_at: string;
+  used_at: string | null;
+}
+
+/** Mirrors backend/app/schemas/invite.py::InviteAdminRead */
+export interface AdminInvite extends Invite {
+  issued_by_email: string | null;
+  used_by_email: string | null;
 }
 
 /** Mirrors backend/app/schemas/chat.py::ChatMessageRead */

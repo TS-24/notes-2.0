@@ -47,7 +47,12 @@ const note = (id: number, title: string, archived_at: string | null = null): Not
   archived_at,
 });
 
-const user: User = { id: 1, username: "reader", email: "reader@example.com" };
+const user: User = {
+  id: 1,
+  username: "reader",
+  email: "reader@example.com",
+  is_superuser: false,
+};
 const provider = { available: [], configured: [], active: null };
 
 const loaderData = {

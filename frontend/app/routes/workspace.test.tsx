@@ -65,7 +65,12 @@ const note = (id: number, title: string): Note => ({
   archived_at: null,
 });
 
-const user: User = { id: 1, username: "reader", email: "reader@example.com" };
+const user: User = {
+  id: 1,
+  username: "reader",
+  email: "reader@example.com",
+  is_superuser: false,
+};
 
 const notes = [note(1, "First"), note(2, "Second")];
 
