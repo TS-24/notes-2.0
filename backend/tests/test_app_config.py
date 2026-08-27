@@ -90,12 +90,17 @@ class TestTheLexiconIsGone:
 
     def test_no_lexicon_package_is_installed(self):
         # The point of the removal is the image and the resident memory, not
-        # the routes: wordfreq, the WordNet corpus, nltk and pyphen were ~113MB
-        # of image and ~195MB of RSS once an analysis had run. A route can go
-        # while the dependency stays, and that would buy nothing.
+        # the routes: measured like-for-like, the backend image went 808MB to
+        # 498MB and its resident memory 330MB to 60MB. A route can go while the
+        # dependency stays, and that would buy nothing.
+        #
+        # `textstat` and `lemminflect` are here because they are how it nearly
+        # did buy nothing: textstat requires nltk and pyphen, so dropping the
+        # direct dependencies left both in the built image while this test —
+        # reading a virtualenv they had been uninstalled from — still passed.
         import importlib.util
 
-        for package in ("wordfreq", "nltk", "pyphen"):
+        for package in ("wordfreq", "nltk", "pyphen", "textstat", "lemminflect"):
             assert importlib.util.find_spec(package) is None, package
 
     def test_a_note_still_carries_no_words_field(self, client):
