@@ -6,8 +6,9 @@ import {
 } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { motion, useReducedMotion } from "framer-motion";
-import { CornerDownLeft, Sparkles } from "lucide-react";
+import { CornerDownLeft, MessageCircleQuestion, Sparkles } from "lucide-react";
 
+import Aside from "~/chat/aside";
 import ModelPicker from "~/chat/model-picker";
 import Markdown from "~/notes/markdown";
 import {
@@ -109,6 +110,13 @@ export default function ChatSurface({
   const renamer = useFetcher();
 
   const [draft, setDraft] = useState("");
+  /*
+    The aside is open or it does not exist. Its turns live inside the component,
+    so unmounting it is the discard — there is no transcript kept here for a
+    reopened panel to find, which is what "unsaved" has to mean to be worth
+    trusting.
+  */
+  const [asideOpen, setAsideOpen] = useState(false);
   /*
     One message may wait behind the turn in front of it — one, not a list. A
     backlog you can neither see nor edit is worse than a field you have to send
@@ -434,6 +442,34 @@ export default function ChatSurface({
             className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 text-center font-display text-3xl font-medium leading-[1.2] tracking-tight text-ink caret-accent-ink outline-none placeholder:text-ink/25"
           />
         </div>
+
+        {/*
+          The way into an aside, at the top of the conversation because that is
+          where the thing it is an aside *from* begins.
+
+          A quiet control, not a second call to action: the button that matters
+          on this screen is finishing, and offering a throwaway question in the
+          same weight would put the two on a level. Hidden while the panel is
+          open — the panel is its own dismissal.
+        */}
+        {!asideOpen && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setAsideOpen(true)}
+              aria-label="Ask an aside"
+              title="Ask something aside — unsaved, and kept out of this conversation"
+              className="flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm italic text-ink/45 transition-colors hover:text-ink cursor-pointer"
+            >
+              <MessageCircleQuestion className="size-4" />
+              btw…
+            </button>
+          </div>
+        )}
+
+        {asideOpen && (
+          <Aside chatId={chat.id} onDiscard={() => setAsideOpen(false)} />
+        )}
 
         {/*
           Where this started — one serif line at Meta size, the house form for
