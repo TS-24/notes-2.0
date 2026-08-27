@@ -81,14 +81,6 @@ export async function action({ request }: Route.ActionArgs) {
         await api.deleteNote(token, Number(formData.get("id")));
         return { ok: true };
       }
-      case "markKnown": {
-        // Moved off a browser fetch to a hardcoded host. It is a user-scoped
-        // write, so it is the one of the three that silently did nothing
-        // rather than merely failing to load.
-        const words = formData.getAll("word").map(String);
-        await api.markWordsKnown(token, words);
-        return { ok: true };
-      }
       default:
         return { ok: false, error: `Unknown intent: ${String(intent)}` };
     }

@@ -1,6 +1,8 @@
 venv/
 env/
 .venv/
+.venv-test/
 __pycache__/
 *.pyc
+.pytest_cache/
 .git/

@@ -44,7 +44,6 @@ const note = (id: number, title: string, archived_at: string | null = null): Not
   created_at: NOW,
   updated_at: NOW,
   archived_at,
-  words: [],
 });
 
 const LIVE = [note(1, "Tides"), note(2, "Gerunds")];

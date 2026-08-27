@@ -48,11 +48,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch WordNet
-        # vocab.py imports nltk corpora at module scope, so collection fails
-        # without them even for the tests that never touch the ladder.
-        run: python -m nltk.downloader wordnet omw-1.4
-
       - name: Run tests
         working-directory: backend
         env:

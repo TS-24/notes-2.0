@@ -15,8 +15,6 @@ import type {
   Note,
   ProviderSettings,
   User,
-  VocabularyAnalysisResponse,
-  WordDefinition,
 } from "./types";
 
 const API_URL = process.env.API_URL ?? "http://localhost:8700";
@@ -128,34 +126,6 @@ export const api = {
 
   deleteNote: (token: string, id: number) =>
     request<void>(`/api/notes/${id}`, token, { method: "DELETE" }),
-
-  listWords: (token: string) => request<WordDefinition[]>("/api/words", token),
-
-  attachWord: (token: string, noteId: number, wordId: number) =>
-    request<Note>(`/api/notes/${noteId}/words/${wordId}`, token, { method: "POST" }),
-
-  detachWord: (token: string, noteId: number, wordId: number) =>
-    request<Note>(`/api/notes/${noteId}/words/${wordId}`, token, { method: "DELETE" }),
-
-  /**
-   * The words worth learning in a body of text.
-   *
-   * Server-side like everything else here. It used to be called from the
-   * browser against a hardcoded 127.0.0.1, which worked only on the machine
-   * running the API and could not carry an HttpOnly cookie anywhere.
-   */
-  analyzeVocabulary: (token: string, data: { title: string; content: string }) =>
-    request<VocabularyAnalysisResponse>("/api/analyze/vocabulary", token, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  /** Records words the reader says they already know. Returns no body. */
-  markWordsKnown: (token: string, words: string[]) =>
-    request<void>("/api/words/known", token, {
-      method: "POST",
-      body: JSON.stringify({ words }),
-    }),
 
   listChats: (token: string) => request<Chat[]>("/api/chats", token),
 

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.db.models import KnownWord, User
+from app.db.models import User
 
 
 class TestSelf:
@@ -64,17 +64,6 @@ class TestSelf:
         assert remaining.used_at is not None
         assert remaining.used_by_user_id is None
 
-    def test_deleting_me_takes_my_known_words(self, client, db, user):
-        # The cascade this relies on is why DELETE used to fail on Postgres.
-        db.add(KnownWord(user_id=user.id, word="felicitous"))
-        db.commit()
-
-        client.delete("/api/users/me")
-
-        assert db.scalars(select(KnownWord)).all() == []
-
-
-class TestOtherAccounts:
     def test_i_cannot_read_another_account(self, client, other_user):
         assert client.get(f"/api/users/{other_user.id}").status_code in (404, 405)
 

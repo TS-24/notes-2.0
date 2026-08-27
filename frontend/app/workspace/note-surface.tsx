@@ -929,8 +929,7 @@ export default function NoteSurface({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      // A dialog over the note owns Escape while it is up — the vocabulary one
-      // opens from a card in the grid behind an open note. Base UI keeps the
+      // A dialog over the note owns Escape while it is up. Base UI keeps the
       // popup mounted through its close animation and marks it `data-closed`,
       // so only an un-closed one counts.
       if (document.querySelector('[data-slot="dialog-content"]:not([data-closed])')) {

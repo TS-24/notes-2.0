@@ -69,7 +69,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Layer cache in the registry, so a rebuild that only changes app code
-          # does not reinstall dependencies or re-download WordNet.
+          # Layer cache in the registry, so a rebuild that only changes app
+          # code does not reinstall dependencies.
           cache-from: type=gha
           cache-to: type=gha,mode=max

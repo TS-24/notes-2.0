@@ -4,12 +4,10 @@ from typing import List, Optional
 from sqlalchemy import (
     JSON,
     Boolean,
-    Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
-    Table,
     Text,
     UniqueConstraint,
     func,
@@ -19,14 +17,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     pass
-
-
-note_word_association = Table(
-    "note_word",
-    Base.metadata,
-    Column("note_id", ForeignKey("notes.id"), primary_key=True),
-    Column("word_id", ForeignKey("word_definitions.id"), primary_key=True),
-)
 
 
 class User(Base):
@@ -44,20 +34,13 @@ class User(Base):
     notes: Mapped[List["Note"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
     )
-    # Deleting an account has to take its known words with it. The foreign key
-    # alone does not do that: it would leave rows pointing at a missing user,
-    # which Postgres rejects and SQLite quietly keeps.
-    known_words: Mapped[List["KnownWord"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
     # Not a cascade. An invite is a record that a code was spent, which stays
     # true after the account it made is gone; only the pointer to that account
     # is released. Without the relationship at all, the leftover foreign key
     # makes deleting any account that registered through the front door a 500.
     invites_used: Mapped[List["InviteCode"]] = relationship(back_populates="used_by")
-    # Both cascades for the same reason as known_words: a foreign key on its own
-    # leaves rows pointing at a missing user, which Postgres rejects and SQLite
-    # quietly keeps. Deleting an account has to take its conversations and its
+    # Both cascades because a foreign key on its own leaves rows pointing at a
+    # missing user, which Postgres rejects and SQLite quietly keeps. Deleting an account has to take its conversations and its
     # borrowed credential with it — especially the credential.
     chats: Mapped[List["Chat"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
@@ -111,51 +94,6 @@ class Note(Base):
     parent_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("notes.id"), nullable=True, index=True
     )
-
-    words: Mapped[List["WordDefinition"]] = relationship(
-        secondary=note_word_association, back_populates="notes"
-    )
-
-
-class WordDefinition(Base):
-    __tablename__ = "word_definitions"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    word: Mapped[str] = mapped_column(String(255), nullable=False)
-    definition: Mapped[Optional[str]] = mapped_column(Text)
-
-    notes: Mapped[List["Note"]] = relationship(
-        secondary=note_word_association, back_populates="words"
-    )
-
-
-class KnownWord(Base):
-    """
-    A word the user has said they already know.
-
-    Kept per user rather than globally: "difficult" is a fact about a reader,
-    not about a word, and the whole point of dismissing one is that this reader
-    is done being shown it.
-
-    Stored as the surface form the analysis offered, because that is what the
-    user was actually looking at when they dismissed it. Lemmatising here would
-    quietly dismiss "running" along with "run", which is a bigger claim than
-    the user made.
-    """
-
-    __tablename__ = "known_words"
-    __table_args__ = (
-        UniqueConstraint("user_id", "word", name="uq_known_words_user_word"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    user: Mapped["User"] = relationship(back_populates="known_words")
-    word: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
 
 class InviteCode(Base):
     """

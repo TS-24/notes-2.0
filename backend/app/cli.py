@@ -20,7 +20,7 @@ from .crud import invite_code as crud_invite
 from .crud import revoked_token as crud_revoked
 from .crud import user as crud_user
 from .db.database import SessionLocal
-from .db.models import KnownWord, Note, User
+from .db.models import Note, User
 
 DEV_USER_EMAIL = "dev@example.com"
 
@@ -96,30 +96,10 @@ def adopt_dev_data(db: Session, args: argparse.Namespace) -> int:
         update(Note).where(Note.user_id == dev.id).values(user_id=heir.id)
     ).rowcount
 
-    # known_words is unique on (user_id, word), so a word both accounts already
-    # know would collide on reassignment. The heir's own row is the one to
-    # keep: dropping the duplicate is not a loss, both mean the same thing.
-    already = set(db.scalars(select(KnownWord.word).where(KnownWord.user_id == heir.id)))
-    duplicates = [
-        row
-        for row in db.scalars(select(KnownWord).where(KnownWord.user_id == dev.id))
-        if row.word in already
-    ]
-    for row in duplicates:
-        db.delete(row)
-    db.flush()
-
-    words = db.execute(
-        update(KnownWord).where(KnownWord.user_id == dev.id).values(user_id=heir.id)
-    ).rowcount
-
     db.delete(dev)
     db.commit()
 
-    print(
-        f"Moved {notes} note(s) and {words} known word(s) to {heir.email}, "
-        f"dropped {len(duplicates)} duplicate(s), removed the dev user."
-    )
+    print(f"Moved {notes} note(s) to {heir.email}, removed the dev user.")
     return 0
 
 

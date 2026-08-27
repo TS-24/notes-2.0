@@ -9,8 +9,8 @@ animates in around text that never moves, revealing the library of every other n
 Double-click again to go back. That gesture is the whole of the navigation: there is no sidebar
 and no nav bar, and the note you were reading is the note you are still reading.
 
-Around that sit the things a note can be asked for once it exists: which of its words are worth
-learning, and a conversation about it that writes itself up as a note of its own.
+Around that sits the one thing a note can be asked for once it exists: a conversation about it
+that writes itself up as a note of its own.
 
 ## 🌟 Features
 
@@ -21,10 +21,6 @@ learning, and a conversation about it that writes itself up as a note of its own
   size and in its face, so nothing on the page moves under your hands. Task boxes tick and write
   themselves back into the source, links open beside the note rather than over it, and Enter
   carries a list forward.
-- **Vocabulary analysis** — the words worth learning in one note, as flashcards on its card in
-  the library, or in every note at once as the word cloud at `/analytics`, where clicking a word
-  opens its definition in a sheet. Dismissing a flashcard records that word as known, per reader,
-  so the list shrinks as you work through it instead of showing you the same words forever.
 - **AI chats** — the twin of the `+` that starts a note sits beside it at the head of the
   library, and it opens a conversation in the same box an open note sits in. Finishing one asks
   the model to write it up the way a student takes notes on a discussion they watched: flowing
@@ -68,11 +64,11 @@ restyle/
 │   │                          #   route manifest and no server bundle
 │   └── app/
 │       ├── routes.ts          # Route config; the layout wrapper lives here
-│       ├── routes/            # workspace (layout), home, notes, analytics,
+│       ├── routes/            # workspace (layout), home, notes,
 │       │                      #   login / register / logout, menu.tsx (served
 │       │                      #   at /settings), and five action- or loader-only
 │       │                      #   routes with no component of their own: chats,
-│       │                      #   chat, api.vocabulary, api.active-model
+│       │                      #   chat, api.active-model
 │       ├── workspace/         # note-surface.tsx
 │       ├── chat/              # chat-surface.tsx, model-picker.tsx
 │       ├── notes/             # notegrid.tsx — the library grid — plus chat-card,
@@ -91,15 +87,13 @@ restyle/
 │   ├── entrypoint.sh          # Runs `alembic upgrade head`, then uvicorn
 │   ├── app/
 │   │   ├── api/               # Routers: auth, users, settings, notes, chats,
-│   │   │                      #   known_words, word_definitions, vocab, analyze;
 │   │   │                      #   deps.py holds the current user
 │   │   ├── cli.py             # Invites, accounts, housekeeping
 │   │   ├── core/              # config, security (argon2 + JWT), secrets (Fernet)
 │   │   ├── crud/              # Database operations
 │   │   ├── db/                # SQLAlchemy models and the session factory
 │   │   ├── schemas/           # Pydantic request/response models
-│   │   └── services/          # analysis.py (difficult-word extraction),
-│   │                          #   llm.py (the provider registry),
+│   │   └── services/          # llm.py (the provider registry),
 │   │                          #   conversation_summary.py
 │   ├── alembic/               # Database migrations
 │   └── tests/                 # 296 tests across 18 modules
@@ -137,8 +131,6 @@ This is load-bearing. `PROGRESS.md` records why the alternative was built, tried
 - **Framework:** FastAPI (Python 3.12)
 - **Database:** Neon (hosted PostgreSQL 18) via SQLAlchemy 2.0 ORM, migrations with Alembic. The migrations
   are also SQLite-safe (batch mode), which is what the test suite runs against
-- **Lexicon:** NLTK's WordNet (definitions), `wordfreq` (the difficulty axis), `pyphen`
-  (syllables, which break ties between words used about equally often)
 - **Chats:** LangChain (`langchain-anthropic`, `langchain-openai`) against a key the reader
   supplies, with each provider's own SDK used directly for the one thing LangChain has no notion
   of — asking a key which models it can reach
@@ -179,13 +171,9 @@ class; written against that, the setting would swing the whole grid around too.
 ### Data model
 
 A user owns many notes; notes and word definitions are linked many-to-many through a
-`note_word` association table, so one definition is shared across every note that uses the word.
-`known_words` is per user rather than global, because "difficult" is a fact about a reader and not
-about a word.
 
 ```
-User ──< Note >──note_word──< WordDefinition
- ├──< KnownWord
+User ──< Note
  ├──< Chat ──< ChatMessage
  └──< ProviderCredential
 ```
@@ -193,8 +181,7 @@ User ──< Note >──note_word──< WordDefinition
 Plus `invite_codes` and `revoked_tokens`, which belong to registration and sign-out rather than to
 the reading path.
 
-Deleting a user cascades to their notes, known words, chats and every stored credential. Deleting a note
-or a word only removes the link between them, never the row on the other side.
+Deleting a user cascades to their notes, chats and every stored credential.
 
 A chat holds its own summary in two columns written together — `summary_notes` and
 `summary_actions` — with `summarized_at` as the single test for "finished". A separate status
@@ -233,13 +220,11 @@ directory of other people's writing.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check (not under `/api`) |
-| `POST` | `/api/analyze/vocabulary` | The words worth learning in a body of text, with definitions. Takes `title` and `content` (capped at 1,000,000 characters, since the analytics page sends every note joined together). Words the user has marked known are left out |
-| `POST` | `/api/words/known` | Mark words as already known, up to 500 per request. Returns 204 with no body — the caller has already removed the card and has nothing to do with a response |
 | `POST` | `/api/auth/register` | Create an account against a single-use invite code. 400 on a bad or spent code, 409 if the email is taken |
 | `POST` | `/api/auth/login` | Exchange an email and password for a token. One message for a wrong password and an unknown email alike, so the endpoint cannot be used to find out who has an account |
 | `POST` | `/api/auth/logout` | Record this token's `jti` as revoked and clear the API's cookie. Only this token, so other sessions on the same account keep working. Deliberately unauthenticated: someone holding a token they cannot use is still entitled to retire it. **The web app's own Sign out does not call this** — see [Project status](#-project-status) |
 | `GET` | `/api/users/me` | The signed-in account |
-| `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, known words, chats and stored keys with it |
+| `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, chats and stored keys with it |
 | `POST` | `/api/notes` | Create a note. The owner is the signed-in account, never a field in the body |
 | `GET` | `/api/notes` | List notes, newest-touched first. `?search=` matches the title; `?skip=` / `?limit=` page; `?archived=true` returns the archive instead, newest put away first. Scope is always the signed-in account, never a parameter |
 | `GET`/`PATCH`/`DELETE` | `/api/notes/{id}` | Read, partially update, or delete a note |
@@ -247,10 +232,6 @@ directory of other people's writing.
 | `POST` | `/api/notes/{id}/archive` | Put a note away. It leaves the library and keeps everything it holds |
 | `POST` | `/api/notes/{id}/unarchive` | Bring it back |
 | `POST` | `/api/notes/{id}/close` | The reader left the note. `204` when it was blank and has been dropped, `200` with the note when it stays. Blank means no title and no body — see `crud/note.py::close_note`, which also spares your last note and any note whose conversation got somewhere |
-| `POST`/`DELETE` | `/api/notes/{id}/words/{word_id}` | Link or unlink a word and a note |
-| `POST` | `/api/words` | Create a word definition |
-| `GET` | `/api/words` | List definitions, or look one up with `?word=` |
-| `GET`/`PATCH`/`DELETE` | `/api/words/{id}` | Read, partially update, or delete a definition |
 | `GET` | `/api/settings/providers` | Which keys are on file, which providers could be added, and which pair is in use. Never returns a key — only `key_hint`, its last four characters. A key this deployment can no longer decrypt is left out entirely, which is what it is from the reader's side |
 | `PUT` | `/api/settings/providers/{provider}` | Store a key for one provider. The provider is called first and nothing is written until it answers, so a rejected key leaves the account exactly as it was — including a working key for the same provider somebody was trying to replace. **422** for a provider not in the registry, **502** when the provider would not have the key. The model list that call returns is stored alongside it. The first key an account saves becomes the one it chats with; later ones do not take over |
 | `POST` | `/api/settings/providers/{provider}/refresh` | Ask the stored key what it can reach now, so a model added or retired since is one button rather than a re-paste. **409** if there is no usable key on file |
@@ -499,16 +480,9 @@ that catches that, and it round-trips upgrade → downgrade → upgrade against 
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m nltk.downloader wordnet omw-1.4     # not bundled with the nltk package
 alembic upgrade head
 uvicorn main:app --reload --port 8700
 ```
-
-The corpus download is not optional. `nltk.corpus.wordnet` is a lazy loader, so importing
-`services/analysis.py` succeeds without it and the failure arrives later, as a `LookupError` on
-the first note analysed — which is a confusing way to be told your install is incomplete. The
-Dockerfile does the same fetch at build time, which is why the container needs no network on its
-first analysis.
 
 ```bash
 cd frontend && npm install && npm run dev     # http://localhost:5173
@@ -520,7 +494,7 @@ never calls the backend directly, there is no CORS to configure for this path.
 
 ## 📌 Project status
 
-The note surface, markdown editing, persistence, vocabulary analysis, chats and themes are wired
+The note surface, markdown editing, persistence, chats and themes are wired
 end to end. What is not:
 
 - **No chat here has spoken to a real model.** There has never been a provider key on the machine
@@ -555,9 +529,6 @@ end to end. What is not:
   placeholder text in the field, never a value), and leaving one that was never written in
   deletes it, along with a bound conversation that got nowhere. Two notes are spared on purpose:
   your last one, because the app has no empty state, and any note whose chat has messages.
-- **`/analytics` has not been through the design pass.** It came onto the colour tokens with the
-  themes, but it is still a bold sans heading over a `flex-wrap` cloud. The ornament layer in
-  `DESIGN.md` §6 is likewise specified but unbuilt, and blocked on assets rather than on code.
 - **`alembic check` cannot be used as a drift gate.** `invite_codes` and `revoked_tokens` were
   migrated with a unique *constraint* plus a plain index, while their models declare
   `unique=True, index=True`, which SQLAlchemy renders as a unique *index*. Functionally identical,

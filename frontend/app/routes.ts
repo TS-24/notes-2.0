@@ -17,7 +17,6 @@ export default [
         index("routes/home.tsx"),
         route("notes", "routes/notes.tsx"),
     ]),
-    route("analytics", "routes/analytics.tsx"),
     route("settings", "routes/menu.tsx"),
     // Both action-only. "chats" is create, rename and delete — the things you
     // do to a conversation from outside it. "chats/:chatId" is saying something
@@ -32,6 +31,5 @@ export default [
     // Resource route (loader only, no component). Deliberately outside the
     // layout: a submission inside the workspace would drag the note list's
     // revalidation along with it.
-    route("api/vocabulary", "routes/api.vocabulary.tsx"),
     route("api/active-model", "routes/api.active-model.tsx"),
 ] satisfies RouteConfig;

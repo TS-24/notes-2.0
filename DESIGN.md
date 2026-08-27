@@ -401,12 +401,11 @@ In dependency order:
 1. **`app/components/ornament/`** (§6) — unbuilt, and the blocker is assets: it needs real SVG
    line art, not code. Motif SVGs plus an `<Ornament />` layer mounted once in `app/root.tsx`
    above the route outlet so it survives navigation (§9, rule 2).
-2. **`/analytics`** — brought onto the colour tokens with the themes, but never through the type
-   and layout pass: it is still a bold sans heading over a `flex-wrap` cloud, and neither it nor
-   `/settings` has been through §9's navigation rules.
+2. **`/settings`** — never through §9's navigation rules. (`/analytics` was the other page in
+   this position; it went with the vocabulary analysis.)
 3. **Directional navigation** (§9, rules 4 and 9) — the layout route removed the tearing, but
    nothing yet encodes *direction*, and there is no pending-navigation hint.
-4. **Onward links** (§9, rule 5) — each of notes / vocabulary / sentences should propose the next
-   step in the reading path. This is a data question as much as a layout one: the API already
-   relates notes to words (`Note.words`), which is the spine of that path. Blocked on the
-   vocabulary endpoints, which do not currently exist — see `PROGRESS.md` §7.
+4. **Onward links** (§9, rule 5) — a note should propose the next step in the reading path.
+   This is a data question as much as a layout one, and it lost the spine it was drawn around:
+   the note-to-word relation went with the vocabulary analysis, so what a note leads to now is
+   another note or its own conversation.

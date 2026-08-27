@@ -54,10 +54,11 @@ def _restore_main(monkeypatch):
     importlib.reload(main)
 
 
-class TestTheLadderIsGone:
+class TestTheLexiconIsGone:
     """
-    The word ladder and its hosted ranker were removed, so the surface they
-    exposed has to go with them.
+    The word ladder, its ranker, and the vocabulary analysis were all removed,
+    so the surface they exposed has to go with them and the backend has to
+    carry no lexicon at all.
 
     Read off `/openapi.json` rather than off a route table. `app.routes` holds
     six entries and `api_router.routes` nine `_IncludedRouter` objects, because
@@ -65,28 +66,57 @@ class TestTheLadderIsGone:
     a check written against either passes whatever is mounted. The schema is
     also the honest target: it is the surface a caller actually sees.
 
-    A status code would not do either. The endpoint took a token but scoped
-    nothing by it, so a leftover would serve WordNet to anyone holding any
-    account, and a 404 assertion would pass just as well against a route that
-    had merely started refusing.
+    A status code would not do either. The ladder endpoint took a token but
+    scoped nothing by it, so a leftover would serve WordNet to anyone holding
+    any account, and a 404 assertion would pass just as well against a route
+    that had merely started refusing.
     """
 
-    def test_no_route_serves_a_ladder(self, client):
+    def test_no_route_serves_a_lexicon(self, client):
         paths = client.get("/openapi.json").json()["paths"]
 
-        assert not [path for path in paths if "ladder" in path], sorted(paths)
+        stale = [
+            path
+            for path in paths
+            if any(word in path for word in ("ladder", "analyze", "vocab", "/words"))
+        ]
+        assert not stale, sorted(paths)
 
-    def test_the_vocabulary_analysis_it_shared_code_with_survives(self, client):
-        # `difficulty` moved out of the ladder's service rather than going with
-        # it. This is the endpoint that would notice if it had been taken too.
-        paths = client.get("/openapi.json").json()["paths"]
-
-        assert "/api/analyze/vocabulary" in paths
-
-    def test_the_deployment_asks_for_no_hosted_model_token(self):
-        # `ranker.py` was the only thing that ran on the deployment's own
-        # credentials. Everything else that reaches a model runs on a key the
-        # reader supplied, so nothing should import the client any more.
+    def test_the_services_behind_them_are_gone(self):
         import importlib.util
 
-        assert importlib.util.find_spec("app.services.ranker") is None
+        for module in ("app.services.ranker", "app.services.vocab", "app.services.analysis"):
+            assert importlib.util.find_spec(module) is None, module
+
+    def test_no_lexicon_package_is_installed(self):
+        # The point of the removal is the image and the resident memory, not
+        # the routes: measured like-for-like, the backend image went 808MB to
+        # 498MB and its resident memory 330MB to 60MB. A route can go while the
+        # dependency stays, and that would buy nothing.
+        #
+        # `textstat` and `lemminflect` are here because they are how it nearly
+        # did buy nothing: textstat requires nltk and pyphen, so dropping the
+        # direct dependencies left both in the built image while this test —
+        # reading a virtualenv they had been uninstalled from — still passed.
+        import importlib.util
+
+        for package in ("wordfreq", "nltk", "pyphen", "textstat", "lemminflect"):
+            assert importlib.util.find_spec(package) is None, package
+
+    def test_a_note_still_carries_no_words_field(self, client):
+        created = client.post("/api/notes", json={"title": "T", "content": "c"})
+        assert created.status_code == 201, created.text
+
+        assert "words" not in created.json()
+
+    def test_the_neighbours_still_serve(self, client):
+        # Notes and chats share the app and the session but not a line of the
+        # lexicon. If either broke, the removal reached too far. `/health` is
+        # not checked here: it is declared on `main.app`, and the fixture
+        # builds a bare app carrying only `api_router`.
+        paths = client.get("/openapi.json").json()["paths"]
+        assert "/api/notes" in paths
+        assert "/api/chats" in paths
+
+        assert client.get("/api/notes").status_code == 200
+        assert client.get("/api/chats").status_code == 200

@@ -5,7 +5,7 @@ import { requireToken } from "~/lib/session.server";
 /**
  * Where a conversation is started and ended.
  *
- * Action only, no component — a resource route, like api.vocabulary.tsx. It is
+ * Action only, no component — a resource route, like api.active-model.tsx. It is
  * the counterpart of /notes' action: the things you do to a chat from *outside*
  * one, which is creating it from the library and deleting its card. Talking
  * inside a chat belongs to that chat's own route.

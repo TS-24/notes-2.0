@@ -46,7 +46,6 @@ const noteWith = (title: string, content: string): Note => ({
   created_at: NOW,
   updated_at: NOW,
   archived_at: null,
-  words: [],
 });
 
 describe("isBlank", () => {
