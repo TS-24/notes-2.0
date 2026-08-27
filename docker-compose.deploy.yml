@@ -22,14 +22,21 @@
 #   TAG=$(git rev-parse HEAD) ...   # deploy what just landed
 #   TAG=<the sha that worked> ...   # go back
 #
+# TAG is the bare sha and the `sha-` prefix is added below, in one place. That
+# is not cosmetic: `type=sha` in publish.yml prefixes the tag, so the image is
+# `sha-<40 hex>` while the thing every other part of this system passes around
+# -- the workflow input, deploy.sh's validation, `git rev-parse` -- is the sha
+# on its own. Putting the prefix here is what lets those stay a sha and still
+# name the right image.
+#
 # The images are private. The host needs `docker login ghcr.io` once, with a
 # token scoped to read:packages and nothing else.
 
 services:
   frontend:
     build: !reset null
-    image: ghcr.io/ts-24/restyle-frontend:${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
+    image: ghcr.io/ts-24/restyle-frontend:sha-${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
 
   backend:
     build: !reset null
-    image: ghcr.io/ts-24/restyle-backend:${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
+    image: ghcr.io/ts-24/restyle-backend:sha-${TAG:?set TAG to the commit sha to deploy, e.g. TAG=$(git rev-parse HEAD)}
