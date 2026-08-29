@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .core.security import hash_password
 from .crud import invite_code as crud_invite
+from .crud import password_reset as crud_reset
 from .crud import revoked_token as crud_revoked
 from .crud import user as crud_user
 from .db.database import SessionLocal
@@ -124,14 +125,19 @@ def adopt_dev_data(db: Session, args: argparse.Namespace) -> int:
 
 
 def prune_tokens(db: Session, args: argparse.Namespace) -> int:
-    """Drop revocation records for tokens that have expired anyway.
+    """Drop expired rows from revoked_tokens and password_reset_tokens.
 
-    Signing out writes a row and nothing removes it, so the table grows by one
-    per sign-out forever. Past its expiry a token is refused whether or not it
-    is listed, which is the moment its row stops meaning anything.
+    Both tables grow by one row per event — a sign-out, a reset request — and
+    nothing else clears them. Past its expiry a revoked token is refused by the
+    signature check regardless, and a reset link by get_valid_by_hash, so the
+    row stops meaning anything at that moment.
     """
-    removed = crud_revoked.prune_expired(db)
-    print(f"Removed {removed} expired revocation record(s).")
+    revoked = crud_revoked.prune_expired(db)
+    resets = crud_reset.prune_expired(db)
+    print(
+        f"Removed {revoked} expired revocation record(s) and "
+        f"{resets} expired reset token(s)."
+    )
     return 0
 
 

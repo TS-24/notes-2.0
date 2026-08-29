@@ -44,10 +44,21 @@ services:
     ports: !reset []
     environment:
       ENVIRONMENT: production
-      # Read by main.py for CORS. In the ordinary path nothing cross-origin
-      # reaches the API at all, since the browser only ever talks to the
-      # frontend, but the wildcard has to go before this is public.
+      # Read by main.py for CORS, and by the mailer as the base of the
+      # password-reset link. In the ordinary path nothing cross-origin reaches
+      # the API at all, since the browser only ever talks to the frontend, but
+      # the wildcard has to go before this is public.
       FRONTEND_ORIGIN: https://${DOMAIN}
+      # Real relay, not the dev Mailpit the base file points at (which is not
+      # started here — its profile is off). Left blank the backend logs the
+      # reset link instead of sending it, so set these for a deployment that
+      # anyone but you will sign into.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Restyle <no-reply@${DOMAIN}>}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
 
   db:
     # The one that matters most. Published, Postgres is reachable from the

@@ -39,6 +39,21 @@ services:
       # No default: a fallback signing key would be a skeleton key for every
       # deployment that forgot to set one. Compose refuses to start without it.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Where the password-reset link points. The API never serves that page, so
+      # it has to name the frontend's public URL; the prod overlay sets it from
+      # DOMAIN. Inside the network the frontend still listens on 3000, but the
+      # link is opened from the host, so this is the host URL.
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:${FRONTEND_PORT:-3700}}
+      # Outbound mail for that link. The defaults point at the Mailpit container
+      # below, which only runs under `--profile mail`. Without that profile the
+      # send fails and the link is logged instead (app/services/email.py), which
+      # is enough to walk through the flow locally.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Restyle <no-reply@localhost>}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       # Without these the ranker can never run under compose, whatever .env
       # says: the container only sees what is forwarded here. Unset is fine —
       # the ladder falls back to the dictionary's own ordering.
@@ -48,6 +63,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  # A local mail catcher for the password-reset flow: SMTP in, nothing out, a
+  # web inbox to read what was sent. Behind a profile so an ordinary
+  # `docker compose up` does not start it — bring it up with
+  # `docker compose --profile mail up`, then read the link at
+  # http://localhost:${MAILPIT_UI_PORT}.
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["mail"]
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
     restart: unless-stopped
 
   db:

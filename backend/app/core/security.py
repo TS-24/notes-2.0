@@ -8,6 +8,7 @@ become a 401 and never a 500. A 500 here would be a real leak: it tells an
 attacker their input reached further into the code than a rejection would.
 """
 
+import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,9 @@ class TokenClaims:
     user_id: int
     jti: str
     expires_at: datetime
+    # When the token was minted. Compared against the account's
+    # password_changed_at so a reset can retire every session issued before it.
+    issued_at: datetime
 
 
 def create_access_token(user_id: int, expires_in: timedelta | None = None) -> str:
@@ -87,6 +91,27 @@ def decode_access_token(token: str) -> TokenClaims | None:
             user_id=int(payload["sub"]),
             jti=str(payload["jti"]),
             expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+            issued_at=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
         )
     except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         return None
+
+
+def new_reset_token() -> str:
+    """A random token for a password-reset link.
+
+    Never stored — only `hash_reset_token` of it is. 32 bytes of urlsafe base64
+    is the same strength `jti` uses, and short enough to sit in a query string.
+    """
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    """The SHA-256 of a reset token, hex.
+
+    A fast hash on purpose: the token is already high-entropy random, so argon2
+    here would spend CPU to protect against a dictionary attack that cannot
+    apply. This is the value that goes in the database; the token itself only
+    ever lives in the emailed link.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()

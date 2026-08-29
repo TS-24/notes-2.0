@@ -36,3 +36,31 @@ ACCESS_TOKEN_TTL = timedelta(days=7)
 COOKIE_SECURE = os.environ.get("ENVIRONMENT", "development") != "development"
 
 COOKIE_NAME = "restyle_token"
+
+# --- Password reset -------------------------------------------------------------
+#
+# A reset link is single-use and short-lived: an hour is long enough to walk
+# from the email to the browser and no longer a standing key if the mailbox is
+# later compromised.
+RESET_TOKEN_TTL = timedelta(hours=1)
+
+# The origin the reset link points at. This server never serves the page — the
+# React Router app does — so the link has to name that host explicitly. Same
+# default as main.py's CORS origin; set FRONTEND_ORIGIN in the deployed env.
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3700")
+
+# --- Outbound email -----------------------------------------------------------
+#
+# All optional. With SMTP_HOST unset the mailer logs the message instead of
+# sending it, which is what keeps the test suite and a bare `docker compose up`
+# working without credentials — see app/services/email.py. Read with .get(), not
+# [], because app.core.config is imported before any of these are guaranteed set
+# (conftest.py only sets DATABASE_URL and JWT_SECRET).
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+SMTP_FROM = os.environ.get("SMTP_FROM", "Restyle <no-reply@localhost>")
+# STARTTLS is right for the common submission port 587; a local catcher like
+# Mailpit speaks plain, so this can be switched off.
+SMTP_STARTTLS = os.environ.get("SMTP_STARTTLS", "true").lower() != "false"

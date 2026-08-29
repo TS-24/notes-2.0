@@ -74,8 +74,17 @@ export default function Login({ actionData }: Route.ComponentProps) {
           />
         </label>
 
+        <div className="text-right">
+          <Link
+            to="/forgot-password"
+            className="text-xs text-ink/50 underline transition-colors hover:text-ink"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
         {actionData?.error ? (
-          <p role="alert" className="text-sm text-rose-700">
+          <p role="alert" className="text-sm text-rose-ink">
             {actionData.error}
           </p>
         ) : null}

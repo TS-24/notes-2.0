@@ -90,7 +90,7 @@ export default function Register({ actionData }: Route.ComponentProps) {
         </label>
 
         {actionData?.error ? (
-          <p role="alert" className="text-sm text-rose-700">
+          <p role="alert" className="text-sm text-rose-ink">
             {actionData.error}
           </p>
         ) : null}
