@@ -230,11 +230,15 @@ class TestSessionsAfterReset:
 
 
 class TestEmailService:
-    def test_send_email_without_smtp_logs_instead_of_raising(self, caplog):
+    def test_send_email_without_smtp_warns_instead_of_raising(self, caplog):
         from app.services.email import send_email
 
-        with caplog.at_level("INFO"):
-            send_email("someone@example.com", "Subject here", "Body here")
+        # WARNING, not INFO: nothing configures logging, so an INFO line would
+        # be dropped at the root logger's default level and the link with it.
+        with caplog.at_level("WARNING"):
+            send_email("someone@example.com", "Subject here", "the body")
 
-        assert "SMTP not configured" in caplog.text
+        assert any(r.levelname == "WARNING" for r in caplog.records)
+        assert "SMTP_HOST is not set" in caplog.text
         assert "someone@example.com" in caplog.text
+        assert "the body" in caplog.text

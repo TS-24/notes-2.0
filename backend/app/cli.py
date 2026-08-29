@@ -15,6 +15,7 @@ from getpass import getpass
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from .core.config import SMTP_HOST
 from .core.security import hash_password
 from .crud import invite_code as crud_invite
 from .crud import password_reset as crud_reset
@@ -22,6 +23,7 @@ from .crud import revoked_token as crud_revoked
 from .crud import user as crud_user
 from .db.database import SessionLocal
 from .db.models import KnownWord, Note, User
+from .services.email import send_email
 
 DEV_USER_EMAIL = "dev@example.com"
 
@@ -141,6 +143,35 @@ def prune_tokens(db: Session, args: argparse.Namespace) -> int:
     return 0
 
 
+def send_test_email(db: Session, args: argparse.Namespace) -> int:
+    """Send a throwaway message through the configured SMTP relay.
+
+    The reset flow sends on a background task that logs its failures instead of
+    raising them, so a broken relay shows up only as mail that never arrives.
+    This runs the same send in the foreground and reports what happened —
+    authentication in particular, which is where a Gmail app password goes
+    wrong.
+    """
+    if not SMTP_HOST:
+        print("SMTP_HOST is not set — there is nothing to test against.", file=sys.stderr)
+        return 1
+
+    try:
+        send_email(
+            args.to,
+            "Restyle test email",
+            "Sent by `python -m app.cli send-test-email`. If this arrived, "
+            "outbound mail is working.\n",
+            raise_on_error=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — a diagnostic wants the reason, whatever it is
+        print(f"Send failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Sent a test message to {args.to} via {SMTP_HOST}.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -160,6 +191,12 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "prune-tokens", help="Forget revoked tokens that have expired anyway"
     ).set_defaults(func=prune_tokens)
+
+    test_email = commands.add_parser(
+        "send-test-email", help="Send a throwaway message through the SMTP relay"
+    )
+    test_email.add_argument("--to", required=True, help="Where to send it")
+    test_email.set_defaults(func=send_test_email)
 
     adopt = commands.add_parser(
         "adopt-dev-data", help="Move the seeded dev user's notes to a real account"

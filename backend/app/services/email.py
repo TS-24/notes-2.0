@@ -6,10 +6,11 @@ provider SDK would be a pinned dependency plus a vendor lock for what is, today,
 one message type. Swapping in Postmark/SES/Resend later is a change to
 `send_email` alone.
 
-With `SMTP_HOST` unset the message is logged rather than sent. That is the
-default in tests and in a bare `docker compose up`, and it means a missing
-mail configuration degrades to "the link is in the logs" instead of a 500 in
-the middle of the reset flow.
+With `SMTP_HOST` unset the message is logged rather than sent — at WARNING, so
+it survives the default log level rather than vanishing at INFO. That is the
+state in tests and in a bare `docker compose up`, and it means a missing mail
+configuration degrades to "the link is in the logs" instead of a 500 in the
+middle of the reset flow.
 """
 
 import logging
@@ -29,12 +30,15 @@ from ..core.config import (
 logger = logging.getLogger(__name__)
 
 
-def send_email(to: str, subject: str, body: str) -> None:
+def send_email(
+    to: str, subject: str, body: str, *, raise_on_error: bool = False
+) -> None:
     """Send one plain-text email, or log it when SMTP is not configured.
 
     Called from a background task, so a slow or unreachable server delays
-    nothing the caller is waiting on. Raising here would only land in the
-    background task's own error handling.
+    nothing the caller is waiting on, and a send failure is logged rather than
+    raised — there is nowhere useful for it to go. `raise_on_error` is for the
+    CLI check, which wants the failure in the foreground.
     """
     message = EmailMessage()
     message["From"] = SMTP_FROM
@@ -43,8 +47,13 @@ def send_email(to: str, subject: str, body: str) -> None:
     message.set_content(body)
 
     if not SMTP_HOST:
-        logger.info(
-            "SMTP not configured; email not sent.\nTo: %s\nSubject: %s\n\n%s",
+        # WARNING, not INFO: nothing in this app configures logging, so the root
+        # logger sits at its default WARNING and an INFO line here is discarded
+        # unseen. The whole point of this branch is that the link stays
+        # recoverable when mail is not set up.
+        logger.warning(
+            "SMTP_HOST is not set; email not sent. Message follows.\n"
+            "To: %s\nSubject: %s\n\n%s",
             to,
             subject,
             body,
@@ -59,6 +68,8 @@ def send_email(to: str, subject: str, body: str) -> None:
                 server.login(SMTP_USER, SMTP_PASSWORD or "")
             server.send_message(message)
     except (OSError, smtplib.SMTPException):
+        if raise_on_error:
+            raise
         # A background task, so raising would only reach its own logging. The
         # useful thing is the message itself: logged here, the reset link is
         # still recoverable through an outage or a misconfigured relay.
