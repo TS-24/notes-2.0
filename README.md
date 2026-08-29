@@ -389,8 +389,11 @@ not:
 - **A finished chat is closed.** Summarising it refuses further turns, because a summary that no
   longer describes its conversation is worse than no summary.
 
-- **There is no password reset and no way to change a password.** Losing one means a new account
-  or an `UPDATE` by hand. Registration being invite-only is what makes that survivable for now.
+- **Password reset is by email only.** "Forgot password" on the sign-in page sends a one-time
+  link that expires in an hour; opening it sets a new password, signs you in, and drops every
+  session that predated the reset. There is still no way to change a password while signed in.
+  Delivery needs `SMTP_*` set — unset, the link is written to the backend log instead, and
+  `docker compose --profile mail up` routes it to a local Mailpit inbox.
 - **There is no refresh flow.** Signing out revokes the token it was given, and only that one, so
   other sessions on the same account keep working — but a token nobody signs out stays valid for
   its full seven days. Rotating `JWT_SECRET` still invalidates every session at once.

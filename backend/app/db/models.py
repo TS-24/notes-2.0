@@ -41,6 +41,11 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Set the moment a password is reset. A token whose `iat` predates this is
+    # refused by get_current_user, so resetting a compromised account also ends
+    # every session it already had. NULL means the password has never been
+    # reset, which is every account until it uses the flow.
+    password_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[List["Note"]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
     )
@@ -222,6 +227,40 @@ class RevokedToken(Base):
     user_id: Mapped[int] = mapped_column(nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PasswordResetToken(Base):
+    """
+    A one-time token that authorises a single password reset.
+
+    Only the SHA-256 of the token is stored; the token itself exists only in
+    the link that was emailed, the same arrangement a password has with its
+    hash. `used_at` is both the record that a reset happened and the thing that
+    stops the link working twice — the shape `InviteCode` uses for that job.
+
+    No foreign key to users, for the reason `RevokedToken` gives: deleting an
+    account must not be gated on clearing rows that stop mattering the moment it
+    is gone. Expired and used rows are disposable — see
+    `crud/password_reset.py::prune_expired`.
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    # SHA-256 hex of the emailed token: 64 characters exactly. Unique, so a
+    # replay cannot resolve to a second row.
+    token_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    # Indexed for pruning — the CLI sweeps every row past its expiry.
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

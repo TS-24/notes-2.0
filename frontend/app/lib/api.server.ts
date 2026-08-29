@@ -55,7 +55,11 @@ async function request<T>(
   // An expired token is not an error the page can do anything with, so it
   // becomes a trip to the login screen rather than the error boundary. The
   // stale cookie is cleared on the way out, or the redirect would loop.
-  if (response.status === 401) {
+  //
+  // Only when a token was actually sent: a 401 on a tokenless call — login,
+  // register, the password-reset pair — means the credentials in the body were
+  // refused, and that belongs to the caller as an ApiError, not a redirect.
+  if (response.status === 401 && token !== null) {
     throw redirect("/login", { headers: { "Set-Cookie": await destroyToken() } });
   }
 
@@ -222,5 +226,26 @@ export const api = {
     request<{ access_token: string }>("/api/auth/register", null, {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  /**
+   * Asks the backend to email a reset link. Always resolves the same way — the
+   * response never says whether the address has an account — so callers show
+   * one confirmation regardless.
+   */
+  forgotPassword: (email: string) =>
+    request<{ detail: string }>("/api/auth/forgot-password", null, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  /**
+   * Spends a reset token and returns a fresh session. A bad or expired token is
+   * a 400 → ApiError here, not the 401 redirect, so the page can show why.
+   */
+  resetPassword: (token: string, password: string) =>
+    request<{ access_token: string }>("/api/auth/reset-password", null, {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
     }),
 };
