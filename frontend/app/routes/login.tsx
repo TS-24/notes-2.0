@@ -74,14 +74,9 @@ export default function Login({ actionData }: Route.ComponentProps) {
           />
         </label>
 
-        <div className="text-right">
-          <Link
-            to="/forgot-password"
-            className="text-xs text-ink/50 underline transition-colors hover:text-ink"
-          >
-            Forgot password?
-          </Link>
-        </div>
+        <p className="text-xs text-ink/45">
+          Forgot your password? Ask an administrator for a reset link.
+        </p>
 
         {actionData?.error ? (
           <p role="alert" className="text-sm text-rose-ink">

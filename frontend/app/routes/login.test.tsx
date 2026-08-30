@@ -87,10 +87,9 @@ test("no error line when the action has not run", () => {
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-test("offers a way to the forgot-password page", () => {
+test("points a forgetful user at an administrator, with no self-serve link", () => {
   const container = mount(propsWith(undefined));
 
-  const link = container.querySelector<HTMLAnchorElement>('a[href="/forgot-password"]');
-  expect(link).not.toBeNull();
-  expect(link?.textContent).toMatch(/forgot password/i);
+  expect(container.querySelector('a[href="/forgot-password"]')).toBeNull();
+  expect(container.textContent).toMatch(/ask an administrator for a reset link/i);
 });

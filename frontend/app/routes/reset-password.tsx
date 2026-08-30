@@ -111,10 +111,10 @@ export default function ResetPassword({ loaderData, actionData }: Route.Componen
       ) : (
         <>
           <p className="mt-4 text-sm text-ink/70" role="alert">
-            This link is missing its token. Request a new one.
+            This link is missing its token. Ask an administrator for a new one.
           </p>
-          <Link to="/forgot-password" className="mt-6 text-sm text-ink/60 underline">
-            Send a new reset link
+          <Link to="/login" className="mt-6 text-sm text-ink/60 underline">
+            Back to sign in
           </Link>
         </>
       )}

@@ -27,13 +27,9 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: Email
-
-
 class ResetPasswordRequest(BaseModel):
-    # The opaque token from the emailed link. Bounded so an absurd string is
-    # turned away before it reaches the hash.
+    # The opaque token from the reset link (issued by `python -m app.cli
+    # issue-reset`). Bounded so an absurd string is turned away before the hash.
     token: Annotated[str, Field(min_length=1, max_length=256)]
     # The Password type here: this is a password about to be stored, so it is
     # held to the same floor and ceiling as one chosen at registration.

@@ -1,29 +1,15 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    HTTPException,
-    Request,
-    Response,
-    status,
-)
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..core.config import (
-    ACCESS_TOKEN_TTL,
-    COOKIE_NAME,
-    COOKIE_SECURE,
-    RESET_TOKEN_TTL,
-)
+from ..core.config import ACCESS_TOKEN_TTL, COOKIE_NAME, COOKIE_SECURE
 from ..core.security import (
     create_access_token,
     decode_access_token,
     hash_password,
     hash_reset_token,
-    new_reset_token,
     verify_password,
 )
 from ..crud import invite_code as crud_invite
@@ -32,13 +18,11 @@ from ..crud import revoked_token as crud_revoked
 from ..crud import user as crud_user
 from ..db.database import get_db
 from ..schemas.auth import (
-    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
     TokenResponse,
 )
-from ..services.email import send_password_reset
 from .deps import token_from_request
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -48,19 +32,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 INVALID_INVITE = "That invite code is not valid"
 INVALID_CREDENTIALS = "Incorrect email or password"
 
-# Returned to every forgot-password request, whether or not the address has an
-# account. A different answer for the two would make this a way to test which
-# emails are registered — the property INVALID_CREDENTIALS protects for login.
-RESET_REQUESTED = "If that email has an account, a reset link is on its way."
-
 # One message for a token that never existed, one already spent, and one past
 # its expiry. Telling them apart would say which part of a guess to keep.
+# Reset links are issued from the CLI (`python -m app.cli issue-reset`); this
+# endpoint only spends them.
 INVALID_RESET = "This reset link is invalid or has expired."
-
-# The floor on how often a new link will be issued for one account. Short
-# enough that "it didn't arrive, try again" still works; the whole rate limit,
-# since the app has no throttling framework.
-_RESEND_WINDOW = timedelta(seconds=60)
 
 # Verified against when the email is unknown, so a login attempt costs the same
 # whether or not the account exists. Without this the response time alone says
@@ -147,37 +123,6 @@ def login(
     token = create_access_token(user.id)
     _set_token_cookie(response, token)
     return TokenResponse(access_token=token)
-
-
-@router.post("/forgot-password")
-def forgot_password(
-    payload: ForgotPasswordRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    """Start a reset by emailing a one-time link.
-
-    Always 200, always the same body. The work — and the mail — only happen for
-    an address that has an account, but the response says nothing about which,
-    and the send is deferred to a background task so the timing does not either.
-    """
-    user = crud_user.get_user_by_email(db, payload.email)
-    if user is not None and not crud_reset.issued_since(
-        db, user.id, datetime.now(timezone.utc) - _RESEND_WINDOW
-    ):
-        # At most one live link per account: spend any earlier ones first.
-        crud_reset.invalidate_for_user(db, user.id)
-        raw_token = new_reset_token()
-        crud_reset.create(
-            db,
-            user.id,
-            hash_reset_token(raw_token),
-            datetime.now(timezone.utc) + RESET_TOKEN_TTL,
-        )
-        db.commit()
-        background_tasks.add_task(send_password_reset, user.email, raw_token)
-
-    return {"detail": RESET_REQUESTED}
 
 
 @router.post("/reset-password", response_model=TokenResponse)

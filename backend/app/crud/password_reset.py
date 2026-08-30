@@ -66,20 +66,6 @@ def invalidate_for_user(db: Session, user_id: int) -> int:
     return result.rowcount or 0
 
 
-def issued_since(db: Session, user_id: int, cutoff: datetime) -> bool:
-    """Whether any reset token was created for this user after `cutoff`.
-
-    The whole rate limit: with no throttling framework in the app, this is what
-    stops the endpoint being a way to flood a mailbox. A short window, so a
-    genuine "it did not arrive, try again" still works.
-    """
-    stmt = select(PasswordResetToken.id).where(
-        PasswordResetToken.user_id == user_id,
-        PasswordResetToken.created_at > cutoff,
-    )
-    return db.scalars(stmt).first() is not None
-
-
 def prune_expired(db: Session) -> int:
     """Drop tokens past their expiry; return how many went, and commit.
 

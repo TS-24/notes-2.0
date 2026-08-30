@@ -86,10 +86,12 @@ test("tells the reader to get a new link when the token is missing", () => {
 
   expect(container.querySelector('input[type="password"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toMatch(
-    /missing its token/i,
+    /missing its token.*administrator/i,
   );
+  // No self-serve path — only back to sign in.
+  expect(container.querySelector('a[href="/forgot-password"]')).toBeNull();
   expect(
-    container.querySelector<HTMLAnchorElement>('a[href="/forgot-password"]'),
+    container.querySelector<HTMLAnchorElement>('a[href="/login"]'),
   ).not.toBeNull();
 });
 

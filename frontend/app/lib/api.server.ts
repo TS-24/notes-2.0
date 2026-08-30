@@ -229,19 +229,9 @@ export const api = {
     }),
 
   /**
-   * Asks the backend to email a reset link. Always resolves the same way — the
-   * response never says whether the address has an account — so callers show
-   * one confirmation regardless.
-   */
-  forgotPassword: (email: string) =>
-    request<{ detail: string }>("/api/auth/forgot-password", null, {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }),
-
-  /**
-   * Spends a reset token and returns a fresh session. A bad or expired token is
-   * a 400 → ApiError here, not the 401 redirect, so the page can show why.
+   * Spends a reset token (issued by `python -m app.cli issue-reset`) and returns
+   * a fresh session. A bad or expired token is a 400 → ApiError here, not the
+   * 401 redirect, so the page can show why.
    */
   resetPassword: (token: string, password: string) =>
     request<{ access_token: string }>("/api/auth/reset-password", null, {

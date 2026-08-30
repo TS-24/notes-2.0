@@ -11,9 +11,9 @@ export default [
     route("login", "routes/login.tsx"),
     route("register", "routes/register.tsx"),
     route("logout", "routes/logout.tsx"),
-    // Same reason these sit outside the workspace layout: the reset pages have
-    // to be reachable without a session.
-    route("forgot-password", "routes/forgot-password.tsx"),
+    // Reachable without a session, like login. There is no "forgot password"
+    // page — an admin issues the link with `python -m app.cli issue-reset`
+    // and the account holder lands here to choose a new password.
     route("reset-password", "routes/reset-password.tsx"),
     // The landing page and the grid share a layout so the note surface inside
     // it survives navigation between them — see app/routes/workspace.tsx.
