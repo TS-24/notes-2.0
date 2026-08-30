@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,13 +9,16 @@ from ..core.security import (
     create_access_token,
     decode_access_token,
     hash_password,
+    hash_reset_token,
     verify_password,
 )
 from ..crud import invite_code as crud_invite
+from ..crud import password_reset as crud_reset
 from ..crud import revoked_token as crud_revoked
 from ..crud import user as crud_user
 from ..db.database import get_db
 from ..schemas.auth import LoginRequest, RegisterRequest, TokenResponse
+from ..schemas.password_reset import ResetPasswordRequest
 from .deps import token_from_request
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -22,6 +27,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # which would turn the endpoint into a way to test codes.
 INVALID_INVITE = "That invite code is not valid"
 INVALID_CREDENTIALS = "Incorrect email or password"
+
+# One message for a link that never existed, one already spent, and one past its
+# expiry. Telling them apart would say which part of a guess to keep. Links are
+# issued from the account page (api/password_resets.py) or the CLI; this
+# endpoint only spends them.
+INVALID_RESET = "This reset link is invalid or has expired."
 
 # Verified against when the email is unknown, so a login attempt costs the same
 # whether or not the account exists. Without this the response time alone says
@@ -113,6 +124,57 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token = create_access_token(user.id)
+    _set_token_cookie(response, token)
+    return TokenResponse(access_token=token)
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(
+    payload: ResetPasswordRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Set a new password from a one-time link, and sign the account in.
+
+    Unauthenticated on purpose: the token in the link *is* the credential, and
+    the whole point is that whoever holds it cannot get in any other way.
+
+    A bad, spent or expired token is a 400 rather than a 401. The frontend's API
+    client reads 401 as "your session went stale" and turns it into a redirect
+    to /login, which would swallow the message and leave the reader looking at a
+    blank sign-in form with no idea why.
+    """
+    row = crud_reset.get_valid_by_hash(db, hash_reset_token(payload.token))
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_RESET)
+
+    user = crud_user.get_user(db, row.user_id)
+    if user is None:
+        # The account was deleted between the link being issued and used. Same
+        # answer: there is nothing here to reset either way.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_RESET)
+
+    user.password_hash = hash_password(payload.password)
+    # Floored to the whole second, because a JWT's `iat` is whole seconds and
+    # that is the finest grain deps.py can compare against. The floor is what
+    # keeps the token minted below — same second, same stamp — out of the range
+    # that check refuses, so the reset can hand back a working session.
+    #
+    # The cost is a one-second seam: a session opened in the same second as the
+    # reset survives it, because nothing distinguishes it from the one being
+    # issued here. Closing it would mean either refusing our own token or
+    # putting a future `iat` on it, which PyJWT rejects outright. It is not
+    # worth more than this: the sessions a reset exists to end were opened
+    # minutes or days ago, not inside the second it took to run.
+    changed_at = datetime.now(timezone.utc).replace(microsecond=0)
+    user.password_changed_at = changed_at
+    crud_reset.mark_used(db, row)
+    # Any other link outstanding for this account is void now too.
+    crud_reset.invalidate_for_user(db, user.id)
+    db.commit()
+
+    # Land them signed in, as register and login do.
     token = create_access_token(user.id)
     _set_token_cookie(response, token)
     return TokenResponse(access_token=token)

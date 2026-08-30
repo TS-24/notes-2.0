@@ -1,5 +1,7 @@
 """Shared API dependencies."""
 
+from datetime import timezone
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -58,7 +60,28 @@ def get_current_user_optional(
     # Nor is it proof the account survived. Deleting a user does not reach the
     # tokens already issued for them, so this lookup is the only thing standing
     # between a deleted account and a working session.
-    return db.get(User, claims.user_id)
+    user = db.get(User, claims.user_id)
+    if user is None:
+        return None
+
+    # A password reset stamps `password_changed_at`, and every token issued
+    # before that second is refused here. That is what makes resetting an
+    # account also end whoever was already signed into it, which is the whole
+    # reason to reset one you think is compromised.
+    #
+    # Strictly before, so the session the reset itself hands back — stamped in
+    # that same second — survives. `api/auth.py::reset_password` explains the
+    # one-second seam that leaves and why it is not worth closing.
+    #
+    # SQLite hands the column back naive and Postgres aware, so normalise first.
+    changed_at = user.password_changed_at
+    if changed_at is not None:
+        if changed_at.tzinfo is None:
+            changed_at = changed_at.replace(tzinfo=timezone.utc)
+        if claims.issued_at < changed_at:
+            return None
+
+    return user
 
 
 def get_current_user(user: User | None = Depends(get_current_user_optional)) -> User:

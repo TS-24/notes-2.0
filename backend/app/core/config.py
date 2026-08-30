@@ -36,3 +36,16 @@ ACCESS_TOKEN_TTL = timedelta(days=7)
 COOKIE_SECURE = os.environ.get("ENVIRONMENT", "development") != "development"
 
 COOKIE_NAME = "restyle_token"
+
+# --- Password reset ---------------------------------------------------------
+#
+# A reset link is issued from the account page (api/invites.py's sibling in
+# api/users.py) or from the CLI, and handed over by whoever issued it. Nothing
+# is emailed. Single-use and short-lived: an hour is long enough to pass a link
+# to someone and not long enough to be a standing key afterwards.
+RESET_TOKEN_TTL = timedelta(hours=1)
+
+# The origin the reset link points at. This server never serves that page — the
+# React Router app does — so the link has to name that host explicitly. Same
+# default as main.py's CORS origin; set FRONTEND_ORIGIN in the deployed env.
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3700")

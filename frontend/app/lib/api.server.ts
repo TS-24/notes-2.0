@@ -17,6 +17,7 @@ import type {
   Invite,
   Note,
   ProviderSettings,
+  ResetLink,
   User,
 } from "./types";
 
@@ -55,7 +56,13 @@ async function request<T>(
   // An expired token is not an error the page can do anything with, so it
   // becomes a trip to the login screen rather than the error boundary. The
   // stale cookie is cleared on the way out, or the redirect would loop.
-  if (response.status === 401) {
+  //
+  // Only when a token was actually sent. A 401 on a tokenless call — login,
+  // register, spending a reset link — means the credentials in the *body* were
+  // refused, and the caller has to be able to say so. Redirecting there sent
+  // the reader back to a blank sign-in form with no word about what was wrong,
+  // which is what a wrong password used to do.
+  if (response.status === 401 && token !== null) {
     throw redirect("/login", { headers: { "Set-Cookie": await destroyToken() } });
   }
 
@@ -270,5 +277,28 @@ export const api = {
     request<{ access_token: string }>("/api/auth/register", null, {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  /**
+   * Mints a one-time reset link for an account. 403 for anyone but the
+   * superuser, 404 when no account has that address.
+   *
+   * The URL comes back once and cannot be asked for again — only its hash is
+   * stored — so whatever calls this has to show it immediately.
+   */
+  issueResetLink: (token: string, email: string) =>
+    request<ResetLink>("/api/password-resets", token, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  /**
+   * Spends a reset link and returns a fresh session. A bad or expired token is
+   * a 400 → ApiError here, not the 401 redirect, so the page can say why.
+   */
+  resetPassword: (token: string, password: string) =>
+    request<{ access_token: string }>("/api/auth/reset-password", null, {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
     }),
 };
