@@ -1,6 +1,7 @@
 from . import (
     invite_code,
     note,
+    password_reset,
     revoked_token,
     user,
 )
@@ -8,6 +9,7 @@ from . import (
 __all__ = [
     "invite_code",
     "note",
+    "password_reset",
     "revoked_token",
     "user",
 ]

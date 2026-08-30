@@ -19,8 +19,10 @@ from getpass import getpass
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from .core.security import hash_password
+from .core.config import FRONTEND_ORIGIN, RESET_TOKEN_TTL
+from .core.security import hash_password, hash_reset_token, new_reset_token
 from .crud import invite_code as crud_invite
+from .crud import password_reset as crud_reset
 from .crud import revoked_token as crud_revoked
 from .crud import user as crud_user
 from .db.database import SessionLocal
@@ -140,7 +142,43 @@ def prune_tokens(db: Session, args: argparse.Namespace) -> int:
     is listed, which is the moment its row stops meaning anything.
     """
     removed = crud_revoked.prune_expired(db)
-    print(f"Removed {removed} expired revocation record(s).")
+    resets = crud_reset.prune_expired(db)
+    print(
+        f"Removed {removed} expired revocation record(s) and "
+        f"{resets} expired reset link(s)."
+    )
+    return 0
+
+
+def issue_reset(db: Session, args: argparse.Namespace) -> int:
+    """Print a one-time password-reset link for an account.
+
+    The account page does this too, and does it better — no shell on the box.
+    This exists for the one case that page cannot serve: the superuser is the
+    account locked out, so there is nobody left signed in to issue the link.
+
+    The URL alone goes to stdout so `... | pbcopy` grabs just that; the expiry
+    note goes to stderr.
+    """
+    user = crud_user.get_user_by_email_folded(db, args.email)
+    if user is None:
+        print(f"No account for {args.email}.", file=sys.stderr)
+        return 1
+
+    # One live link per account: retire any earlier one first.
+    crud_reset.invalidate_for_user(db, user.id)
+    raw_token = new_reset_token()
+    crud_reset.create(
+        db,
+        user.id,
+        hash_reset_token(raw_token),
+        datetime.now(timezone.utc) + RESET_TOKEN_TTL,
+    )
+    db.commit()
+
+    minutes = int(RESET_TOKEN_TTL.total_seconds() // 60)
+    print(f"{FRONTEND_ORIGIN}/reset-password?token={raw_token}")
+    print(f"Valid once, for {minutes} minutes.", file=sys.stderr)
     return 0
 
 
@@ -172,6 +210,13 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "prune-tokens", help="Forget revoked tokens that have expired anyway"
     ).set_defaults(func=prune_tokens)
+
+    reset = commands.add_parser(
+        "issue-reset",
+        help="Print a one-time password-reset link, when nobody is left to issue one",
+    )
+    reset.add_argument("--email", required=True, help="The account to reset")
+    reset.set_defaults(func=issue_reset)
 
     adopt = commands.add_parser(
         "adopt-dev-data", help="Move the seeded dev user's notes to a real account"

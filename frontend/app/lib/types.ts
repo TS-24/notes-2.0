@@ -55,6 +55,19 @@ export interface AdminInvite extends Invite {
   used_by_email: string | null;
 }
 
+/** Mirrors backend/app/schemas/password_reset.py::ResetLinkRead */
+export interface ResetLink {
+  /** The address as it is stored, which may differ in case from the request. */
+  email: string;
+  /**
+   * The whole link, token and all. Unlike an invite code this cannot be read
+   * back later — only its hash is kept — so whatever receives this has to put
+   * it on screen at once.
+   */
+  url: string;
+  expires_in_minutes: number;
+}
+
 /** Mirrors backend/app/schemas/chat.py::ChatMessageRead */
 export interface ChatMessage {
   id: number;

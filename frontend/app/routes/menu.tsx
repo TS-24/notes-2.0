@@ -25,6 +25,7 @@ import type {
   Invite,
   ProviderOption,
   ProviderSettings,
+  ResetLink,
   User,
 } from "~/lib/types";
 import type { Route } from "./+types/menu";
@@ -113,6 +114,22 @@ export async function action({ request }: Route.ActionArgs) {
       case "invite": {
         await api.issueInvite(token, String(formData.get("email") ?? ""));
         return { ok: true as const, message: "Code ready to send." };
+      }
+      /*
+        The one thing on this page that has to come back in the action result
+        rather than through the loader, and the reverse of the invite case
+        above for a reason that is not style. Only the hash of a reset token is
+        stored, so the loader has nothing to re-read: this response is the only
+        moment the link exists anywhere the page can see it. That is also what
+        makes the link worth showing at all — a database copy is not worth an
+        account. Losing it before it is passed on costs one more click.
+      */
+      case "reset-link": {
+        const link = await api.issueResetLink(
+          token,
+          String(formData.get("email") ?? ""),
+        );
+        return { ok: true as const, message: "Link ready to send.", link };
       }
       case "forget": {
         await api.forgetProviderKey(token, provider);
@@ -509,9 +526,87 @@ function Invites({ invites }: { invites: Invite[] }) {
 }
 
 /**
- * The two listings that cover everybody, for the one account that holds the
- * flag. Read-only: there is nothing to revoke here and nothing to promote,
- * because neither has been asked for and both are easy to add later.
+ * Handing someone a way back into their own account.
+ *
+ * The link is shown once, here, and never again: only its hash is stored, so
+ * there is no listing to come back to. That is the trade — an invite code can
+ * be re-read forever because it is worth one new account bound to one address,
+ * while this is worth an account that already exists, with someone's notes in
+ * it. Reissuing is free, so the link that scrolls away costs a click.
+ *
+ * Superuser-only for the same reason. Issuing an invite is offering someone a
+ * door; issuing this is handing over a room.
+ */
+function ResetLinks() {
+  const fetcher = useFetcher<{ ok: boolean; message: string; link?: ResetLink }>();
+  const working = fetcher.state !== "idle";
+  const link = fetcher.data?.ok ? fetcher.data.link : undefined;
+
+  return (
+    <div data-reset-links className="space-y-3">
+      <p className={EYEBROW}>Password reset</p>
+      <p className="text-sm leading-relaxed text-ink/60">
+        Issue a one-time link for an account that cannot sign in. Nothing is
+        emailed — pass it on yourself, as with a code. It works once, and a new
+        link retires the last one.
+      </p>
+
+      <fetcher.Form method="post" data-reset-form className="space-y-3">
+        <input type="hidden" name="intent" value="reset-link" />
+        <label className="block">
+          <span className="text-sm text-ink/60">Their email</span>
+          <input
+            type="email"
+            name="email"
+            required
+            autoComplete="off"
+            placeholder="friend@example.com"
+            className={FIELD}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={working}
+          className="rounded-xl border border-ink/15 px-5 py-2 text-sm transition-colors hover:bg-ink/5 disabled:opacity-50"
+        >
+          {working ? "Issuing…" : "Issue reset link"}
+        </button>
+        {fetcher.data && !fetcher.data.ok ? (
+          <p data-reset-status role="alert" className="text-sm text-danger">
+            {fetcher.data.message}
+          </p>
+        ) : null}
+      </fetcher.Form>
+
+      {link ? (
+        <div className="space-y-1.5 rounded-xl bg-paper px-4 py-3">
+          <p data-reset-status role="status" className="text-xs text-ink/50">
+            For {link.email}. Valid once, for {link.expires_in_minutes} minutes.
+            Copy it now — it is not shown again.
+          </p>
+          {/*
+            `select-all` rather than a copy button alone, as InviteRow does: the
+            clipboard API needs a secure context and a gesture, and one click
+            selecting the whole thing works everywhere. `break-all` because a
+            URL with a token in it has no spaces to wrap at.
+          */}
+          <code
+            data-reset-link
+            className="block select-all font-mono text-xs break-all text-ink"
+          >
+            {link.url}
+          </code>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The two listings that cover everybody, and the one action on them, for the
+ * account that holds the flag. Otherwise read-only: there is nothing to revoke
+ * here and nothing to promote, because neither has been asked for and both are
+ * easy to add later.
  */
 function Everyone({
   invites,
@@ -530,6 +625,8 @@ function Everyone({
           this.
         </p>
       </div>
+
+      <ResetLinks />
 
       <div data-every-account className="space-y-2">
         <p className={EYEBROW}>Accounts</p>

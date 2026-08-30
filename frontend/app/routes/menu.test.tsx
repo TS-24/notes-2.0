@@ -139,6 +139,15 @@ function mount(answer: unknown, overrides: Partial<LoaderData> = {}) {
       ),
     everyInvite: () => container.querySelector("[data-every-invite]"),
     everyAccount: () => container.querySelector("[data-every-account]"),
+    resetPanel: () => container.querySelector("[data-reset-links]"),
+    resetForm: () => container.querySelector<HTMLFormElement>("[data-reset-form]"),
+    // Scoped to the reset form: the invite form has a field of the same name.
+    resetEmail: () =>
+      container.querySelector<HTMLInputElement>(
+        '[data-reset-form] input[name="email"]',
+      ),
+    resetLink: () => container.querySelector("[data-reset-link]")?.textContent ?? "",
+    resetSaid: () => container.querySelector("[data-reset-status]")?.textContent ?? "",
   };
 }
 
@@ -309,4 +318,73 @@ test("the superuser is shown both, with who issued what", () => {
   expect(surface.everyInvite()).not.toBeNull();
   expect(surface.everyInvite()!.textContent).toContain("someone.else@example.com");
   expect(surface.everyAccount()!.textContent).toContain("other@example.com");
+});
+
+const SUPERUSER: Partial<LoaderData> = {
+  user: { ...user, is_superuser: true },
+  everyone: { invites: [], users: [user] },
+};
+
+test("only the superuser is offered a reset link", () => {
+  expect(mount({ ok: true }).resetPanel()).toBeNull();
+  cleanup();
+
+  expect(mount({ ok: true }, SUPERUSER).resetPanel()).not.toBeNull();
+});
+
+/*
+  The link is the one thing on this page that has to survive on action data
+  alone. Only its hash is stored, so the loader cannot hand it back on the next
+  render the way it does an invite code — if this render does not show it, it
+  is gone and the superuser has to issue another.
+*/
+test("an issued link is shown in full, with what it is for", async () => {
+  const surface = mount(
+    {
+      ok: true,
+      message: "Link ready to send.",
+      link: {
+        email: "reader@example.com",
+        url: "http://localhost:3700/reset-password?token=abc123",
+        expires_in_minutes: 60,
+      },
+    },
+    SUPERUSER,
+  );
+
+  // Filled first: the field is `required`, and requestSubmit on an invalid
+  // form does nothing at all.
+  const field = surface.resetEmail()!;
+  field.value = "reader@example.com";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+
+  await act(async () => {
+    surface.resetForm()!.requestSubmit();
+  });
+
+  expect(surface.resetLink()).toBe(
+    "http://localhost:3700/reset-password?token=abc123",
+  );
+  expect(surface.resetSaid()).toContain("reader@example.com");
+  expect(surface.resetSaid()).toContain("60 minutes");
+});
+
+test("a refusal says so and shows no link", async () => {
+  const surface = mount(
+    { ok: false, message: "No account for that email" },
+    SUPERUSER,
+  );
+
+  // Filled first: the field is `required`, and requestSubmit on an invalid
+  // form does nothing at all.
+  const field = surface.resetEmail()!;
+  field.value = "reader@example.com";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+
+  await act(async () => {
+    surface.resetForm()!.requestSubmit();
+  });
+
+  expect(surface.resetSaid()).toBe("No account for that email");
+  expect(surface.resetLink()).toBe("");
 });

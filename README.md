@@ -227,6 +227,8 @@ directory of other people's writing.
 | `POST` | `/api/invites` | Issue a single-use code bound to one email address. No quota. 409 if that address already has an account, since a code it can never redeem is a dead end |
 | `GET` | `/api/invites` | The codes this account issued, newest first, each with its code still readable — that is where you go back for one you have not sent yet |
 | `GET` | `/api/invites/all` | Every code in the system, with who issued it and who spent it. Superuser only |
+| `POST` | `/api/password-resets` | Mint a one-time reset link for an existing account, valid an hour. Superuser only, because this opens an account that already exists rather than offering a new one. Nothing is emailed: the link comes back once and is not stored, only its hash, so it cannot be read again |
+| `POST` | `/api/auth/reset-password` | Spend a reset link and sign in. Unauthenticated — the token in the link is the credential. A spent, forged or expired one is a 400 rather than a 401, so the page can say why instead of bouncing to `/login` |
 | `GET` | `/api/users` | Every account. Superuser only |
 | `GET` | `/api/users/me` | The signed-in account |
 | `PATCH`/`DELETE` | `/api/users/me` | Update your own username or email, or delete the account. There is no password field on either. Deleting takes your notes, chats and stored keys with it |
@@ -628,9 +630,13 @@ end to end. What is not:
   `/logout`, which only drops the session cookie this server set. Nothing in `app/lib/api.server.ts`
   calls the API's logout route, so the token inside that cookie stays valid until it expires and
   revocation is reachable today from `curl` and `/docs` rather than from the button.
-- **There is no password reset and no way to change a password.** `PATCH /api/users/me` accepts a
-  username and an email and nothing else. Losing a password means a new account or an `UPDATE` by
-  hand. Registration being invite-only is what makes that survivable for now.
+- **A password is reset by handing someone a link, not by them asking for one.** The superuser
+  issues it from the account page — or from `python -m app.cli issue-reset --email <addr>` when the
+  superuser is the one locked out — and passes it on. It works once, expires in an hour, and using
+  it signs out every session the account already had. Nothing is emailed, for the reason invites
+  are not: this app stays off the end of a mail provider, and nobody can make the server send mail
+  to an address of their choosing. There is still **no way to change a password while signed in** —
+  `PATCH /api/users/me` accepts a username and an email and nothing else.
 - **There is no refresh flow.** A token nobody revokes stays valid for its full seven days.
   Rotating `JWT_SECRET` invalidates every session at once — and, because the credential cipher is
   derived from it, orphans every stored provider key along with them.

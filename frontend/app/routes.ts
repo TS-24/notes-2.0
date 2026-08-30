@@ -11,6 +11,10 @@ export default [
     route("login", "routes/login.tsx"),
     route("register", "routes/register.tsx"),
     route("logout", "routes/logout.tsx"),
+    // Outside the layout for the same reason, and more so: whoever opens this
+    // is someone who cannot sign in. The link that reaches it is issued from
+    // the account page — see routes/menu.tsx.
+    route("reset-password", "routes/reset-password.tsx"),
     // The landing page and the grid share a layout so the note surface inside
     // it survives navigation between them — see app/routes/workspace.tsx.
     layout("routes/workspace.tsx", [
